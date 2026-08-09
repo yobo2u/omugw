@@ -91,10 +91,11 @@ func implementedMatrix(t *testing.T, avail Availability) *Matrix {
 // 那种做法。想转正就得同时改代码、写 fixture、改这份名单，三处都动过一遍，
 // 就很难是无意的。
 func TestImplementedRoutesAreExplicit(t *testing.T) {
-	// M1 已转正：Responses 入站的同源直通。
+	// 已转正：OpenAI 族的两条同源直通（Responses 与 Chat）。
 	// 其余仍为 PLANNED，dashscope.compatible / dashscope.native 排在其后。
 	want := map[string]bool{
 		string(ProtoOpenAIResponses) + " -> " + string(ProviderOpenAICompat): true,
+		string(ProtoOpenAIChat) + " -> " + string(ProviderOpenAICompat):      true,
 	}
 
 	m, err := Phase1()
@@ -175,7 +176,9 @@ func TestImplementedRoutesHaveFixtures(t *testing.T) {
 // 没有这条测试，TestImplementedRoutesHaveFixtures 在 M0 阶段（零条已实现）
 // 会空转通过——而「空转通过的检查」正是这轮排查要消灭的东西。
 func TestFixtureGateActuallyBites(t *testing.T) {
-	fake := NewRoute(ProtoOpenAIChat, ProviderOpenAICompat).
+	// 故意挑一条**没有** fixture 目录的路径来证明门槛会咬人。
+	// 不能挑已转正的路径——它们有 fixture，门槛放行是正确的，测不出「咬」。
+	fake := NewRoute(ProtoOpenAIChat, ProviderAnthropicMessages).
 		MarkImplemented().
 		Pass(ExpressibleSet(ProtoOpenAIChat)...)
 	built, err := fake.Build()

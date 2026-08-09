@@ -104,7 +104,7 @@ func Build(cfg config.Config, m *degrade.Matrix, metrics *obs.Metrics, log *slog
 		return nil, err
 	}
 
-	h := NewResponsesHandler(Deps{
+	deps := Deps{
 		Matrix:    m,
 		Router:    rt,
 		Auth:      NewAuthenticator(cfg.Auth.Keys),
@@ -113,8 +113,9 @@ func Build(cfg config.Config, m *degrade.Matrix, metrics *obs.Metrics, log *slog
 		Log:       log,
 		Pools:     pools,
 		Providers: provs,
-	})
-	mux.Handle("POST /v1/responses", h)
+	}
+	mux.Handle("POST /v1/responses", NewResponsesHandler(deps))
+	mux.Handle("POST /v1/chat/completions", NewChatHandler(deps))
 
 	return built, nil
 }

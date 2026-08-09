@@ -50,9 +50,13 @@ func Phase1() (*Matrix, error) {
 
 	// 同源快通道。字节级透传，只改写鉴权，不进 Canonical。
 	// 客户端能表达的每一项它都原样转发——包括我们没特别处理过的字段。
+	//
+	// 转正的第二条路径（第一条是 Responses 同源直通）。门槛同样是端到端
+	// fixture 通过，见 testdata/routes/openai.chat__openai.compat/ 与 ADR-0001。
 	chatToOpenAI := NewRoute(ProtoOpenAIChat, ProviderOpenAICompat).
 		MarkHomogeneous().
-		Pass(ExpressibleSet(ProtoOpenAIChat)...)
+		Pass(ExpressibleSet(ProtoOpenAIChat)...).
+		MarkImplemented()
 	if err := m.Add(chatToOpenAI.Build()); err != nil {
 		return nil, err
 	}

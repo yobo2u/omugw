@@ -48,9 +48,28 @@ type harness struct {
 	h       *Handler
 	matrix  *degrade.Matrix
 	metrics *obs.Metrics
+	// path 是 do() 打入的入站路由，与所测入站协议一致。
+	path string
 }
 
+// newHarness 是 Responses 入站的 harness。
 func newHarness(t *testing.T, implemented bool, ups ...*upstream) *harness {
+	t.Helper()
+	return newHarnessFor(t, "/v1/responses", "/v1/responses", NewResponsesHandler, implemented, ups...)
+}
+
+// newChatHarness 是 Chat Completions 入站的 harness。
+//
+// provider 的默认路径故意用生产里 openai.compat 的默认值 "/v1/responses"，
+// 而不是 Chat 自己的路径——这样只有当 handler 真的把 provider.Request.Path
+// 注入成 "/v1/chat/completions" 时，请求才会打到正确的上游端点。若把两者设成
+// 一样，即使 Path 注入被删掉测试也照样通过，等于没测。
+func newChatHarness(t *testing.T, implemented bool, ups ...*upstream) *harness {
+	t.Helper()
+	return newHarnessFor(t, "/v1/chat/completions", "/v1/responses", NewChatHandler, implemented, ups...)
+}
+
+func newHarnessFor(t *testing.T, requestPath, providerDefaultPath string, mk func(Deps) *Handler, implemented bool, ups ...*upstream) *harness {
 	t.Helper()
 
 	m, err := degrade.Phase1()
@@ -94,7 +113,7 @@ func newHarness(t *testing.T, implemented bool, ups ...*upstream) *harness {
 			t.Fatal(err)
 		}
 		pools[name] = pool
-		provs[name] = passthrough.New(kind, "/v1/responses", client, nil)
+		provs[name] = passthrough.New(kind, providerDefaultPath, client, nil)
 	}
 
 	rt, err := router.New([]router.Rule{{Match: "*", Targets: targets}})
@@ -106,7 +125,8 @@ func newHarness(t *testing.T, implemented bool, ups ...*upstream) *harness {
 	return &harness{
 		matrix:  m,
 		metrics: metrics,
-		h: NewResponsesHandler(Deps{
+		path:    requestPath,
+		h: mk(Deps{
 			Matrix:    m,
 			Router:    rt,
 			Auth:      NewAuthenticator([]config.AuthKey{{ID: "tester", Key: testKey}}),
@@ -123,7 +143,7 @@ func endpointName(i int) string { return string(rune('a' + i)) }
 
 func (hs *harness) do(t *testing.T, body string, withAuth bool) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, hs.path, strings.NewReader(body))
 	if withAuth {
 		req.Header.Set("Authorization", "Bearer "+testKey)
 	}

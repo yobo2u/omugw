@@ -42,7 +42,7 @@
 | `dashscope.native` | `dashscope.native` | 规划中 | ✅ | 18 | 0 | 0 | 0 | 9 | 1.000 | — |
 | `dashscope.realtime` | `dashscope.ws.realtime` | 规划中 | ✅ | 15 | 0 | 0 | 0 | 12 | 1.000 | — |
 | `dashscope.realtime` | `openai.realtime` | 规划中 |  | 10 | 0 | 2 | 3 | 12 | 0.733 | — |
-| `openai.chat` | `openai.compat` | 规划中 | ✅ | 11 | 0 | 0 | 0 | 16 | 1.000 | — |
+| `openai.chat` | `openai.compat` | 已实现 | ✅ | 11 | 0 | 0 | 0 | 16 | 1.000 | 1.000 |
 | `openai.chat` | `dashscope.compatible` | 规划中 |  | 7 | 0 | 2 | 2 | 16 | 0.727 | — |
 | `openai.chat` | `dashscope.native` | 规划中 |  | 6 | 0 | 3 | 2 | 16 | 0.682 | — |
 | `openai.chat` | `anthropic.messages` | 规划中 |  | 6 | 0 | 1 | 4 | 16 | 0.591 | — |

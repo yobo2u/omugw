@@ -16,6 +16,9 @@ import (
 // 有损格子举证。
 const routeFixtures = "../../testdata/routes/openai.responses__openai.compat"
 
+// chatRouteFixtures 是 Chat Completions 同源直通路径的 fixture 目录。
+const chatRouteFixtures = "../../testdata/routes/openai.chat__openai.compat"
+
 // TestRouteConformance 回放路径 fixture。
 //
 // 这条测试的存在是 ADR-0001 转正门槛的另一半：门槛只检查 fixture **存在**，
@@ -39,6 +42,38 @@ func TestRouteConformance(t *testing.T) {
 			rec := hs.do(t, string(body), true)
 
 			golden := filepath.Join(routeFixtures, "golden", caseName(f.Name)+".txt")
+			testkit.Golden(t, golden, []byte(renderResult(rec)))
+		})
+	}
+}
+
+// TestChatRouteConformance 回放 Chat Completions 同源直通路径的 fixture。
+//
+// 与 TestRouteConformance 同理：转正门槛只查 fixture 存在，这里负责证明它真的
+// 跑得通——解码、矩阵裁决、字节透传、用量抽取全链路走一遍，输出与 golden 比对。
+func TestChatRouteConformance(t *testing.T) {
+	for _, f := range testkit.LoadDir(t, chatRouteFixtures) {
+		t.Run(caseName(f.Name), func(t *testing.T) {
+			var gotPath string
+			up := newUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+				gotPath = r.URL.Path
+				writeFixtureResponse(t, w, f)
+			})
+			hs := newChatHarness(t, true, up)
+
+			body, err := json.Marshal(f.Request.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			rec := hs.do(t, string(body), true)
+
+			// harness 的 provider 默认路径是 /v1/responses；只有 handler 把
+			// Path 注入成 chat 端点，上游才会收到正确路径。这是 Path 注入的实证。
+			if gotPath != "/v1/chat/completions" {
+				t.Errorf("上游收到路径 %q，期望 /v1/chat/completions（Path 注入未生效）", gotPath)
+			}
+
+			golden := filepath.Join(chatRouteFixtures, "golden", caseName(f.Name)+".txt")
 			testkit.Golden(t, golden, []byte(renderResult(rec)))
 		})
 	}

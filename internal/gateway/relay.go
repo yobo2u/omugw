@@ -38,8 +38,9 @@ func (t *tracked) Flush() {
 	}
 }
 
-// relayJSON 转发非流式响应。
-func relayJSON(w *tracked, resp *httpx.Response, extra map[string]string) (canonical.Usage, error) {
+// relayJSON 转发非流式响应。usageFromJSON 按入站协议从响应体里抽取用量。
+func relayJSON(w *tracked, resp *httpx.Response, extra map[string]string,
+	usageFromJSON func(body []byte) canonical.Usage) (canonical.Usage, error) {
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
@@ -48,7 +49,7 @@ func relayJSON(w *tracked, resp *httpx.Response, extra map[string]string) (canon
 			canonical.Wrapf(err, canonical.ClassUpstreamUnavailable, "读取上游响应失败")
 	}
 
-	usage := extractUsage(body)
+	usage := usageFromJSON(body)
 
 	copyUpstreamHeaders(w.Header(), resp.Header)
 	for k, v := range extra {
@@ -66,7 +67,8 @@ func relayJSON(w *tracked, resp *httpx.Response, extra map[string]string) (canon
 // 走事件级而非字节级：原则 2.4 要求首字节之后失败必须发一个终止错误事件收尾，
 // 而纯 io.Copy 做不到；计费也需要从 response.completed 里取出 usage。
 // 代价只是帧的空白格式被规范化——data 负载逐字保留，语义完全一致。
-func relayStream(w *tracked, resp *httpx.Response, extra map[string]string) (canonical.Usage, error) {
+func relayStream(w *tracked, resp *httpx.Response, extra map[string]string,
+	usageFromEvent func(ev sse.Event) (canonical.Usage, bool)) (canonical.Usage, error) {
 	defer resp.Body.Close()
 
 	copyUpstreamHeaders(w.Header(), resp.Header)
@@ -88,7 +90,7 @@ func relayStream(w *tracked, resp *httpx.Response, extra map[string]string) (can
 		ev, err := reader.Next()
 
 		if ev.Data != "" || ev.Event != "" {
-			if u, ok := parseUsageEvent(ev); ok {
+			if u, ok := usageFromEvent(ev); ok {
 				usage = u
 			}
 			if werr := sw.Write(ev); werr != nil {
@@ -193,6 +195,66 @@ func toCanonicalUsage(env usageEnvelope) canonical.Usage {
 		u.CacheReadInputTokens = d.CachedTokens
 	}
 	if d := env.Usage.OutputTokenDetails; d != nil {
+		u.ReasoningTokens = d.ReasoningTokens
+	}
+	return u
+}
+
+// chatUsageEnvelope 是 Chat Completions 的用量结构。
+//
+// 与 Responses 的口径不同：Chat 用 prompt_tokens / completion_tokens，
+// 缓存与推理明细挂在各自的 *_details 下。两套字段名不能混用，否则计费口径错。
+type chatUsageEnvelope struct {
+	Usage *struct {
+		PromptTokens        int64 `json:"prompt_tokens"`
+		CompletionTokens    int64 `json:"completion_tokens"`
+		PromptTokensDetails *struct {
+			CachedTokens int64 `json:"cached_tokens"`
+		} `json:"prompt_tokens_details"`
+		CompletionTokensDetails *struct {
+			ReasoningTokens int64 `json:"reasoning_tokens"`
+		} `json:"completion_tokens_details"`
+	} `json:"usage"`
+}
+
+// extractChatUsage 从非流式 Chat 响应体里取出用量。
+func extractChatUsage(body []byte) canonical.Usage {
+	var env chatUsageEnvelope
+	if err := json.Unmarshal(body, &env); err != nil || env.Usage == nil {
+		// 解不出来就是不可知。编一个 0 会让「没数据」和「真的是 0」混在一起。
+		return canonical.UnavailableUsage()
+	}
+	return toCanonicalChatUsage(env)
+}
+
+// parseChatUsageEvent 从流式事件里取出用量。
+//
+// Chat 的流式用量放在最后一个 chat.completion.chunk 的 usage 字段里
+// （需客户端带 stream_options.include_usage），事件本身没有名字，只有 data。
+// 中间分片的 usage 为 null，解出来 Usage 为空即跳过。
+func parseChatUsageEvent(ev sse.Event) (canonical.Usage, bool) {
+	if ev.Data == "" || ev.Data == "[DONE]" {
+		return canonical.Usage{}, false
+	}
+	var env chatUsageEnvelope
+	if err := json.Unmarshal([]byte(ev.Data), &env); err != nil || env.Usage == nil {
+		return canonical.Usage{}, false
+	}
+	return toCanonicalChatUsage(env), true
+}
+
+func toCanonicalChatUsage(env chatUsageEnvelope) canonical.Usage {
+	u := canonical.Usage{
+		// 数字直接来自上游响应，可用于计费。
+		Fidelity:     canonical.FidelityAuthoritative,
+		InputTokens:  env.Usage.PromptTokens,
+		OutputTokens: env.Usage.CompletionTokens,
+	}
+	if d := env.Usage.PromptTokensDetails; d != nil {
+		// cached_tokens 是「命中缓存的读取」，不是写入。
+		u.CacheReadInputTokens = d.CachedTokens
+	}
+	if d := env.Usage.CompletionTokensDetails; d != nil {
 		u.ReasoningTokens = d.ReasoningTokens
 	}
 	return u

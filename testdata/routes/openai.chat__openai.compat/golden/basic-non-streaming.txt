@@ -1,0 +1,19 @@
+status: OK
+Content-Type: application/json
+X-Ratelimit-Remaining-Tokens: 1999918
+---
+{
+      "id": "chatcmpl-68a1",
+      "object": "chat.completion",
+      "created": 1754740800,
+      "model": "gpt-4o-upstream",
+      "choices": [
+        { "index": 0, "message": { "role": "assistant", "content": "今天多云，22 度。" }, "finish_reason": "stop" }
+      ],
+      "usage": {
+        "prompt_tokens": 24,
+        "completion_tokens": 11,
+        "total_tokens": 35,
+        "prompt_tokens_details": { "cached_tokens": 0 }
+      }
+    }

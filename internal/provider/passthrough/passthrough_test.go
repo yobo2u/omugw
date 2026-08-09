@@ -297,3 +297,50 @@ func TestNonObjectBodyIsRejected(t *testing.T) {
 		t.Fatal("非 JSON 对象的请求体应当被拒绝")
 	}
 }
+
+// TestRequestPathOverridesDefault 固化「上游路径随请求走」：同一个 openai.compat
+// 适配器既要打 Responses 端点也要打 Chat 端点，路径不能写死在装配时。
+func TestRequestPathOverridesDefault(t *testing.T) {
+	srv, got := serve(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"id":"chatcmpl_1"}`)
+	})
+
+	p := New(degrade.ProviderOpenAICompat, "/v1/responses",
+		httpx.New(config.Default().Timeouts, nil), nil)
+
+	resp, err := p.Call(context.Background(), provider.Request{
+		Target: router.Target{
+			Kind:           degrade.ProviderOpenAICompat,
+			Endpoint:       "test",
+			BaseURL:        srv.URL,
+			UpstreamModel:  "gpt-4o",
+			CredentialPool: "test",
+		},
+		Credential: credential.Credential{ID: "k1", Secret: "sk-x"},
+		Raw:        []byte(`{"model":"logical","messages":[{"role":"user","content":"hi"}]}`),
+		Path:       "/v1/chat/completions",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if got.path != "/v1/chat/completions" {
+		t.Errorf("上游路径 = %q, 期望 /v1/chat/completions", got.path)
+	}
+}
+
+// TestDefaultPathUsedWhenRequestPathEmpty 保证未携带路径时退回装配默认，
+// 既有单上游装配不受影响。
+func TestDefaultPathUsedWhenRequestPathEmpty(t *testing.T) {
+	srv, got := serve(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"id":"resp_1"}`)
+	})
+
+	if _, err := call(t, srv, `{"model":"logical","input":"hi"}`, "m", false); err != nil {
+		t.Fatal(err)
+	}
+	if got.path != "/v1/responses" {
+		t.Errorf("上游路径 = %q, 期望默认的 /v1/responses", got.path)
+	}
+}

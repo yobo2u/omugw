@@ -17,11 +17,13 @@ import (
 	"github.com/yobo2u/omugw/internal/credential"
 	"github.com/yobo2u/omugw/internal/degrade"
 	"github.com/yobo2u/omugw/internal/obs"
+	"github.com/yobo2u/omugw/internal/protocol/openaichat"
 	"github.com/yobo2u/omugw/internal/protocol/openairesponses"
 	"github.com/yobo2u/omugw/internal/protocol/openaiwire"
 	"github.com/yobo2u/omugw/internal/provider"
 	"github.com/yobo2u/omugw/internal/router"
 	"github.com/yobo2u/omugw/internal/transport/httpx"
+	"github.com/yobo2u/omugw/internal/transport/sse"
 )
 
 // Deps 是 Handler 的依赖。
@@ -41,18 +43,87 @@ type Deps struct {
 	Providers map[string]provider.Provider
 }
 
-// Handler 处理 Responses 入站请求。
+// decodedRequest 是入站解码后的统一视图：Canonical 请求 + 能力清单 + 内联负载大小。
+//
+// 各入站协议的解码器各自产出它，好让 serve/dispatch/relay 这条主链路对具体协议
+// 无感——新增一条入站协议不必改主链路，只需再给一个 inbound。
+type decodedRequest struct {
+	Request     canonical.Request
+	caps        []canonical.Capability
+	InlineBytes int64
+}
+
+// Capabilities 报告这次请求用到的能力，供降级矩阵裁决。
+func (d *decodedRequest) Capabilities() []canonical.Capability { return d.caps }
+
+// inbound 把一条入站协议在网关数据面上的全部协议相关行为收拢到一处：解码请求、
+// 抽取用量、以及同源直通时对应的上游端点路径。
+type inbound struct {
+	protocol degrade.Protocol
+	decode   func(raw []byte) (*decodedRequest, error)
+
+	// usageJSON 从非流式响应体抽取用量；usageEvent 从流式事件抽取用量。
+	// 两者形状因协议而异——Responses 是 input_tokens + response.completed 事件，
+	// Chat 是 prompt_tokens + chat.completion.chunk——不能共用一套解析。
+	usageJSON  func(body []byte) canonical.Usage
+	usageEvent func(ev sse.Event) (canonical.Usage, bool)
+
+	// upstreamPath 是同源直通时打到的上游端点。网关对上游说的是客户端那套
+	// 线格式，所以路径由入站协议决定，而不是由出站 Provider 决定。
+	upstreamPath string
+}
+
+// Handler 处理某一条入站协议的请求。
 type Handler struct {
-	deps    Deps
-	inbound degrade.Protocol
+	deps Deps
+	in   inbound
 }
 
 // NewResponsesHandler 构造 /v1/responses 的处理器。
-func NewResponsesHandler(d Deps) *Handler {
+func NewResponsesHandler(d Deps) *Handler { return newHandler(d, responsesInbound()) }
+
+// NewChatHandler 构造 /v1/chat/completions 的处理器。
+func NewChatHandler(d Deps) *Handler { return newHandler(d, chatInbound()) }
+
+func newHandler(d Deps, in inbound) *Handler {
 	if d.Now == nil {
 		d.Now = time.Now
 	}
-	return &Handler{deps: d, inbound: degrade.ProtoOpenAIResponses}
+	return &Handler{deps: d, in: in}
+}
+
+// responsesInbound 把 Responses 协议接入主链路。
+func responsesInbound() inbound {
+	return inbound{
+		protocol: degrade.ProtoOpenAIResponses,
+		decode: func(raw []byte) (*decodedRequest, error) {
+			d, err := openairesponses.Decode(raw)
+			if err != nil {
+				return nil, err
+			}
+			return &decodedRequest{Request: d.Request, caps: d.Capabilities(), InlineBytes: d.InlineBytes}, nil
+		},
+		usageJSON:    extractUsage,
+		usageEvent:   parseUsageEvent,
+		upstreamPath: "/v1/responses",
+	}
+}
+
+// chatInbound 把 Chat Completions 协议接入主链路。
+func chatInbound() inbound {
+	return inbound{
+		protocol: degrade.ProtoOpenAIChat,
+		decode: func(raw []byte) (*decodedRequest, error) {
+			d, err := openaichat.Decode(raw)
+			if err != nil {
+				return nil, err
+			}
+			return &decodedRequest{Request: d.Request, caps: d.Capabilities(), InlineBytes: d.InlineBytes}, nil
+		},
+		usageJSON:    extractChatUsage,
+		usageEvent:   parseChatUsageEvent,
+		upstreamPath: "/v1/chat/completions",
+	}
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -65,8 +136,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.fail(tw, err)
 	}
 
-	h.deps.Metrics.Requests.WithLabelValues(string(h.inbound), outbound, outcome).Inc()
-	h.deps.Metrics.Duration.WithLabelValues(string(h.inbound), outbound).
+	h.deps.Metrics.Requests.WithLabelValues(string(h.in.protocol), outbound, outcome).Inc()
+	h.deps.Metrics.Duration.WithLabelValues(string(h.in.protocol), outbound).
 		Observe(h.deps.Now().Sub(start).Seconds())
 }
 
@@ -84,7 +155,7 @@ func (h *Handler) serve(w *tracked, r *http.Request) (outcome, outbound string, 
 		return "bad_request", outbound, err
 	}
 
-	decoded, err := openairesponses.Decode(raw)
+	decoded, err := h.in.decode(raw)
 	if err != nil {
 		return "bad_request", outbound, err
 	}
@@ -104,10 +175,10 @@ func (h *Handler) serve(w *tracked, r *http.Request) (outcome, outbound string, 
 
 	// 路由给出候选，矩阵按能力与保留度裁决。两者分工，不互相包含。
 	kind, verdict, err := h.deps.Matrix.BestOutbound(
-		h.inbound, router.Kinds(targets), decoded.Capabilities())
+		h.in.protocol, router.Kinds(targets), decoded.Capabilities())
 	if err != nil {
 		if canonical.AsError(err).Class == canonical.ClassNotImplemented {
-			h.deps.Metrics.ObserveNotImplemented(string(h.inbound), "planned")
+			h.deps.Metrics.ObserveNotImplemented(string(h.in.protocol), "planned")
 			return "not_implemented", outbound, err
 		}
 		return "unsupported", outbound, err
@@ -129,7 +200,7 @@ func (h *Handler) serve(w *tracked, r *http.Request) (outcome, outbound string, 
 type dispatchInput struct {
 	caller  Caller
 	raw     []byte
-	decoded *openairesponses.Decoded
+	decoded *decodedRequest
 	targets []router.Target
 	kind    degrade.Provider
 	headers map[string]string
@@ -171,6 +242,7 @@ func (h *Handler) dispatch(w *tracked, r *http.Request, in dispatchInput) (strin
 				Raw:        in.raw,
 				Canonical:  &in.decoded.Request,
 				Stream:     in.decoded.Request.Stream,
+				Path:       h.in.upstreamPath,
 			})
 			if err != nil {
 				lease.Fail(err)
@@ -197,7 +269,7 @@ func (h *Handler) dispatch(w *tracked, r *http.Request, in dispatchInput) (strin
 			// 走到这里就跨过了下游首字节的门槛：此后任何失败都只能收尾，
 			// 不能重试。
 			h.deps.Metrics.FirstByte.WithLabelValues(
-				string(h.inbound), string(in.kind), "true",
+				string(h.in.protocol), string(in.kind), "true",
 			).Observe(resp.Latency.Seconds())
 
 			usage, rerr := h.relay(w, resp, in)
@@ -206,7 +278,7 @@ func (h *Handler) dispatch(w *tracked, r *http.Request, in dispatchInput) (strin
 			if rerr != nil {
 				cerr := canonical.AsError(rerr)
 				h.deps.Metrics.StreamAborted.WithLabelValues(
-					string(h.inbound), string(in.kind), string(cerr.Class)).Inc()
+					string(h.in.protocol), string(in.kind), string(cerr.Class)).Inc()
 				h.deps.Log.Warn("响应转发中断",
 					"endpoint", target.Endpoint,
 					"class", string(cerr.Class),
@@ -228,9 +300,9 @@ func (h *Handler) dispatch(w *tracked, r *http.Request, in dispatchInput) (strin
 // relay 按流式与否选择转发方式。
 func (h *Handler) relay(w *tracked, resp *httpx.Response, in dispatchInput) (canonical.Usage, error) {
 	if in.decoded.Request.Stream {
-		return relayStream(w, resp, in.headers)
+		return relayStream(w, resp, in.headers, h.in.usageEvent)
 	}
-	return relayJSON(w, resp, in.headers)
+	return relayJSON(w, resp, in.headers, h.in.usageJSON)
 }
 
 // readBody 读取请求体，带大小上限。
@@ -260,7 +332,7 @@ func (h *Handler) observeVerdict(kind degrade.Provider, v degrade.Verdict) {
 	for _, e := range v.Emulated {
 		emulated = append(emulated, string(e.Capability))
 	}
-	h.deps.Metrics.ObserveVerdict(string(h.inbound), string(kind), degraded, emulated)
+	h.deps.Metrics.ObserveVerdict(string(h.in.protocol), string(kind), degraded, emulated)
 }
 
 // verdictHeaders 把裁决结果编成响应头。

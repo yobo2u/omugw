@@ -28,6 +28,13 @@ type Request struct {
 
 	// Stream 表示客户端要的是流式响应。
 	Stream bool
+
+	// Path 是上游端点路径，例如 "/v1/responses" 或 "/v1/chat/completions"。
+	//
+	// 由网关按入站协议设定：同源快通道下网关对上游说的就是客户端那套线格式，
+	// 同一个 openai.compat 出站既要能打到 Responses 端点也要能打到 Chat 端点，
+	// 所以路径必须随请求走，而不能在装配适配器时写死。留空时适配器退回自身默认。
+	Path string
 }
 
 // Provider 是一个出站适配器。
