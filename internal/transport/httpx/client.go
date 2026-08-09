@@ -12,7 +12,7 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/yobo2u/omugw/internal/canonical"
@@ -93,15 +93,9 @@ func (c *Client) Do(ctx context.Context, req *http.Request) (*Response, error) {
 	}
 
 	first := c.now()
-	resp.Body = &idleBody{
-		rc:      resp.Body,
-		timeout: c.timeouts.Idle,
-		now:     c.now,
-		last:    first,
-		// 整体超时的 cancel 挂在 Body 上：只有流真正读完（或出错）才释放，
-		// 提前 cancel 会把还在传输的流掐断。
-		release: cancel,
-	}
+	// 整体超时的 cancel 挂在 Body 上：只有流真正读完（或出错）才释放，
+	// 提前 cancel 会把还在传输的流掐断。
+	resp.Body = newIdleBody(resp.Body, c.timeouts.Idle, cancel)
 
 	return &Response{
 		Response:          resp,
@@ -131,50 +125,58 @@ func classify(err error, ctx context.Context, t config.Timeouts) error {
 	return canonical.Wrapf(err, canonical.ClassUpstreamUnavailable, "上游请求失败")
 }
 
-// idleBody 在每次成功读取后重置空闲计时。
+// idleBody 用一个定时器保证空闲超时能**打断阻塞中的 Read**。
+//
+// 早先的实现是在每次 Read 之前比较距上次读取的时长——那个写法对它唯一要防的
+// 场景是失效的：真实的流转发阻塞在 Read 里等下一块，一旦底层 Read 挂住，
+// 那个检查就永远轮不到执行。当时的测试之所以通过，是因为它在两次 Read 之间
+// 手动 sleep，恰好绕开了阻塞这件事，给了假信心。
+//
+// 现在改为 time.AfterFunc 到期即取消整个请求上下文，从而让阻塞中的 Read
+// 立刻返回。
 type idleBody struct {
 	rc      io.ReadCloser
 	timeout time.Duration
-	now     func() time.Time
-
-	mu      sync.Mutex
-	last    time.Time
+	timer   *time.Timer
 	release func()
-	closed  bool
+
+	fired  atomic.Bool
+	closed atomic.Bool
+}
+
+func newIdleBody(rc io.ReadCloser, timeout time.Duration, release func()) *idleBody {
+	b := &idleBody{rc: rc, timeout: timeout, release: release}
+	b.timer = time.AfterFunc(timeout, func() {
+		b.fired.Store(true)
+		// 取消上下文，阻塞中的 Read 会因此立刻返回。
+		release()
+	})
+	return b
 }
 
 func (b *idleBody) Read(p []byte) (int, error) {
-	b.mu.Lock()
-	idle := b.now().Sub(b.last)
-	b.mu.Unlock()
-
-	if idle > b.timeout {
-		return 0, canonical.Newf(canonical.ClassUpstreamUnavailable,
-			"上游流已空闲 %v，超过 %v 上限", idle.Round(time.Millisecond), b.timeout)
-	}
-
 	n, err := b.rc.Read(p)
 	if n > 0 {
-		b.mu.Lock()
-		b.last = b.now()
-		b.mu.Unlock()
+		b.timer.Reset(b.timeout)
+	}
+	if err != nil && b.fired.Load() {
+		// 底层报错的真正原因是空闲超时把上下文取消了。原样把 context canceled
+		// 抛给上层，会让人以为是客户端断开——那是两件完全不同的事。
+		return n, canonical.Newf(canonical.ClassUpstreamUnavailable,
+			"上游流空闲超过 %v 上限", b.timeout)
 	}
 	return n, err
 }
 
 func (b *idleBody) Close() error {
-	b.mu.Lock()
-	if b.closed {
-		b.mu.Unlock()
+	if b.closed.Swap(true) {
 		return nil
 	}
-	b.closed = true
-	release := b.release
-	b.mu.Unlock()
+	b.timer.Stop()
 
 	err := b.rc.Close()
-	if release != nil {
-		release()
+	if b.release != nil {
+		b.release()
 	}
 	return err
 }

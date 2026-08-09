@@ -121,12 +121,20 @@ func TestIdleTimeoutCatchesStalledStream(t *testing.T) {
 		t.Fatalf("首块应当能读到: n=%d err=%v", n, err)
 	}
 
-	// 等过空闲上限，下一次读取必须报错。
-	time.Sleep(tm.Idle + 100*time.Millisecond)
-
+	// 关键：**直接阻塞在下一次 Read 上**，不在中间手动 sleep。
+	//
+	// 早先的版本先 sleep 再 Read，恰好绕开了「Read 阻塞住」这件事，
+	// 于是一个只在 Read 之前检查空闲时长的实现也能通过——而那个实现对它
+	// 唯一要防的场景是完全失效的。真实的流转发就是阻塞在这里等下一块。
+	start := time.Now()
 	_, err = resp.Body.Read(buf)
+	elapsed := time.Since(start)
+
 	if err == nil {
-		t.Fatal("流已空闲超过上限，读取应当报错")
+		t.Fatal("流已空闲超过上限，阻塞中的读取应当被打断")
+	}
+	if elapsed > tm.Idle*3 {
+		t.Errorf("阻塞了 %v 才返回，空闲超时没有打断 Read（上限 %v）", elapsed, tm.Idle)
 	}
 	var cerr *canonical.Error
 	if !errors.As(err, &cerr) {
