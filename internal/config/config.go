@@ -16,6 +16,12 @@ type Config struct {
 	Timeouts Timeouts `yaml:"timeouts"`
 	Log      Log      `yaml:"log"`
 	Limits   Limits   `yaml:"limits"`
+
+	Auth        Auth                        `yaml:"auth"`
+	Credentials map[string][]CredentialSpec `yaml:"credentials"`
+	Providers   []ProviderSpec              `yaml:"providers"`
+	Models      []ModelSpec                 `yaml:"models"`
+	ConvStore   ConvStore                   `yaml:"convstore"`
 }
 
 // Server 是监听相关配置。
@@ -83,6 +89,7 @@ func Default() Config {
 			MaxInlineBytes:  20 << 20, // 20 MiB
 			MaxRequestBytes: 32 << 20, // 32 MiB
 		},
+		ConvStore: DefaultConvStore(),
 	}
 }
 
@@ -183,7 +190,41 @@ func (c Config) Validate() error {
 			"内联负载永远无法通过",
 			c.Limits.MaxRequestBytes, c.Limits.MaxInlineBytes)
 	}
+
+	// 网关部分要么完整配置，要么完全不配。
+	//
+	// 「完全不配」是合法的：那是只提供健康检查的基础设施模式，与 M0 的现状
+	// 一致。而「配了一半」必须失败——一份写了 providers 却漏了 models 的配置，
+	// 作者显然是想让网关工作的，静默降级成健康检查模式只会让人对着一个
+	// 「一直返回 404」的网关查半天。
+	if c.gatewayConfigured() {
+		return c.validateGateway()
+	}
+	if c.partiallyConfigured() {
+		return fmt.Errorf("config: 网关配置不完整——" +
+			"auth.keys / credentials / providers / models 必须同时配齐，或全部留空（仅健康检查模式）")
+	}
 	return nil
+}
+
+// gatewayConfigured 报告网关部分是否配齐。
+func (c Config) gatewayConfigured() bool {
+	return len(c.Auth.Keys) > 0 && len(c.Credentials) > 0 &&
+		len(c.Providers) > 0 && len(c.Models) > 0
+}
+
+// partiallyConfigured 报告网关部分是否配了一半。
+func (c Config) partiallyConfigured() bool {
+	set := 0
+	for _, ok := range []bool{
+		len(c.Auth.Keys) > 0, len(c.Credentials) > 0,
+		len(c.Providers) > 0, len(c.Models) > 0,
+	} {
+		if ok {
+			set++
+		}
+	}
+	return set > 0 && set < 4
 }
 
 // Validate 校验四层超时的相对关系。
