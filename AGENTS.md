@@ -105,8 +105,8 @@ make smoke         # 端到端冒烟，需 OMUGW_SMOKE=1 与真实凭据
 
 ## NOTES
 
-- **当前状态**：14 条路径已登记，**只有 1 条已实现**（`openai.responses →
-  openai.compat`，同源直通）。其余打过去是 501。
+- **当前状态**：14 条路径已登记，**只有 2 条已实现**（`openai.responses →
+  openai.compat` 与 `openai.chat → openai.compat`，均为同源直通）。其余打过去是 501。
 - 配置的 `auth`/`credentials`/`providers`/`models` 四块**要么全配要么全不配**；
   全不配 = 只提供 `/healthz`（合法形态），配一半直接启动失败。
 - `convstore` 是内存态：单副本正确、重启丢失、多副本不共享。因此
