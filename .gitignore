@@ -10,3 +10,6 @@ SBOM.spdx.json
 config.local.yaml
 .env
 *.key
+
+# 本地 agent 运行时产物（会话续接状态），绝不入库
+.omo/
