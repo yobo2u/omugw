@@ -23,8 +23,16 @@ const (
 	// 客户端拿到的能力是完整的，但这份完整性是网关垫出来的，
 	// 运维得知道它的边界在哪。
 	noteEmulatedSession = "上游无服务端会话，由网关侧 ConversationStore 模拟提供。" +
-		"Phase 1 为内存态：单副本正确，进程重启后历史丢失，多副本部署下会话不共享"
+		"Phase 1 为内存态：单副本正确，进程重启后历史丢失，多副本部署下会话不共享。" +
+		"默认关闭，需显式开启 convstore"
 )
+
+// Phase1 注册的全部路径当前均为 PLANNED。
+//
+// 这不是遗漏。M0 建立的是声明层——矩阵、可表达性、错误映射、测试基座——
+// 而 codec 与 transport 属于 M1。让路径默认 PLANNED，是让这个事实在运行时
+// 和文档里都藏不住（见 ADR-0001）。M1 转正前三条 openai.responses 路径时，
+// 会在对应位置加上 MarkImplemented，且必须先有 fixture。
 
 // Phase1 构造 Phase 1 的降级矩阵。
 //
@@ -117,7 +125,8 @@ func Phase1() (*Matrix, error) {
 	// 更完整的推理配置。前者由网关模拟，后两者 Phase 1 不做跨 Provider 映射。
 
 	responsesExtras := func(r *Route, homogeneous bool) *Route {
-		r = r.Emulate(noteEmulatedSession, canonical.CapStatefulConversation)
+		r = r.Emulate(FeatureConversationStore, noteEmulatedSession,
+			canonical.CapStatefulConversation)
 		if homogeneous {
 			// 字节直通路径原样转发一切，内建工具也不例外。
 			// 早先把 computer_use 在直通路径上判成 REJECT 是错的：

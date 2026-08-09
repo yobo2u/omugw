@@ -47,14 +47,26 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("降级矩阵不完整: %w", err)
 	}
+	var implemented int
 	for _, r := range matrix.Routes() {
-		pass, deg, rej := r.Stats()
+		p := r.Preservation(matrix.Availability())
+		if r.Implemented {
+			implemented++
+		}
 		log.Info("已注册转换路径",
 			"inbound", string(r.In),
 			"outbound", string(r.Out),
+			"implemented", r.Implemented,
 			"fast_path", r.Homogeneous,
-			"passthrough", pass, "degrade", deg, "reject", rej,
+			"design_score", p.DesignScore(),
+			"available_score", p.AvailableScore(),
 		)
+	}
+	if implemented == 0 {
+		// 一个一条路都走不通的网关必须自己说出来，而不是等第一个请求
+		// 撞上 501 才让人发现。
+		log.Warn("当前没有任何已实现的转换路径，网关只能响应健康检查",
+			"planned", len(matrix.Routes()))
 	}
 
 	reg := prometheus.NewRegistry()

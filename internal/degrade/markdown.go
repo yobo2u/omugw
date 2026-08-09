@@ -101,8 +101,13 @@ func (m *Matrix) writePreservation(b *strings.Builder) {
 		"对 `dashscope.realtime` 入站，DashScope 侧直通是零损失的，" +
 		"可在全局序里 `openai.realtime` 排得更靠前。\n\n")
 
-	b.WriteString("| 入站 | 出站 | 快通道 | 透传 | 模拟 | 降级 | 拒绝 | N/A | 保留度 |\n")
-	b.WriteString("|---|---|---|---:|---:|---:|---:|---:|---:|\n")
+	b.WriteString("保留度分两列（见 ADR-0002）：**设计目标**假定全部实现、全部开关开启，" +
+		"回答「这条路最终能做到什么」；**当前可用**受实现状态与默认配置影响，" +
+		"是选路的唯一依据。尚未实现的路径没有当前可用分数——" +
+		"给一条走不通的路打分，是在请人相信一个还不存在的东西。\n\n")
+
+	b.WriteString("| 入站 | 出站 | 状态 | 快通道 | 透传 | 模拟 | 降级 | 拒绝 | N/A | 设计目标 | 当前可用 |\n")
+	b.WriteString("|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|\n")
 
 	// 按入站分组，组内按选路偏好排序——与运行时的实际选路顺序一致。
 	byInbound := map[Protocol][]Provider{}
@@ -116,36 +121,74 @@ func (m *Matrix) writePreservation(b *strings.Builder) {
 	sort.Slice(order, func(i, j int) bool { return order[i] < order[j] })
 
 	for _, in := range order {
-		for _, out := range m.RankOutbound(in, byInbound[in]) {
+		for _, out := range m.RankDesign(in, byInbound[in]) {
 			r, _ := m.Route(in, out)
-			p := r.Preservation()
+			p := r.Preservation(m.avail)
+
+			status := "规划中"
+			available := "—"
+			if r.Implemented {
+				status = "已实现"
+				available = fmt.Sprintf("%.3f", p.AvailableScore())
+				if p.Gated() {
+					// 把前提写进数字本身：默认配置是绝大多数人的实际部署，
+					// 按它计分才诚实；括号让另一种部署也能查到自己的数。
+					available += fmt.Sprintf("（开启 %s 后 %.3f）",
+						FeatureConversationStore, p.DesignScore())
+				}
+			}
 			fast := ""
 			if r.Homogeneous {
 				fast = "✅"
 			}
-			fmt.Fprintf(b, "| `%s` | `%s` | %s | %d | %d | %d | %d | %d | %.3f |\n",
-				in, out, fast,
-				p.Passthrough, p.Emulate, p.Degrade, p.Reject, p.NotApplicable,
-				p.Score())
+
+			// 模拟列计入被开关关掉的格子——它们仍然是模拟格子，只是当前不生效。
+			// 把它们并进透传列会让一条靠网关垫着的路径看起来像是原生直通。
+			emulate := fmt.Sprintf("%d", p.Emulate+p.EmulateOff)
+			if p.EmulateOff > 0 {
+				emulate += fmt.Sprintf("（%d 未开启）", p.EmulateOff)
+			}
+
+			fmt.Fprintf(b, "| `%s` | `%s` | %s | %s | %d | %s | %d | %d | %d | %.3f | %s |\n",
+				in, out, status, fast,
+				p.Passthrough, emulate, p.Degrade, p.Reject, p.NotApplicable,
+				p.DesignScore(), available)
 		}
 	}
 	b.WriteString("\n")
 }
 
-// Stats 汇总各处置的格子数，用于快速判断某条路径的「有损程度」。
+// docOrder 给出文档中的路径排列顺序。
 //
-// NotApplicable 不在返回值里——它衡量的是入站协议的表达力，不是这条路径的
-// 得失。要看它请用 Preservation()。
-func (r *Route) Stats() (pass, degrade, reject int) {
-	for _, rule := range r.rules {
-		switch rule.Disposition {
-		case Passthrough, Emulate:
-			pass++
-		case Degrade:
-			degrade++
-		case Reject:
-			reject++
+// 不能直接用 RankOutbound——它只返回已实现的路径，而文档要把规划中的也列出来。
+// 已实现的排前面，其余按选路偏好序。
+func (m *Matrix) docOrder(in Protocol, candidates []Provider) []Provider {
+	ranked := m.RankOutbound(in, candidates)
+	seen := map[Provider]bool{}
+	for _, p := range ranked {
+		seen[p] = true
+	}
+
+	rest := make([]Provider, 0, len(candidates))
+	for _, c := range candidates {
+		if !seen[c] {
+			rest = append(rest, c)
 		}
 	}
-	return
+	sort.Slice(rest, func(i, j int) bool {
+		ri, rj := preferenceRank(rest[i]), preferenceRank(rest[j])
+		if ri != rj {
+			return ri < rj
+		}
+		return rest[i] < rest[j]
+	})
+	return append(ranked, rest...)
+}
+
+// FixtureDir 返回一条路径的 fixture 目录约定路径（相对仓库根）。
+//
+// 转正门槛靠它落地：一条路径要标记为已实现，这个目录下必须有测试用例
+// （见 ADR-0001）。
+func FixtureDir(in Protocol, out Provider) string {
+	return "testdata/routes/" + string(in) + "__" + string(out)
 }

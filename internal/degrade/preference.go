@@ -79,12 +79,37 @@ func preferenceRank(p Provider) int {
 	return len(OutboundPreference)
 }
 
+// FeatureConversationStore 是会话存储的功能开关名。
+//
+// 默认关闭：内存态会话在多副本部署下是错的，而这是个开源项目，用户很可能
+// 那样部署，然后撞上「会话时有时无」这类最难查的 bug。
+const FeatureConversationStore = "convstore"
+
+// Availability 是部署侧的能力开关配置。
+type Availability map[string]bool
+
+// DefaultAvailability 返回默认配置：模拟类能力一律关闭。
+func DefaultAvailability() Availability {
+	return Availability{FeatureConversationStore: false}
+}
+
+// Enabled 报告某个开关是否开启。空开关名视为常开（无需开关的能力）。
+func (a Availability) Enabled(feature string) bool {
+	if feature == "" {
+		return true
+	}
+	return a[feature]
+}
+
 // Preservation 是一条路径的原生能力保留度。
 type Preservation struct {
 	Passthrough int
 	Emulate     int
 	Degrade     int
 	Reject      int
+
+	// EmulateOff 是被运维关掉的模拟能力数，已从 Emulate 中扣除。
+	EmulateOff int
 
 	// NotApplicable 是入站协议压根表达不出来的能力数。
 	//
@@ -93,31 +118,51 @@ type Preservation struct {
 	NotApplicable int
 }
 
-// Score 把保留度压成一个可比较的数值。
+// denominator 是可表达能力总数，即这条路径真正需要负责的范围。
+func (p Preservation) denominator() int {
+	return p.Passthrough + p.Emulate + p.EmulateOff + p.Degrade + p.Reject
+}
+
+// DesignScore 是**设计目标**保留度：假定全部实现、全部开关开启。
 //
-// 分母只算入站协议**表达得出来**的能力：客户端发不出来的东西，这条路径没有
-// 义务为它负责。
+// 它回答「这条路最终能做到什么」，供文档读者与偏好序设计对账使用。
+// 不可用于选路——按它选路会挑中一条尚未实现的路径（见 ADR-0002）。
+func (p Preservation) DesignScore() float64 {
+	total := p.denominator()
+	if total == 0 {
+		return 0
+	}
+	pass := p.Passthrough + p.Emulate + p.EmulateOff
+	return (float64(pass) + 0.5*float64(p.Degrade)) / float64(total)
+}
+
+// AvailableScore 是**当前可用**保留度：被关掉的模拟能力不计分。
 //
-// 透传与网关模拟计满分（客户端拿到的能力是完整的），降级计半分，拒绝计零分。
-// 降级不是零分是因为请求仍然成功，只是丢了部分语义——把它和「直接失败」等同
-// 看待，会让选路偏向一条谁都用不了的路径。
-func (p Preservation) Score() float64 {
-	total := p.Passthrough + p.Emulate + p.Degrade + p.Reject
+// 它回答「此刻真的能用到什么」，是选路的唯一依据。
+func (p Preservation) AvailableScore() float64 {
+	total := p.denominator()
 	if total == 0 {
 		return 0
 	}
 	return (float64(p.Passthrough+p.Emulate) + 0.5*float64(p.Degrade)) / float64(total)
 }
 
-// Preservation 报告这条路径保留了多少原生能力。
-func (r *Route) Preservation() Preservation {
+// Gated 报告这条路径是否存在被开关影响的能力——即两列分数是否会不同。
+func (p Preservation) Gated() bool { return p.EmulateOff > 0 }
+
+// Preservation 报告这条路径保留了多少原生能力，按矩阵当前的可用性配置计算。
+func (r *Route) Preservation(avail Availability) Preservation {
 	var p Preservation
 	for _, rule := range r.rules {
 		switch rule.Disposition {
 		case Passthrough:
 			p.Passthrough++
 		case Emulate:
-			p.Emulate++
+			if avail.Enabled(rule.RequiresFeature) {
+				p.Emulate++
+			} else {
+				p.EmulateOff++
+			}
 		case Degrade:
 			p.Degrade++
 		case Reject:
@@ -135,11 +180,27 @@ func (r *Route) Preservation() Preservation {
 // 不得退回到某个「默认」Provider。悄悄选一条未经声明的路径正是降级矩阵要
 // 防的事。
 func (m *Matrix) RankOutbound(in Protocol, candidates []Provider) []Provider {
+	// 只在**已实现**的路径里选。把 PLANNED 路径纳入候选，等于让选路挑中
+	// 一条注定失败的路——排序做得再对也没有意义。
+	return m.rank(in, candidates, true)
+}
+
+// RankDesign 按同样的偏好序排列，但**不过滤**未实现的路径。
+//
+// 供两处使用：生成文档（规划中的路径也要列出来），以及对账偏好序的设计是否
+// 自洽（见 ADR-0002 的「设计目标」列）。绝不可用于选路。
+func (m *Matrix) RankDesign(in Protocol, candidates []Provider) []Provider {
+	return m.rank(in, candidates, false)
+}
+
+func (m *Matrix) rank(in Protocol, candidates []Provider, onlyImplemented bool) []Provider {
 	out := make([]Provider, 0, len(candidates))
 	for _, c := range candidates {
-		if _, ok := m.Route(in, c); ok {
-			out = append(out, c)
+		r, ok := m.Route(in, c)
+		if !ok || (onlyImplemented && !r.Implemented) {
+			continue
 		}
+		out = append(out, c)
 	}
 	// 同源快通道永远排在最前，然后才轮到全局偏好序。
 	//
@@ -175,6 +236,13 @@ func (m *Matrix) RankOutbound(in Protocol, candidates []Provider) []Provider {
 func (m *Matrix) BestOutbound(in Protocol, candidates []Provider, caps []canonical.Capability) (Provider, Verdict, error) {
 	ranked := m.RankOutbound(in, candidates)
 	if len(ranked) == 0 {
+		// 区分「没注册」与「注册了但还没实现」：前者要改配置，后者只要等。
+		for _, c := range candidates {
+			if _, ok := m.Route(in, c); ok {
+				return "", Verdict{}, canonical.Newf(canonical.ClassNotImplemented,
+					"入站协议 %s 的候选出站路径均已设计但尚未实现", in)
+			}
+		}
 		return "", Verdict{}, canonical.Newf(canonical.ClassUnsupported,
 			"入站协议 %s 没有任何已注册的出站路径", in)
 	}

@@ -28,6 +28,13 @@ const (
 	ClassBadRequest          ErrorClass = "bad_request"
 	ClassUnsupported         ErrorClass = "unsupported"
 	ClassInternal            ErrorClass = "internal"
+
+	// ClassNotImplemented 表示这条路径已在降级矩阵中设计好，但实现尚未落地。
+	//
+	// 与 ClassUnsupported 分开：后者是「这条路永远承载不了该能力」，前者是
+	// 「这条路会有，只是还没建好」。对客户端而言前者要改请求，后者只要等——
+	// 混成一个错误码，用户会去改一个本来就对的请求。
+	ClassNotImplemented ErrorClass = "not_implemented"
 )
 
 // Error 是网关的统一错误类型。
@@ -96,6 +103,8 @@ func (c ErrorClass) HTTPStatus() int {
 		return http.StatusUnprocessableEntity
 	case ClassUpstreamUnavailable:
 		return http.StatusBadGateway
+	case ClassNotImplemented:
+		return http.StatusNotImplemented
 	default:
 		return http.StatusInternalServerError
 	}

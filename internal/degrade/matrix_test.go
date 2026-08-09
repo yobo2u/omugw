@@ -3,8 +3,10 @@ package degrade
 import (
 	"errors"
 	"flag"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -30,11 +32,11 @@ func TestPhase1IsComplete(t *testing.T) {
 	}
 
 	for _, r := range m.Routes() {
-		p := r.Preservation()
+		p := r.Preservation(m.Availability())
 
 		// 每条路径必须为入站协议**表达得出来**的每一项能力表态。
 		// 表达不出来的那些由 Expressibility 自动补成 N/A，不该由路径负责。
-		declared := p.Passthrough + p.Emulate + p.Degrade + p.Reject
+		declared := p.Passthrough + p.Emulate + p.EmulateOff + p.Degrade + p.Reject
 		if want := len(ExpressibleSet(r.In)); declared != want {
 			t.Errorf("路径 %s -> %s 为 %d 项可表达能力表态，应为 %d 项",
 				r.In, r.Out, declared, want)
@@ -45,9 +47,157 @@ func TestPhase1IsComplete(t *testing.T) {
 				r.In, r.Out, total, len(canonical.AllCapabilities()))
 		}
 
-		t.Logf("%-22s -> %-24s pass=%2d emulate=%d degrade=%d reject=%d n/a=%2d  保留度=%.3f",
-			r.In, r.Out, p.Passthrough, p.Emulate, p.Degrade, p.Reject, p.NotApplicable, p.Score())
+		status := "规划中"
+		if r.Implemented {
+			status = "已实现"
+		}
+		t.Logf("%-22s -> %-24s %s  pass=%2d emu=%d(off %d) deg=%d rej=%d n/a=%2d  设计=%.3f 可用=%.3f",
+			r.In, r.Out, status,
+			p.Passthrough, p.Emulate, p.EmulateOff, p.Degrade, p.Reject, p.NotApplicable,
+			p.DesignScore(), p.AvailableScore())
 	}
+}
+
+// implementedMatrix 返回一份全部路径都标记为已实现的 Phase1 矩阵。
+//
+// 用于测试 Check 的能力裁决语义——那部分逻辑与「路径实现了没有」正交，
+// 不该因为 M0 阶段一条都没实现就测不了。PLANNED 本身的行为由
+// TestPlannedRouteIsRejectedAtRuntime 单独覆盖。
+func implementedMatrix(t *testing.T, avail Availability) *Matrix {
+	t.Helper()
+	m, err := Phase1()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range m.Routes() {
+		r.MarkImplemented()
+	}
+	if avail != nil {
+		m.WithAvailability(avail)
+	}
+	return m
+}
+
+// TestAllRoutesStartPlanned 固化 M0 的诚实现状：声明层建好了，实现层还没有。
+//
+// 这条测试会在 M1 转正第一条路径时失败——那时把期望值改掉即可。让它失败是
+// 刻意的：转正是件需要有人明确点头的事，不该悄悄发生。
+func TestAllRoutesStartPlanned(t *testing.T) {
+	m, err := Phase1()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range m.Routes() {
+		if r.Implemented {
+			t.Errorf("路径 %s -> %s 已标记为实现，但 M0 阶段不应有任何 codec；"+
+				"若这是 M1 的转正，请同步更新本测试", r.In, r.Out)
+		}
+	}
+}
+
+// TestPlannedRouteIsRejectedAtRuntime 固化「未实现的路径必须明确报错」。
+//
+// 501 而不是 422：前者告诉客户端「等」，后者告诉客户端「改请求」。
+// 混成一个错误码，用户会去改一个本来就对的请求。
+func TestPlannedRouteIsRejectedAtRuntime(t *testing.T) {
+	m, err := Phase1()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = m.Check(ProtoOpenAIResponses, ProviderOpenAICompat,
+		[]canonical.Capability{canonical.CapTextGeneration})
+	if err == nil {
+		t.Fatal("未实现的路径必须报错，不得静默放行到一个空壳")
+	}
+
+	var cerr *canonical.Error
+	if !errors.As(err, &cerr) {
+		t.Fatalf("应返回 *canonical.Error，实际为 %T", err)
+	}
+	if cerr.Class != canonical.ClassNotImplemented {
+		t.Errorf("错误分类应为 not_implemented，实际为 %q", cerr.Class)
+	}
+	if cerr.HTTPStatus() != 501 {
+		t.Errorf("应映射到 501，实际为 %d", cerr.HTTPStatus())
+	}
+}
+
+// TestImplementedRoutesHaveFixtures 是 ADR-0001 的转正门槛。
+//
+// 一条路径标记为已实现，就必须有覆盖它的 fixture；每个 DEGRADE / EMULATE
+// 格子还要有专门的 fixture——有损转换正是 bug 藏身之处。
+func TestImplementedRoutesHaveFixtures(t *testing.T) {
+	m, err := Phase1()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range m.Routes() {
+		if !r.Implemented {
+			continue
+		}
+		if err := checkRouteFixtures(r, "../.."); err != nil {
+			t.Errorf("路径 %s -> %s 已转正但缺少证据: %v", r.In, r.Out, err)
+		}
+	}
+}
+
+// TestFixtureGateActuallyBites 验证上面那道门槛不是摆设。
+//
+// 没有这条测试，TestImplementedRoutesHaveFixtures 在 M0 阶段（零条已实现）
+// 会空转通过——而「空转通过的检查」正是这轮排查要消灭的东西。
+func TestFixtureGateActuallyBites(t *testing.T) {
+	fake := NewRoute(ProtoOpenAIChat, ProviderOpenAICompat).
+		MarkImplemented().
+		Pass(ExpressibleSet(ProtoOpenAIChat)...)
+	built, err := fake.Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := checkRouteFixtures(built, "../.."); err == nil {
+		t.Fatal("一条没有任何 fixture 的路径被标记为已实现，门槛却放行了")
+	}
+}
+
+// checkRouteFixtures 校验一条已实现路径的 fixture 证据是否齐备。
+func checkRouteFixtures(r *Route, repoRoot string) error {
+	dir := filepath.Join(repoRoot, FixtureDir(r.In, r.Out))
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return fmt.Errorf("缺少 fixture 目录 %s", FixtureDir(r.In, r.Out))
+	}
+
+	present := map[string]bool{}
+	var count int
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".json") {
+			continue
+		}
+		count++
+		present[strings.TrimSuffix(name, ".json")] = true
+	}
+	if count == 0 {
+		return fmt.Errorf("fixture 目录 %s 中没有任何用例", FixtureDir(r.In, r.Out))
+	}
+
+	// 有损格子要单独举证。文件名即能力名，例如 structured_output.json。
+	var missing []string
+	for c, rule := range r.rules {
+		if rule.Disposition != Degrade && rule.Disposition != Emulate {
+			continue
+		}
+		if !present[string(c)] {
+			missing = append(missing, string(c))
+		}
+	}
+	if len(missing) > 0 {
+		sort.Strings(missing)
+		return fmt.Errorf("以下有损能力缺少专门的 fixture: %s", strings.Join(missing, ", "))
+	}
+	return nil
 }
 
 // TestExpressibilityDeclarationsAreComplete 保证每个入站协议都对全部能力表态：
@@ -176,10 +326,8 @@ func TestDuplicateDeclarationFailsBuild(t *testing.T) {
 }
 
 func TestCheckRejectsUnsupportedCapability(t *testing.T) {
-	m, err := Phase1()
-	if err != nil {
-		t.Fatal(err)
-	}
+	m := implementedMatrix(t, nil)
+	var err error
 
 	// Anthropic 不接受音频输入，带音频的请求必须被拒绝而不是静默丢掉音频。
 	_, err = m.Check(ProtoOpenAIChat, ProviderAnthropicMessages,
@@ -210,10 +358,8 @@ func TestCheckRejectsUnsupportedCapability(t *testing.T) {
 // unsupported，是为了让这类 bug 出现在网关的错误率里，而不是被记成
 // 「客户端发了不支持的请求」。
 func TestCheckFlagsDecoderBugOnInexpressibleCapability(t *testing.T) {
-	m, err := Phase1()
-	if err != nil {
-		t.Fatal(err)
-	}
+	m := implementedMatrix(t, nil)
+	var err error
 
 	_, err = m.Check(ProtoOpenAIChat, ProviderOpenAICompat,
 		[]canonical.Capability{canonical.CapReasoningSignature})
@@ -231,10 +377,7 @@ func TestCheckFlagsDecoderBugOnInexpressibleCapability(t *testing.T) {
 }
 
 func TestCheckReportsDegradation(t *testing.T) {
-	m, err := Phase1()
-	if err != nil {
-		t.Fatal(err)
-	}
+	m := implementedMatrix(t, nil)
 
 	// Anthropic 没有 strict json_schema 校验，结构化输出降级为提示词约束。
 	v, err := m.Check(ProtoOpenAIChat, ProviderAnthropicMessages,
@@ -259,10 +402,8 @@ func TestCheckReportsDegradation(t *testing.T) {
 // 因而带着网关的可用性边界（内存态、重启丢失、多副本不共享）。
 // 客户端有权在做重试决策前知道这件事。
 func TestCheckReportsEmulation(t *testing.T) {
-	m, err := Phase1()
-	if err != nil {
-		t.Fatal(err)
-	}
+	// 模拟能力默认关闭，这条测试要验的是开启后的行为。
+	m := implementedMatrix(t, Availability{FeatureConversationStore: true})
 
 	v, err := m.Check(ProtoOpenAIResponses, ProviderDashScopeNative,
 		[]canonical.Capability{canonical.CapTextGeneration, canonical.CapStatefulConversation})
@@ -279,10 +420,8 @@ func TestCheckReportsEmulation(t *testing.T) {
 
 // TestCheckFailsClosedOnUnknownRoute 固化「未注册按拒绝处理」这条约束。
 func TestCheckFailsClosedOnUnknownRoute(t *testing.T) {
-	m, err := Phase1()
-	if err != nil {
-		t.Fatal(err)
-	}
+	m := implementedMatrix(t, nil)
+	var err error
 
 	_, err = m.Check(ProtoOpenAIImages, ProviderAnthropicMessages,
 		[]canonical.Capability{canonical.CapTextGeneration})

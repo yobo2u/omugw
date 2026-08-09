@@ -88,12 +88,13 @@ const (
 type Rule struct {
 	Disposition Disposition
 	Note        string
-}
 
-type cell struct {
-	in  Protocol
-	out Provider
-	cap canonical.Capability
+	// RequiresFeature 是这项能力依赖的运行时开关名，仅 Emulate 使用。
+	//
+	// 网关垫出来的能力不一定默认开着——会话存储在多副本部署下是错的，
+	// 所以默认关闭。这个字段让「当前可用保留度」能算出配置生效后的真实结果，
+	// 而不是假装所有能力都在线。
+	RequiresFeature string
 }
 
 // Route 是一条 (入站协议 → 出站 Provider) 转换路径。
@@ -104,6 +105,13 @@ type Route struct {
 	// Homogeneous 标记同源快通道（原则 2.2）。同源路径可以字节级透传，
 	// 不进 Canonical——这既保住了 TTFT，也绕开了绝大多数转换 bug。
 	Homogeneous bool
+
+	// Implemented 标记这条路径背后真的有 codec，而不只是一纸声明。
+	//
+	// 默认 false。M0 结束时矩阵登记了 14 条路径的全部处置，而 internal/ 下
+	// 一个 codec 都没有——矩阵在为不存在的实现背书，且没有任何机制能发现。
+	// 转正的门槛是端到端 fixture 通过（见 ADR-0001），不是有人认为写完了。
+	Implemented bool
 
 	rules map[canonical.Capability]Rule
 	errs  []string
@@ -152,11 +160,24 @@ func (r *Route) Reject(note string, caps ...canonical.Capability) *Route {
 	return r
 }
 
-// Emulate 声明若干项能力由网关自行实现，note 必须写明运维代价。
-func (r *Route) Emulate(note string, caps ...canonical.Capability) *Route {
+// Emulate 声明若干项能力由网关自行实现。
+//
+// feature 是它依赖的运行时开关名；note 必须写明运维代价。两者都是必填——
+// 一个没有开关的模拟能力意味着运维无法拒绝它带来的风险，一个没有说明的模拟
+// 能力意味着运维不知道风险是什么。
+func (r *Route) Emulate(feature, note string, caps ...canonical.Capability) *Route {
 	for _, c := range caps {
-		r.set(c, Rule{Disposition: Emulate, Note: note})
+		r.set(c, Rule{Disposition: Emulate, Note: note, RequiresFeature: feature})
 	}
+	return r
+}
+
+// MarkImplemented 把路径转正。
+//
+// 只应在该路径的端到端 fixture 已经存在并通过之后调用；
+// TestImplementedRoutesHaveFixtures 会强制这一点。
+func (r *Route) MarkImplemented() *Route {
+	r.Implemented = true
 	return r
 }
 
@@ -259,6 +280,11 @@ func (r *Route) Build() (*Route, error) {
 		if rule.Disposition != Passthrough && rule.Note == "" {
 			r.errs = append(r.errs, fmt.Sprintf("capability %q is %s but carries no note", c, rule.Disposition))
 		}
+		// 没有开关的模拟能力意味着运维无法拒绝它带来的风险。
+		if rule.Disposition == Emulate && rule.RequiresFeature == "" {
+			r.errs = append(r.errs,
+				fmt.Sprintf("capability %q is EMULATE but declares no feature gate", c))
+		}
 	}
 	if len(r.errs) > 0 {
 		sort.Strings(r.errs)
@@ -270,10 +296,25 @@ func (r *Route) Build() (*Route, error) {
 // Matrix 是全部路径的集合。
 type Matrix struct {
 	routes map[[2]string]*Route
+	avail  Availability
 }
 
-// NewMatrix 创建空矩阵。
-func NewMatrix() *Matrix { return &Matrix{routes: map[[2]string]*Route{}} }
+// NewMatrix 创建空矩阵，采用默认可用性配置。
+func NewMatrix() *Matrix {
+	return &Matrix{routes: map[[2]string]*Route{}, avail: DefaultAvailability()}
+}
+
+// WithAvailability 应用部署侧的能力开关配置，返回自身以便链式调用。
+//
+// 可用性挂在矩阵上而不是每次 Check 传参：它是部署期常量，而 Check 在每个请求
+// 上都会跑。把一个不变的东西反复传进热路径，只会让调用点变吵。
+func (m *Matrix) WithAvailability(a Availability) *Matrix {
+	m.avail = a
+	return m
+}
+
+// Availability 返回当前生效的能力开关配置。
+func (m *Matrix) Availability() Availability { return m.avail }
 
 // Add 注册一条已 Build 的路径。
 func (m *Matrix) Add(r *Route, err error) error {
@@ -350,6 +391,13 @@ func (m *Matrix) Check(in Protocol, out Provider, caps []canonical.Capability) (
 			"未注册的转换路径 %s -> %s", in, out)
 	}
 
+	// 已设计但未实现的路径必须明确报错。放行会让请求走进一个空壳，
+	// 客户端拿到的是一个语焉不详的 5xx，而真相是「这条路还没建」。
+	if !r.Implemented {
+		return Verdict{}, canonical.Newf(canonical.ClassNotImplemented,
+			"转换路径 %s -> %s 已在降级矩阵中设计，但实现尚未落地", in, out)
+	}
+
 	var v Verdict
 	for _, c := range caps {
 		rule, ok := r.rules[c]
@@ -370,6 +418,14 @@ func (m *Matrix) Check(in Protocol, out Provider, caps []canonical.Capability) (
 		case Degrade:
 			v.Degraded = append(v.Degraded, CapabilityNote{Capability: c, Note: rule.Note})
 		case Emulate:
+			// 模拟能力可以被运维关掉。关掉时它的行为与 Reject 一致——
+			// 但错误消息必须说清是「开关没开」而不是「这条路不支持」，
+			// 否则运维会去查一个根本没问题的转换路径。
+			if !m.avail.Enabled(rule.RequiresFeature) {
+				return Verdict{}, canonical.Newf(canonical.ClassUnsupported,
+					"能力 %q 在路径 %s -> %s 上由网关模拟提供，但功能开关 %q 未开启：%s",
+					c, in, out, rule.RequiresFeature, rule.Note)
+			}
 			v.Emulated = append(v.Emulated, CapabilityNote{Capability: c, Note: rule.Note})
 		}
 	}

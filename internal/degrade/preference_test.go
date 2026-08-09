@@ -26,16 +26,20 @@ func TestPreferenceMatchesPreservation(t *testing.T) {
 		byInbound[r.In] = append(byInbound[r.In], r.Out)
 	}
 
+	// 用 RankDesign 而不是 RankOutbound：这条测试验的是**偏好序的设计**是否
+	// 自洽，与路径实现了没有无关。用 RankOutbound 会在 M0 阶段（零条已实现）
+	// 退化成空转——而空转通过的检查正是这轮排查要消灭的东西。
 	for in, candidates := range byInbound {
-		ranked := m.RankOutbound(in, candidates)
+		ranked := m.RankDesign(in, candidates)
 
 		for i := 1; i < len(ranked); i++ {
 			prev, _ := m.Route(in, ranked[i-1])
 			cur, _ := m.Route(in, ranked[i])
 
-			ps, cs := prev.Preservation().Score(), cur.Preservation().Score()
+			ps := prev.Preservation(m.Availability()).DesignScore()
+			cs := cur.Preservation(m.Availability()).DesignScore()
 			if ps < cs {
-				t.Errorf("入站 %s：偏好序把 %s（保留度 %.3f）排在 %s（保留度 %.3f）之前，"+
+				t.Errorf("入站 %s：偏好序把 %s（设计保留度 %.3f）排在 %s（%.3f）之前，"+
 					"但后者保留的原生能力更多。要么 OutboundPreference 写错了，"+
 					"要么矩阵声明写错了",
 					in, ranked[i-1], ps, ranked[i], cs)
@@ -43,9 +47,90 @@ func TestPreferenceMatchesPreservation(t *testing.T) {
 		}
 
 		if len(ranked) > 0 {
-			t.Logf("%-20s 首选 %-24s 保留度 %.3f", in, ranked[0],
-				mustRoute(t, m, in, ranked[0]).Preservation().Score())
+			t.Logf("%-20s 首选 %-24s 设计保留度 %.3f", in, ranked[0],
+				mustRoute(t, m, in, ranked[0]).Preservation(m.Availability()).DesignScore())
 		}
+	}
+}
+
+// TestRuntimeRankingUsesAvailableScore 验证选路那一列的对账。
+//
+// 与上面那条互补：这条验的是「运行时选路是否正确」，因此必须用已实现的路径
+// 与当前可用分数（见 ADR-0002）。
+func TestRuntimeRankingUsesAvailableScore(t *testing.T) {
+	m := implementedMatrix(t, nil)
+
+	byInbound := map[Protocol][]Provider{}
+	for _, r := range m.Routes() {
+		byInbound[r.In] = append(byInbound[r.In], r.Out)
+	}
+
+	for in, candidates := range byInbound {
+		ranked := m.RankOutbound(in, candidates)
+		for i := 1; i < len(ranked); i++ {
+			prev, _ := m.Route(in, ranked[i-1])
+			cur, _ := m.Route(in, ranked[i])
+
+			ps := prev.Preservation(m.Availability()).AvailableScore()
+			cs := cur.Preservation(m.Availability()).AvailableScore()
+			if ps < cs {
+				t.Errorf("入站 %s：运行时选路把 %s（可用保留度 %.3f）排在 %s（%.3f）之前",
+					in, ranked[i-1], ps, ranked[i], cs)
+			}
+		}
+	}
+}
+
+// TestPlannedRoutesAreNotRoutable 固化「选路只走已实现的路径」。
+func TestPlannedRoutesAreNotRoutable(t *testing.T) {
+	m, err := Phase1()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ranked := m.RankOutbound(ProtoOpenAIResponses, []Provider{
+		ProviderOpenAICompat, ProviderDashScopeCompatible,
+	})
+	if len(ranked) != 0 {
+		t.Errorf("M0 阶段没有任何已实现路径，选路结果应为空，实际 %v", ranked)
+	}
+
+	// 但设计视角下它们仍然存在，否则文档就没得写了。
+	if len(m.RankDesign(ProtoOpenAIResponses, []Provider{
+		ProviderOpenAICompat, ProviderDashScopeCompatible,
+	})) != 2 {
+		t.Error("RankDesign 不应过滤未实现的路径")
+	}
+}
+
+// TestGatedEmulationSplitsTheTwoColumns 固化两列分数的差异来源。
+//
+// convstore 默认关闭，因此带 EMULATE 格子的路径在两列下取值不同——
+// 这正是 ADR-0002 里「0.929（开启 convstore 后 1.000）」那种写法的由来。
+func TestGatedEmulationSplitsTheTwoColumns(t *testing.T) {
+	m := implementedMatrix(t, nil) // 默认可用性：convstore 关闭
+
+	r := mustRoute(t, m, ProtoOpenAIResponses, ProviderOpenAICompat)
+	p := r.Preservation(m.Availability())
+
+	if !p.Gated() {
+		t.Fatal("该路径有 EMULATE 格子且开关默认关闭，两列分数应当不同")
+	}
+	if p.DesignScore() <= p.AvailableScore() {
+		t.Errorf("设计目标应严格高于当前可用，实际 设计=%.3f 可用=%.3f",
+			p.DesignScore(), p.AvailableScore())
+	}
+
+	// 开启之后两列应当合一。
+	on := implementedMatrix(t, Availability{FeatureConversationStore: true})
+	po := mustRoute(t, on, ProtoOpenAIResponses, ProviderOpenAICompat).
+		Preservation(on.Availability())
+	if po.Gated() {
+		t.Error("开关开启后不应再有被关掉的模拟能力")
+	}
+	if po.AvailableScore() != po.DesignScore() {
+		t.Errorf("开关全开时两列应当一致，实际 设计=%.3f 可用=%.3f",
+			po.DesignScore(), po.AvailableScore())
 	}
 }
 
@@ -125,10 +210,7 @@ func TestUnimplementedFamiliesAreDeclared(t *testing.T) {
 // TestOutboundPreferenceFavorsPassthrough 固化「出站优先 OpenAI 兼容，
 // 次选 DashScope Compatible 穿透」。两者都是字节透传，语义零损失。
 func TestOutboundPreferenceFavorsPassthrough(t *testing.T) {
-	m, err := Phase1()
-	if err != nil {
-		t.Fatal(err)
-	}
+	m := implementedMatrix(t, nil)
 
 	// 故意打乱输入顺序，验证排序真的生效而不是碰巧。
 	got := m.RankOutbound(ProtoOpenAIResponses, []Provider{
@@ -157,10 +239,7 @@ func TestOutboundPreferenceFavorsPassthrough(t *testing.T) {
 // TestRankOutboundDropsUnregistered 保证没有注册路径的候选被剔除，
 // 而不是排在末尾等着被选中。
 func TestRankOutboundDropsUnregistered(t *testing.T) {
-	m, err := Phase1()
-	if err != nil {
-		t.Fatal(err)
-	}
+	m := implementedMatrix(t, nil)
 
 	got := m.RankOutbound(ProtoDashScopeNative, []Provider{
 		ProviderAnthropicMessages, // 未注册
@@ -190,6 +269,7 @@ func TestBestOutboundSkipsRejectingRoute(t *testing.T) {
 
 	// 偏好序里排第一，但拒绝视觉输入。
 	if err := m.Add(NewRoute(ProtoOpenAIChat, ProviderOpenAICompat).
+		MarkImplemented().
 		Pass(others...).
 		Reject("测试用：这条路径不支持视觉输入", canonical.CapVisionInput).
 		Build()); err != nil {
@@ -197,6 +277,7 @@ func TestBestOutboundSkipsRejectingRoute(t *testing.T) {
 	}
 	// 排第二，但真能跑通。
 	if err := m.Add(NewRoute(ProtoOpenAIChat, ProviderDashScopeCompatible).
+		MarkImplemented().
 		Pass(ExpressibleSet(ProtoOpenAIChat)...).
 		Build()); err != nil {
 		t.Fatal(err)
@@ -219,10 +300,7 @@ func TestBestOutboundSkipsRejectingRoute(t *testing.T) {
 // 而 openai.realtime 要反向重采样并丢掉 input_image_buffer——可在全局偏好序里
 // openai.realtime 排得更靠前。不把同源提到最前，选路就会主动挑一条更差的路。
 func TestBestOutboundPrefersHomogeneous(t *testing.T) {
-	m, err := Phase1()
-	if err != nil {
-		t.Fatal(err)
-	}
+	m := implementedMatrix(t, nil)
 
 	ranked := m.RankOutbound(ProtoDashScopeRealtime,
 		[]Provider{ProviderOpenAIRealtime, ProviderDashScopeWSRealtime})
@@ -232,7 +310,8 @@ func TestBestOutboundPrefersHomogeneous(t *testing.T) {
 
 	homo := mustRoute(t, m, ProtoDashScopeRealtime, ProviderDashScopeWSRealtime)
 	hetero := mustRoute(t, m, ProtoDashScopeRealtime, ProviderOpenAIRealtime)
-	if homo.Preservation().Score() <= hetero.Preservation().Score() {
+	if homo.Preservation(m.Availability()).DesignScore() <=
+		hetero.Preservation(m.Availability()).DesignScore() {
 		t.Error("同源直通的保留度应当严格高于异构转换，否则这条偏好没有依据")
 	}
 }
@@ -240,10 +319,8 @@ func TestBestOutboundPrefersHomogeneous(t *testing.T) {
 // TestBestOutboundReportsWhyEverythingFailed 保证全部候选都跑不通时，
 // 返回的是「缺什么」而不是笼统的「无可用 Provider」。
 func TestBestOutboundReportsWhyEverythingFailed(t *testing.T) {
-	m, err := Phase1()
-	if err != nil {
-		t.Fatal(err)
-	}
+	m := implementedMatrix(t, nil)
+	var err error
 
 	_, _, err = m.BestOutbound(ProtoOpenAIChat,
 		[]Provider{ProviderOpenAICompat, ProviderAnthropicMessages},
@@ -257,10 +334,8 @@ func TestBestOutboundReportsWhyEverythingFailed(t *testing.T) {
 }
 
 func TestBestOutboundFailsWhenNothingRegistered(t *testing.T) {
-	m, err := Phase1()
-	if err != nil {
-		t.Fatal(err)
-	}
+	m := implementedMatrix(t, nil)
+	var err error
 
 	_, _, err = m.BestOutbound(ProtoOpenAIImages,
 		[]Provider{ProviderOpenAICompat},
@@ -303,8 +378,8 @@ func TestDerivedRouteStaysComplete(t *testing.T) {
 	if !ok {
 		t.Fatal("openai.responses -> openai.compat 未注册")
 	}
-	p := r.Preservation()
-	declared := p.Passthrough + p.Emulate + p.Degrade + p.Reject
+	p := r.Preservation(m.Availability())
+	declared := p.Passthrough + p.Emulate + p.EmulateOff + p.Degrade + p.Reject
 	if want := len(ExpressibleSet(ProtoOpenAIResponses)); declared != want {
 		t.Errorf("派生路径为 %d 项可表达能力表态，应为 %d 项", declared, want)
 	}
@@ -364,18 +439,19 @@ func TestDashScopeNativeInboundPreservesMost(t *testing.T) {
 	if !ok {
 		t.Fatal("dashscope.native 入站路径未注册")
 	}
-	best := native.Preservation().Score()
+	best := native.Preservation(m.Availability()).DesignScore()
 
 	for _, r := range m.Routes() {
 		if r.In == ProtoDashScopeNative {
 			continue
 		}
-		if s := r.Preservation().Score(); s > best {
+		if s := r.Preservation(m.Availability()).DesignScore(); s > best {
 			t.Errorf("路径 %s -> %s 的保留度 %.3f 高于 DashScope 原生直通的 %.3f，"+
 				"原生直通本应是上限", r.In, r.Out, s, best)
 		}
 	}
-	t.Logf("DashScope 原生直通保留度 %.3f（%d 项透传）", best, native.Preservation().Passthrough)
+	t.Logf("DashScope 原生直通保留度 %.3f（%d 项透传）", best,
+		native.Preservation(m.Availability()).Passthrough)
 }
 
 func mustRoute(t *testing.T, m *Matrix, in Protocol, out Provider) *Route {

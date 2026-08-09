@@ -34,22 +34,24 @@
 
 **同源快通道永远排在最前，然后才轮到全局偏好序。** 固定的全局顺序表达不了「同源优先」，而后者依赖入站协议是谁——对 `dashscope.realtime` 入站，DashScope 侧直通是零损失的，可在全局序里 `openai.realtime` 排得更靠前。
 
-| 入站 | 出站 | 快通道 | 透传 | 模拟 | 降级 | 拒绝 | N/A | 保留度 |
-|---|---|---|---:|---:|---:|---:|---:|---:|
-| `dashscope.inference` | `dashscope.ws.inference` | ✅ | 6 | 0 | 0 | 0 | 21 | 1.000 |
-| `dashscope.native` | `dashscope.native` | ✅ | 18 | 0 | 0 | 0 | 9 | 1.000 |
-| `dashscope.realtime` | `dashscope.ws.realtime` | ✅ | 15 | 0 | 0 | 0 | 12 | 1.000 |
-| `dashscope.realtime` | `openai.realtime` |  | 10 | 0 | 2 | 3 | 12 | 0.733 |
-| `openai.chat` | `openai.compat` | ✅ | 11 | 0 | 0 | 0 | 16 | 1.000 |
-| `openai.chat` | `dashscope.compatible` |  | 7 | 0 | 2 | 2 | 16 | 0.727 |
-| `openai.chat` | `dashscope.native` |  | 6 | 0 | 3 | 2 | 16 | 0.682 |
-| `openai.chat` | `anthropic.messages` |  | 6 | 0 | 1 | 4 | 16 | 0.591 |
-| `openai.realtime` | `openai.realtime` | ✅ | 12 | 0 | 0 | 0 | 15 | 1.000 |
-| `openai.realtime` | `dashscope.ws.realtime` | ✅ | 10 | 0 | 2 | 0 | 15 | 0.917 |
-| `openai.responses` | `openai.compat` | ✅ | 13 | 1 | 0 | 0 | 13 | 1.000 |
-| `openai.responses` | `dashscope.compatible` |  | 7 | 1 | 2 | 4 | 13 | 0.643 |
-| `openai.responses` | `dashscope.native` |  | 6 | 1 | 3 | 4 | 13 | 0.607 |
-| `openai.responses` | `anthropic.messages` |  | 6 | 1 | 1 | 6 | 13 | 0.536 |
+保留度分两列（见 ADR-0002）：**设计目标**假定全部实现、全部开关开启，回答「这条路最终能做到什么」；**当前可用**受实现状态与默认配置影响，是选路的唯一依据。尚未实现的路径没有当前可用分数——给一条走不通的路打分，是在请人相信一个还不存在的东西。
+
+| 入站 | 出站 | 状态 | 快通道 | 透传 | 模拟 | 降级 | 拒绝 | N/A | 设计目标 | 当前可用 |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|
+| `dashscope.inference` | `dashscope.ws.inference` | 规划中 | ✅ | 6 | 0 | 0 | 0 | 21 | 1.000 | — |
+| `dashscope.native` | `dashscope.native` | 规划中 | ✅ | 18 | 0 | 0 | 0 | 9 | 1.000 | — |
+| `dashscope.realtime` | `dashscope.ws.realtime` | 规划中 | ✅ | 15 | 0 | 0 | 0 | 12 | 1.000 | — |
+| `dashscope.realtime` | `openai.realtime` | 规划中 |  | 10 | 0 | 2 | 3 | 12 | 0.733 | — |
+| `openai.chat` | `openai.compat` | 规划中 | ✅ | 11 | 0 | 0 | 0 | 16 | 1.000 | — |
+| `openai.chat` | `dashscope.compatible` | 规划中 |  | 7 | 0 | 2 | 2 | 16 | 0.727 | — |
+| `openai.chat` | `dashscope.native` | 规划中 |  | 6 | 0 | 3 | 2 | 16 | 0.682 | — |
+| `openai.chat` | `anthropic.messages` | 规划中 |  | 6 | 0 | 1 | 4 | 16 | 0.591 | — |
+| `openai.realtime` | `openai.realtime` | 规划中 | ✅ | 12 | 0 | 0 | 0 | 15 | 1.000 | — |
+| `openai.realtime` | `dashscope.ws.realtime` | 规划中 | ✅ | 10 | 0 | 2 | 0 | 15 | 0.917 | — |
+| `openai.responses` | `openai.compat` | 规划中 | ✅ | 13 | 1（1 未开启） | 0 | 0 | 13 | 1.000 | — |
+| `openai.responses` | `dashscope.compatible` | 规划中 |  | 7 | 1（1 未开启） | 2 | 4 | 13 | 0.643 | — |
+| `openai.responses` | `dashscope.native` | 规划中 |  | 6 | 1（1 未开启） | 3 | 4 | 13 | 0.607 | — |
+| `openai.responses` | `anthropic.messages` | 规划中 |  | 6 | 1（1 未开启） | 1 | 6 | 13 | 0.536 | — |
 
 ## `dashscope.inference` → `dashscope.ws.inference`
 
@@ -406,7 +408,7 @@
 | `embedding` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 dashscope.native |
 | `rerank` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 dashscope.native |
 | `prompt_cache` | `N/A` | 该协议的缓存由上游自动管理，客户端没有可控的缓存断点字段；显式缓存断点是 Anthropic 特有机制，Phase 2 随 Anthropic 入站一并接入 |
-| `stateful_conversation` | `EMULATE` | 上游无服务端会话，由网关侧 ConversationStore 模拟提供。Phase 1 为内存态：单副本正确，进程重启后历史丢失，多副本部署下会话不共享 |
+| `stateful_conversation` | `EMULATE` | 上游无服务端会话，由网关侧 ConversationStore 模拟提供。Phase 1 为内存态：单副本正确，进程重启后历史丢失，多副本部署下会话不共享。默认关闭，需显式开启 convstore |
 | `realtime_session` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 openai.realtime |
 | `realtime_image_input` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 dashscope.realtime |
 | `realtime_commit_modes` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 dashscope.realtime |
@@ -438,7 +440,7 @@
 | `embedding` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 dashscope.native |
 | `rerank` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 dashscope.native |
 | `prompt_cache` | `N/A` | 该协议的缓存由上游自动管理，客户端没有可控的缓存断点字段；显式缓存断点是 Anthropic 特有机制，Phase 2 随 Anthropic 入站一并接入 |
-| `stateful_conversation` | `EMULATE` | 上游无服务端会话，由网关侧 ConversationStore 模拟提供。Phase 1 为内存态：单副本正确，进程重启后历史丢失，多副本部署下会话不共享 |
+| `stateful_conversation` | `EMULATE` | 上游无服务端会话，由网关侧 ConversationStore 模拟提供。Phase 1 为内存态：单副本正确，进程重启后历史丢失，多副本部署下会话不共享。默认关闭，需显式开启 convstore |
 | `realtime_session` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 openai.realtime |
 | `realtime_image_input` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 dashscope.realtime |
 | `realtime_commit_modes` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 dashscope.realtime |
@@ -470,7 +472,7 @@
 | `embedding` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 dashscope.native |
 | `rerank` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 dashscope.native |
 | `prompt_cache` | `N/A` | 该协议的缓存由上游自动管理，客户端没有可控的缓存断点字段；显式缓存断点是 Anthropic 特有机制，Phase 2 随 Anthropic 入站一并接入 |
-| `stateful_conversation` | `EMULATE` | 上游无服务端会话，由网关侧 ConversationStore 模拟提供。Phase 1 为内存态：单副本正确，进程重启后历史丢失，多副本部署下会话不共享 |
+| `stateful_conversation` | `EMULATE` | 上游无服务端会话，由网关侧 ConversationStore 模拟提供。Phase 1 为内存态：单副本正确，进程重启后历史丢失，多副本部署下会话不共享。默认关闭，需显式开启 convstore |
 | `realtime_session` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 openai.realtime |
 | `realtime_image_input` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 dashscope.realtime |
 | `realtime_commit_modes` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 dashscope.realtime |
@@ -504,7 +506,7 @@
 | `embedding` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 dashscope.native |
 | `rerank` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 dashscope.native |
 | `prompt_cache` | `N/A` | 该协议的缓存由上游自动管理，客户端没有可控的缓存断点字段；显式缓存断点是 Anthropic 特有机制，Phase 2 随 Anthropic 入站一并接入 |
-| `stateful_conversation` | `EMULATE` | 上游无服务端会话，由网关侧 ConversationStore 模拟提供。Phase 1 为内存态：单副本正确，进程重启后历史丢失，多副本部署下会话不共享 |
+| `stateful_conversation` | `EMULATE` | 上游无服务端会话，由网关侧 ConversationStore 模拟提供。Phase 1 为内存态：单副本正确，进程重启后历史丢失，多副本部署下会话不共享。默认关闭，需显式开启 convstore |
 | `realtime_session` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 openai.realtime |
 | `realtime_image_input` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 dashscope.realtime |
 | `realtime_commit_modes` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 dashscope.realtime |
