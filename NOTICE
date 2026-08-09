@@ -1,0 +1,10 @@
+Universal AI Gateway (omugw)
+Copyright 2026 The omugw Authors
+
+This product includes software developed at
+The omugw project (https://github.com/yobo2u/omugw).
+
+Third-party components and their licenses are listed in
+THIRD_PARTY_NOTICES.md. Module-level provenance (including which modules
+are original, derived, or clean-room implementations) is recorded in
+docs/provenance.yaml.

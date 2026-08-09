@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+
+      - name: 格式检查
+        run: make fmt-check
+
+      - name: go vet
+        run: make vet
+
+      # fixture 全部离线回放，CI 不需要任何 API Key。
+      - name: 单元测试与 fixture 矩阵
+        run: make test
+
+      - name: 竞态检测
+        run: make test-race
+
+      # 降级矩阵不完整、或文档与代码不同步，都在这里失败。
+      # 这是防止「静默丢字段」的主要机制，不能只在本地跑。
+      - name: 降级矩阵完整性
+        run: make matrix
+
+  licenses:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+
+      - name: 安装 go-licenses
+        run: go install github.com/google/go-licenses@latest
+
+      # Core 是 Apache-2.0，禁止引入 forbidden/restricted（GPL 系）依赖。
+      # unknown 同样拒绝——无法确认许可证的依赖不能进 Clean Core。
+      - name: 依赖许可证扫描
+        run: |
+          go-licenses check ./... \
+            --disallowed_types=forbidden,restricted,unknown
+
+      - name: 生成依赖许可证清单
+        run: go-licenses report ./... > licenses-report.csv || true
+
+      - name: 安装 syft
+        uses: anchore/sbom-action/download-syft@v0
+
+      - name: 生成 SBOM
+        run: syft . -o spdx-json=SBOM.spdx.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom-and-licenses
+          path: |
+            SBOM.spdx.json
+            licenses-report.csv

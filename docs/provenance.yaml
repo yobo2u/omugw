@@ -1,0 +1,124 @@
+# 模块来源登记
+#
+# 每个模块记录它的实现方式与参考来源。开源项目从第一天维护这份文件，
+# 比事后补要便宜得多——半年后没人记得某段代码是自己写的还是抄的。
+#
+# implementation_type:
+#   original    完全自行设计实现
+#   derived     基于兼容许可证（MIT / Apache-2.0）的上游代码修改而来，
+#               必须保留原始 copyright 与 notice
+#   clean-room  依据公开协议文档与行为规格独立实现，未阅读参考项目源码
+#
+# 合规姿态：**不阅读 sub2api / QuantumNous/new-api 的源码。**
+# 不读就不需要正式的 clean-room 流程，这是成本最低的做法。
+# 只参考其公开文档、API 契约与交互行为。
+
+version: 1
+
+modules:
+  - path: internal/canonical
+    implementation_type: original
+    note: |
+      统一中间模型。设计上参考了各家官方 SDK 的公开类型定义（OpenAI Go/Python
+      为 Apache-2.0，Anthropic Go/Python 为 MIT，DashScope SDK 为 Apache-2.0），
+      但结构是为「有损但可控的双向转换」重新设计的，不是任何一家的镜像。
+
+  - path: internal/degrade
+    implementation_type: original
+    note: 降级矩阵机制。未见同类实现，属本项目原创。
+
+  - path: internal/protocol/openaiwire
+    implementation_type: clean-room
+    reference:
+      - name: OpenAI API Reference
+        kind: public-documentation
+        url: https://platform.openai.com/docs/api-reference
+    note: 错误信封与 error.type 取值依据公开 API 文档实现。
+
+  - path: internal/protocol/anthropicwire
+    implementation_type: clean-room
+    reference:
+      - name: Anthropic API Errors
+        kind: public-documentation
+        url: https://docs.anthropic.com/en/api/errors
+    note: 错误信封与 error.type 取值依据公开 API 文档实现。
+
+  - path: internal/protocol/dashscopewire
+    implementation_type: clean-room
+    reference:
+      - name: 阿里云百炼 API 参考
+        kind: public-documentation
+        url: https://help.aliyun.com/zh/model-studio/
+      - name: Paraformer 实时语音识别 WebSocket API
+        kind: public-documentation
+        url: https://help.aliyun.com/zh/model-studio/websocket-for-paraformer-real-time-service
+      - name: Qwen-Omni 实时模型
+        kind: public-documentation
+        url: https://help.aliyun.com/zh/model-studio/realtime
+    note: |
+      平铺错误信封与 A 类 run-task 指令流的 task-failed 事件，
+      依据公开文档实现。
+
+  - path: internal/testkit
+    implementation_type: original
+    note: fixture 录制回放与 golden file 框架。
+
+  - path: internal/config
+    implementation_type: original
+
+  - path: internal/obs
+    implementation_type: original
+
+# 计划参考但尚未接入的上游。接入时必须逐条更新上面的 modules 列表。
+planned_upstreams:
+  - name: CLIProxyAPI
+    repository: router-for-me/CLIProxyAPI
+    license: MIT
+    planned_usage: reference-and-derived
+    modules: [oauth, provider-adapter]
+    note: MIT 代码可进入 Apache-2.0 项目，但必须保留原始 copyright 与 permission notice。
+
+  - name: opencodex
+    repository: lidge-jun/opencodex
+    license: MIT
+    planned_usage: reference-and-derived
+    modules: [responses, routing, account-pool]
+
+  - name: openai-realtime-proxy
+    repository: m1guelpf/openai-realtime-proxy
+    license: MIT
+    planned_usage: reference
+    modules: [realtime-websocket-proxy]
+
+  - name: dashscope-sdk-python
+    repository: dashscope/dashscope-sdk-python
+    license: Apache-2.0
+    planned_usage: protocol-reference
+    modules: [dashscope-native-types]
+
+  - name: Portkey Gateway
+    repository: Portkey-AI/gateway
+    license: MIT
+    planned_usage: reference
+    modules: [router, retry, fallback]
+
+  - name: LiteLLM
+    repository: BerriAI/litellm
+    license: MIT（部分）
+    planned_usage: reference
+    modules: [provider-abstraction]
+    warning: |
+      必须做**文件路径级**许可证审计。仓库根 LICENSE 明确区分：
+      enterprise/ 目录适用单独的 Enterprise License，不可按 MIT 处理。
+
+# 明确排除：不阅读源码，只参考公开文档与交互行为。
+excluded_from_source_reading:
+  - name: sub2api
+    repository: Wei-Shaw/sub2api
+    license: LGPL-3.0-or-later
+    reason: LGPL 代码不进入 Apache-2.0 Core。不读源码即无需 clean-room 流程。
+
+  - name: new-api
+    repository: QuantumNous/new-api
+    license: AGPL-3.0 + 附加署名条款
+    reason: AGPL 代码不进入 Apache-2.0 Core。其核心价值是产品设计而非算法，看文档与 UI 即可。

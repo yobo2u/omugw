@@ -1,0 +1,72 @@
+{
+  "name": "openai/chat-tool-call-split-args",
+  "note": "OpenAI Chat Completions 流式工具调用。arguments 被切在 JSON 字符串字面量中间（`{\"ci` / `ty\":\"Shang` / `hai\"...`），这是跨协议重新分片时最容易出错的场景：任何在片段边界上尝试解析 JSON 的实现都会失败。frames 复现上游把多个 chunk 挤在一次 Write 里的真实行为。",
+  "request": {
+    "method": "POST",
+    "path": "/v1/chat/completions",
+    "headers": {
+      "authorization": "<redacted>",
+      "content-type": "application/json"
+    },
+    "body": {
+      "model": "gpt-4o-mini",
+      "stream": true,
+      "stream_options": { "include_usage": true },
+      "messages": [{ "role": "user", "content": "上海天气怎么样？" }],
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "get_weather",
+            "description": "查询城市天气",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "city": { "type": "string" },
+                "unit": { "type": "string", "enum": ["celsius", "fahrenheit"] }
+              },
+              "required": ["city"]
+            }
+          }
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/event-stream",
+      "x-ratelimit-limit-requests": "10000",
+      "x-ratelimit-remaining-requests": "9999",
+      "x-ratelimit-limit-tokens": "2000000",
+      "x-ratelimit-remaining-tokens": "1999918",
+      "x-ratelimit-reset-tokens": "2ms"
+    },
+    "sse": {
+      "frames": [2, 3, 2],
+      "events": [
+        {
+          "data": "{\"id\":\"chatcmpl-Bx1\",\"object\":\"chat.completion.chunk\",\"created\":1754740800,\"model\":\"gpt-4o-mini-2024-07-18\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"index\":0,\"id\":\"call_9xKq\",\"type\":\"function\",\"function\":{\"name\":\"get_weather\",\"arguments\":\"\"}}]},\"finish_reason\":null}]}"
+        },
+        {
+          "data": "{\"id\":\"chatcmpl-Bx1\",\"object\":\"chat.completion.chunk\",\"created\":1754740800,\"model\":\"gpt-4o-mini-2024-07-18\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"{\\\"ci\"}}]},\"finish_reason\":null}]}"
+        },
+        {
+          "data": "{\"id\":\"chatcmpl-Bx1\",\"object\":\"chat.completion.chunk\",\"created\":1754740800,\"model\":\"gpt-4o-mini-2024-07-18\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"ty\\\":\\\"Shang\"}}]},\"finish_reason\":null}]}"
+        },
+        {
+          "data": "{\"id\":\"chatcmpl-Bx1\",\"object\":\"chat.completion.chunk\",\"created\":1754740800,\"model\":\"gpt-4o-mini-2024-07-18\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"hai\\\",\\\"unit\\\":\\\"celsius\\\"}\"}}]},\"finish_reason\":null}]}"
+        },
+        {
+          "data": "{\"id\":\"chatcmpl-Bx1\",\"object\":\"chat.completion.chunk\",\"created\":1754740800,\"model\":\"gpt-4o-mini-2024-07-18\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}]}"
+        },
+        {
+          "data": "{\"id\":\"chatcmpl-Bx1\",\"object\":\"chat.completion.chunk\",\"created\":1754740800,\"model\":\"gpt-4o-mini-2024-07-18\",\"choices\":[],\"usage\":{\"prompt_tokens\":82,\"completion_tokens\":24,\"total_tokens\":106,\"prompt_tokens_details\":{\"cached_tokens\":0}}}"
+        },
+        {
+          "data": "[DONE]"
+        }
+      ]
+    }
+  }
+}

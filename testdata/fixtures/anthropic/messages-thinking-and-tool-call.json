@@ -1,0 +1,95 @@
+{
+  "name": "anthropic/messages-thinking-and-tool-call",
+  "note": "与 openai/chat-tool-call-split-args 配对的对照 fixture，同一个逻辑请求在 Anthropic 侧的样子。三处结构性差异：(1) 事件有 event: 名，且没有 [DONE] 哨兵；(2) 工具参数走 input_json_delta 的 partial_json，分片边界与 OpenAI 完全不同；(3) thinking 块带 signature_delta，签名必须完整拼接后原样回传——这是 CapReasoningSignature 在异构路径上必须 REJECT 的原因。",
+  "request": {
+    "method": "POST",
+    "path": "/v1/messages",
+    "headers": {
+      "x-api-key": "<redacted>",
+      "anthropic-version": "2023-06-01",
+      "content-type": "application/json"
+    },
+    "body": {
+      "model": "claude-sonnet-4-5",
+      "max_tokens": 1024,
+      "stream": true,
+      "thinking": { "type": "enabled", "budget_tokens": 1024 },
+      "messages": [{ "role": "user", "content": "上海天气怎么样？" }],
+      "tools": [
+        {
+          "name": "get_weather",
+          "description": "查询城市天气",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "city": { "type": "string" },
+              "unit": { "type": "string", "enum": ["celsius", "fahrenheit"] }
+            },
+            "required": ["city"]
+          }
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/event-stream",
+      "anthropic-ratelimit-requests-limit": "4000",
+      "anthropic-ratelimit-requests-remaining": "3999"
+    },
+    "sse": {
+      "frames": [1, 4, 4, 3],
+      "events": [
+        {
+          "event": "message_start",
+          "data": "{\"type\":\"message_start\",\"message\":{\"id\":\"msg_01Xy\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-5\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":78,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":1}}}"
+        },
+        {
+          "event": "content_block_start",
+          "data": "{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}}"
+        },
+        {
+          "event": "content_block_delta",
+          "data": "{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"用户问上海天气，需要调用工具。\"}}"
+        },
+        {
+          "event": "content_block_delta",
+          "data": "{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"ErUBCkYIBRgCIkDq0mKp\"}}"
+        },
+        {
+          "event": "content_block_stop",
+          "data": "{\"type\":\"content_block_stop\",\"index\":0}"
+        },
+        {
+          "event": "content_block_start",
+          "data": "{\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_01Ab\",\"name\":\"get_weather\",\"input\":{}}}"
+        },
+        {
+          "event": "content_block_delta",
+          "data": "{\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"ci\"}}"
+        },
+        {
+          "event": "content_block_delta",
+          "data": "{\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"ty\\\": \\\"Sha\"}}"
+        },
+        {
+          "event": "content_block_delta",
+          "data": "{\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"nghai\\\", \\\"unit\\\": \\\"celsius\\\"}\"}}"
+        },
+        {
+          "event": "content_block_stop",
+          "data": "{\"type\":\"content_block_stop\",\"index\":1}"
+        },
+        {
+          "event": "message_delta",
+          "data": "{\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":41}}"
+        },
+        {
+          "event": "message_stop",
+          "data": "{\"type\":\"message_stop\"}"
+        }
+      ]
+    }
+  }
+}

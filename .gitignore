@@ -1,0 +1,12 @@
+/bin/
+/dist/
+*.test
+*.out
+coverage.*
+SBOM.spdx.json
+.DS_Store
+
+# 本地配置与密钥，绝不入库
+config.local.yaml
+.env
+*.key
