@@ -138,9 +138,15 @@ func Phase1() (*Matrix, error) {
 			Reject(noteImageViaJobs, canonical.CapImageGeneration)
 	}
 
+	// M1 转正的第一条路径。
+	//
+	// 转正的门槛不是「有人认为写完了」，而是端到端 fixture 通过——
+	// 见 testdata/routes/openai.responses__openai.compat/ 与 ADR-0001。
+	// TestImplementedRoutesAreExplicit 要求每次转正都同步更新那份名单，
+	// 让「这条路能用了」成为一个需要有人点头的动作。
 	if err := m.Add(responsesExtras(
 		chatToOpenAI.Derive(ProtoOpenAIResponses, ProviderOpenAICompat), true,
-	).Build()); err != nil {
+	).MarkImplemented().Build()); err != nil {
 		return nil, err
 	}
 	for _, base := range []*Route{chatToAnthropic, chatToDSCompat, chatToDSNative} {

@@ -57,13 +57,13 @@ func newHarness(t *testing.T, implemented bool, ups ...*upstream) *harness {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if implemented {
-		// M0 阶段全部路径都是 PLANNED。要测转发链路，得先把这条路转正。
-		r, ok := m.Route(degrade.ProtoOpenAIResponses, degrade.ProviderOpenAICompat)
-		if !ok {
-			t.Fatal("路径未注册")
-		}
-		r.MarkImplemented()
+
+	// 已实现的路径用 openai.compat（M1 已转正）；要测 PLANNED 行为就把目标
+	// 指到一条仍未实现的路径上。不去「取消转正」——那需要给生产代码开一个
+	// 只为测试存在的后门，而后门迟早会被当成正常用法。
+	kind := degrade.ProviderOpenAICompat
+	if !implemented {
+		kind = degrade.ProviderDashScopeCompatible
 	}
 
 	timeouts := config.Timeouts{
@@ -81,7 +81,7 @@ func newHarness(t *testing.T, implemented bool, ups ...*upstream) *harness {
 	for i, u := range ups {
 		name := endpointName(i)
 		targets = append(targets, router.Target{
-			Kind:           degrade.ProviderOpenAICompat,
+			Kind:           kind,
 			Endpoint:       name,
 			BaseURL:        u.srv.URL,
 			UpstreamModel:  "upstream-model",
@@ -94,7 +94,7 @@ func newHarness(t *testing.T, implemented bool, ups ...*upstream) *harness {
 			t.Fatal(err)
 		}
 		pools[name] = pool
-		provs[name] = passthrough.New(degrade.ProviderOpenAICompat, "/v1/responses", client, nil)
+		provs[name] = passthrough.New(kind, "/v1/responses", client, nil)
 	}
 
 	rt, err := router.New([]router.Rule{{Match: "*", Targets: targets}})

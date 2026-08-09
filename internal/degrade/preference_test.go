@@ -88,17 +88,15 @@ func TestPlannedRoutesAreNotRoutable(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ranked := m.RankOutbound(ProtoOpenAIResponses, []Provider{
-		ProviderOpenAICompat, ProviderDashScopeCompatible,
-	})
-	if len(ranked) != 0 {
-		t.Errorf("M0 阶段没有任何已实现路径，选路结果应为空，实际 %v", ranked)
+	// 这两条都还是 PLANNED（openai.compat 那条已在 M1 转正，不在此列）。
+	planned := []Provider{ProviderDashScopeCompatible, ProviderDashScopeNative}
+
+	if ranked := m.RankOutbound(ProtoOpenAIResponses, planned); len(ranked) != 0 {
+		t.Errorf("未实现的路径不该进入选路，实际 %v", ranked)
 	}
 
 	// 但设计视角下它们仍然存在，否则文档就没得写了。
-	if len(m.RankDesign(ProtoOpenAIResponses, []Provider{
-		ProviderOpenAICompat, ProviderDashScopeCompatible,
-	})) != 2 {
+	if len(m.RankDesign(ProtoOpenAIResponses, planned)) != 2 {
 		t.Error("RankDesign 不应过滤未实现的路径")
 	}
 }

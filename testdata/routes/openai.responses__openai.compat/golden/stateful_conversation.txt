@@ -1,0 +1,4 @@
+status: Unprocessable Entity
+Content-Type: application/json
+---
+{"error":{"message":"能力 \"stateful_conversation\" 在路径 openai.responses -\u003e openai.compat 上由网关模拟提供，但功能开关 \"convstore\" 未开启：上游无服务端会话，由网关侧 ConversationStore 模拟提供。Phase 1 为内存态：单副本正确，进程重启后历史丢失，多副本部署下会话不共享。默认关闭，需显式开启 convstore","type":"invalid_request_error","code":"unsupported_capability"}}

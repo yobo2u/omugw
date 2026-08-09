@@ -20,6 +20,7 @@ import (
 
 	"github.com/yobo2u/omugw/internal/config"
 	"github.com/yobo2u/omugw/internal/degrade"
+	"github.com/yobo2u/omugw/internal/gateway"
 	"github.com/yobo2u/omugw/internal/obs"
 )
 
@@ -53,14 +54,19 @@ func run() error {
 		if r.Implemented {
 			implemented++
 		}
-		log.Info("已注册转换路径",
+		attrs := []any{
 			"inbound", string(r.In),
 			"outbound", string(r.Out),
 			"implemented", r.Implemented,
 			"fast_path", r.Homogeneous,
 			"design_score", p.DesignScore(),
-			"available_score", p.AvailableScore(),
-		)
+		}
+		// 未实现的路径不打印当前可用分数，与矩阵文档里那一列的 "—" 保持一致。
+		// 同一个数字在两处含义不同，正是 ADR-0002 要消灭的毛病。
+		if r.Implemented {
+			attrs = append(attrs, "available_score", p.AvailableScore())
+		}
+		log.Info("已注册转换路径", attrs...)
 	}
 	if implemented == 0 {
 		// 一个一条路都走不通的网关必须自己说出来，而不是等第一个请求
@@ -68,38 +74,50 @@ func run() error {
 		log.Warn("当前没有任何已实现的转换路径，网关只能响应健康检查",
 			"planned", len(matrix.Routes()))
 	}
+	if len(cfg.Models) == 0 {
+		log.Warn("未配置模型路由，网关只提供健康检查",
+			"hint", "配齐 auth.keys / credentials / providers / models 后重启")
+	}
 
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(
 		collectors.NewGoCollector(),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 	)
-	_ = obs.NewMetrics(reg)
+	metrics := obs.NewMetrics(reg)
+
+	built, err := gateway.Build(cfg, matrix, metrics, log)
+	if err != nil {
+		return err
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	gateway := &http.Server{
+	gwSrv := &http.Server{
 		Addr:    cfg.Server.Addr,
-		Handler: gatewayMux(),
+		Handler: built.Mux,
 		// 只设读头超时。整体超时由 internal/transport 的四层超时管理——
 		// 在这里设 WriteTimeout 会把长流式响应直接掐断。
 		ReadHeaderTimeout: cfg.Timeouts.Connect,
 	}
-	metrics := &http.Server{
+	metricsSrv := &http.Server{
 		Addr:              cfg.Server.MetricsAddr,
 		Handler:           metricsMux(reg),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
 	errCh := make(chan error, 2)
-	go serve(gateway, "gateway", log, errCh)
-	go serve(metrics, "metrics", log, errCh)
+	go serve(gwSrv, "gateway", log, errCh)
+	go serve(metricsSrv, "metrics", log, errCh)
 
 	log.Info("omugw 已启动",
 		"addr", cfg.Server.Addr,
 		"metrics_addr", cfg.Server.MetricsAddr,
-		"routes", len(matrix.Routes()),
+		"routes_registered", built.Registered,
+		"routes_implemented", built.Implemented,
+		"models", len(cfg.Models),
+		"convstore_enabled", cfg.ConvStore.Enabled,
 	)
 
 	select {
@@ -112,8 +130,8 @@ func run() error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	_ = metrics.Shutdown(shutdownCtx)
-	return gateway.Shutdown(shutdownCtx)
+	_ = metricsSrv.Shutdown(shutdownCtx)
+	return gwSrv.Shutdown(shutdownCtx)
 }
 
 func serve(s *http.Server, name string, log interface{ Error(string, ...any) }, errCh chan<- error) {
@@ -121,15 +139,6 @@ func serve(s *http.Server, name string, log interface{ Error(string, ...any) }, 
 		log.Error("监听失败", "server", name, "error", err.Error())
 		errCh <- fmt.Errorf("%s 监听失败: %w", name, err)
 	}
-}
-
-func gatewayMux() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
-	})
-	return mux
 }
 
 func metricsMux(reg *prometheus.Registry) http.Handler {

@@ -1,0 +1,21 @@
+status: OK
+Content-Type: text/event-stream
+---
+event: response.created
+data: {"type":"response.created","response":{"id":"resp_68a2","status":"in_progress"}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"msg_1","role":"assistant"}}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"content_index":0,"delta":"一"}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"content_index":0,"delta":"二"}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"content_index":0,"delta":"三"}
+
+event: response.completed
+data: {"type":"response.completed","response":{"id":"resp_68a2","status":"completed","usage":{"input_tokens":9,"input_tokens_details":{"cached_tokens":0},"output_tokens":3,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":12}}}
+

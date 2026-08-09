@@ -48,7 +48,7 @@
 | `openai.chat` | `anthropic.messages` | 规划中 |  | 6 | 0 | 1 | 4 | 16 | 0.591 | — |
 | `openai.realtime` | `openai.realtime` | 规划中 | ✅ | 12 | 0 | 0 | 0 | 15 | 1.000 | — |
 | `openai.realtime` | `dashscope.ws.realtime` | 规划中 | ✅ | 10 | 0 | 2 | 0 | 15 | 0.917 | — |
-| `openai.responses` | `openai.compat` | 规划中 | ✅ | 13 | 1（1 未开启） | 0 | 0 | 13 | 1.000 | — |
+| `openai.responses` | `openai.compat` | 已实现 | ✅ | 13 | 1（1 未开启） | 0 | 0 | 13 | 1.000 | 0.929（开启 convstore 后 1.000） |
 | `openai.responses` | `dashscope.compatible` | 规划中 |  | 7 | 1（1 未开启） | 2 | 4 | 13 | 0.643 | — |
 | `openai.responses` | `dashscope.native` | 规划中 |  | 6 | 1（1 未开启） | 3 | 4 | 13 | 0.607 | — |
 | `openai.responses` | `anthropic.messages` | 规划中 |  | 6 | 1（1 未开启） | 1 | 6 | 13 | 0.536 | — |

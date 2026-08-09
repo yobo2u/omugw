@@ -84,19 +84,40 @@ func implementedMatrix(t *testing.T, avail Availability) *Matrix {
 	return m
 }
 
-// TestAllRoutesStartPlanned 固化 M0 的诚实现状：声明层建好了，实现层还没有。
+// TestImplementedRoutesAreExplicit 要求已转正的路径逐条登记在这里。
 //
-// 这条测试会在 M1 转正第一条路径时失败——那时把期望值改掉即可。让它失败是
-// 刻意的：转正是件需要有人明确点头的事，不该悄悄发生。
-func TestAllRoutesStartPlanned(t *testing.T) {
+// 转正是件需要有人明确点头的事，不该悄悄发生。任何一条路径被标记为已实现却
+// 没进这份名单，这里就会失败——包括「顺手加个 MarkImplemented 让测试过」
+// 那种做法。想转正就得同时改代码、写 fixture、改这份名单，三处都动过一遍，
+// 就很难是无意的。
+func TestImplementedRoutesAreExplicit(t *testing.T) {
+	// M1 已转正：Responses 入站的同源直通。
+	// 其余仍为 PLANNED，dashscope.compatible / dashscope.native 排在其后。
+	want := map[string]bool{
+		string(ProtoOpenAIResponses) + " -> " + string(ProviderOpenAICompat): true,
+	}
+
 	m, err := Phase1()
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	got := map[string]bool{}
 	for _, r := range m.Routes() {
 		if r.Implemented {
-			t.Errorf("路径 %s -> %s 已标记为实现，但 M0 阶段不应有任何 codec；"+
-				"若这是 M1 的转正，请同步更新本测试", r.In, r.Out)
+			got[string(r.In)+" -> "+string(r.Out)] = true
+		}
+	}
+
+	for k := range want {
+		if !got[k] {
+			t.Errorf("路径 %s 应已转正，实际仍是 PLANNED", k)
+		}
+	}
+	for k := range got {
+		if !want[k] {
+			t.Errorf("路径 %s 被标记为已实现，但不在名单里——"+
+				"转正请同步更新本测试与 fixture", k)
 		}
 	}
 }
@@ -111,7 +132,8 @@ func TestPlannedRouteIsRejectedAtRuntime(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = m.Check(ProtoOpenAIResponses, ProviderOpenAICompat,
+	// 用一条仍是 PLANNED 的路径。openai.compat 那条已在 M1 转正。
+	_, err = m.Check(ProtoOpenAIResponses, ProviderDashScopeCompatible,
 		[]canonical.Capability{canonical.CapTextGeneration})
 	if err == nil {
 		t.Fatal("未实现的路径必须报错，不得静默放行到一个空壳")

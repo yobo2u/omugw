@@ -3,14 +3,16 @@
 多协议双向转换的 AI 网关数据面。不把 OpenAI 格式当作内部总线，而是在
 **入站协议**与**出站 Provider** 之间建立可控的转换层。
 
-> **状态：M0 完成——声明层已建好，实现层尚未开始。**
+> **状态：M1 进行中——第一条路径已转正，网关可用。**
 >
-> 降级矩阵已登记 14 条转换路径，但**其中 0 条已实现**：codec 与 transport 属于
-> M1。网关当前只响应健康检查，任何转换请求都会得到 `501`。启动时它会自己把
-> 这件事喊出来。
+> 降级矩阵登记了 14 条转换路径，**其中 1 条已实现**：
+> `openai.responses → openai.compat`（同源直通）。其余仍是 `PLANNED`，
+> 打过去会得到 `501`——那是「还没建好」，不是「不支持」。
 >
-> 这个状态是刻意可见的，不是没写完就上线——见
-> [ADR-0001](docs/adr/0001-declarations-must-be-redeemed-by-fixtures.md)。
+> 转正的门槛不是「有人认为写完了」，而是端到端 fixture 通过，
+> 见 [ADR-0001](docs/adr/0001-declarations-must-be-redeemed-by-fixtures.md)。
+> 已实现路径的清单登记在 `TestImplementedRoutesAreExplicit` 里，
+> 每次转正都得同时改代码、写 fixture、改名单——三处都动过一遍，就很难是无意的。
 
 ## 这个项目和别人不一样的地方
 

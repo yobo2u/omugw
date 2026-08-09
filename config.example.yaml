@@ -3,11 +3,60 @@
 # 字符串值支持 ${ENV_VAR} 展开。引用未定义的环境变量会导致**启动失败**——
 # 这是刻意的：一个空的 API Key 会在运行时变成难以定位的 401，
 # 在启动时就报错要好得多。
+#
+# 下面的 auth / credentials / providers / models 四段要么全配，要么全不配。
+# 全不配是合法的（只提供健康检查）；配一半会启动失败——一份写了 providers 却
+# 漏了 models 的配置，作者显然是想让网关工作的，静默降级只会让人对着一个
+# 「一直返回 404」的网关查半天。
 
 server:
   addr: ":8080"
   # metrics 与网关分开监听。metrics 端点不应暴露在对外端口上。
   metrics_addr: "127.0.0.1:9090"
+
+# 网关自身的鉴权。**不可省略**——一个不鉴权的 AI 网关等于把上游凭据免费送人。
+auth:
+  keys:
+    - id: default # 出现在日志与指标里，用于区分调用方。不得由 key 派生。
+      key: "${OMUGW_API_KEY}" # 至少 16 字符
+
+# 上游凭据，按池分组。同池内可放多份，用于加权轮询与 failover。
+credentials:
+  openai:
+    - id: primary
+      secret: "${OPENAI_API_KEY}"
+      weight: 1
+      priority: 0 # 越小越优先。典型用法：先用便宜的额度，用完再用贵的。
+
+# 上游端点。
+#
+# endpoint 与 kind 分开是必须的：OpenAI、DeepSeek、Kimi 都是 openai.compat，
+# 降级矩阵看它们完全一样（同一套线格式），而路由必须分得清该发去哪一个。
+providers:
+  - endpoint: openai
+    kind: openai.compat
+    base_url: "https://api.openai.com"
+    credential_pool: openai
+
+# 模型路由。match 支持三种显式形态：精确、"前缀*"、"*" 兜底。
+# 不支持中缀通配——匹配顺序不可预期意味着请求会去到谁也说不清的地方。
+models:
+  - match: "gpt-5"
+    targets:
+      - endpoint: openai
+        upstream_model: "gpt-5" # 客户端请求的名字可以与上游真实名字不同
+
+# 网关侧会话存储，为 OpenAI Responses 的 previous_response_id 提供服务端会话。
+#
+# **默认关闭。** 内存态会话在多副本部署下是错的：请求被负载均衡到另一个副本
+# 就找不到会话，表现为「会话时有时无」——最难查的一类 bug。开启即表示你确认
+# 是单副本部署，或已接受重启丢失历史。
+convstore:
+  enabled: false
+  ttl: 2h
+  max_chain_depth: 200
+  max_messages: 1000
+  gc_interval: 5m
 
 # 四层超时（原则 2.7）。
 #
@@ -17,11 +66,11 @@ timeouts:
   # 建立 TCP + TLS 连接的上限。
   connect: 10s
 
-  # 发出请求到收到首字节的上限。
+  # 发出请求到收到上游响应头的上限。
   #
-  # 这一层是流式 failover 的边界：超过它还没有首字节，可以安全地换凭据重试；
-  # 一旦首字节到达，无论后面发生什么都不得重试（原则 2.4）。
-  # 推理模型的首字节可能很慢，别设得太紧。
+  # 注意这是**上游**首字节，它是换凭据重试的依据。真正的 failover 禁区是
+  # **下游**首字节——网关向客户端发出第一个字节之后就不能重试了，
+  # 否则客户端会收到重复内容（原则 2.4）。
   first_byte: 120s
 
   # 整个请求的上限，含流式传输全程。

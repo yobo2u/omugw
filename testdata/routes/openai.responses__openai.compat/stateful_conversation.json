@@ -1,0 +1,22 @@
+{
+  "name": "openai.responses__openai.compat/stateful_conversation",
+  "note": "EMULATE 格子的举证（ADR-0001 要求每个有损格子有专门 fixture）。服务端会话由网关侧 ConversationStore 提供，而它**默认关闭**——内存态会话在多副本部署下是错的。因此在默认配置下，带 previous_response_id 的请求会被矩阵裁决拦下，根本不会打到上游：下面的 response 只是为了让这条 fixture 结构完整，实际不会被消费。开启 convstore 后行为才变成正常转发。",
+  "request": {
+    "method": "POST",
+    "path": "/v1/responses",
+    "headers": {
+      "authorization": "<redacted>",
+      "content-type": "application/json"
+    },
+    "body": {
+      "model": "logical-fast",
+      "input": "接着上一轮说",
+      "previous_response_id": "resp_68a1"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": { "content-type": "application/json" },
+    "body": { "id": "resp_never_reached" }
+  }
+}

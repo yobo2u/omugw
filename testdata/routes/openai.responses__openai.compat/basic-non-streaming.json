@@ -1,0 +1,45 @@
+{
+  "name": "openai.responses__openai.compat/basic-non-streaming",
+  "note": "同源直通的最小闭环：客户端请求原样转给上游（只改写鉴权与模型名），上游响应原样回给客户端。request 是**客户端发给网关**的内容，response 是被打桩的上游返回。",
+  "request": {
+    "method": "POST",
+    "path": "/v1/responses",
+    "headers": {
+      "authorization": "<redacted>",
+      "content-type": "application/json"
+    },
+    "body": {
+      "model": "logical-fast",
+      "input": "上海天气怎么样？",
+      "instructions": "你是一个简洁的助手"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json",
+      "x-ratelimit-remaining-tokens": "1999918"
+    },
+    "body": {
+      "id": "resp_68a1",
+      "object": "response",
+      "status": "completed",
+      "model": "gpt-5-upstream",
+      "output": [
+        {
+          "type": "message",
+          "id": "msg_1",
+          "role": "assistant",
+          "content": [{ "type": "output_text", "text": "今天多云，22 度。" }]
+        }
+      ],
+      "usage": {
+        "input_tokens": 24,
+        "input_tokens_details": { "cached_tokens": 0 },
+        "output_tokens": 11,
+        "output_tokens_details": { "reasoning_tokens": 0 },
+        "total_tokens": 35
+      }
+    }
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "name": "openai.responses__openai.compat/streaming-with-usage",
+  "note": "流式转发。frames 复现上游把多个事件挤在一次 Write 里的真实行为——转换器的缓冲 bug 只在分片边界上才会暴露。response.completed 里的 usage 会被提取用于计费，其余事件的 data 负载逐字保留。",
+  "request": {
+    "method": "POST",
+    "path": "/v1/responses",
+    "headers": {
+      "authorization": "<redacted>",
+      "content-type": "application/json"
+    },
+    "body": {
+      "model": "logical-fast",
+      "input": "数到三",
+      "stream": true
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": { "content-type": "text/event-stream" },
+    "sse": {
+      "frames": [2, 3, 1],
+      "events": [
+        {
+          "event": "response.created",
+          "data": "{\"type\":\"response.created\",\"response\":{\"id\":\"resp_68a2\",\"status\":\"in_progress\"}}"
+        },
+        {
+          "event": "response.output_item.added",
+          "data": "{\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"type\":\"message\",\"id\":\"msg_1\",\"role\":\"assistant\"}}"
+        },
+        {
+          "event": "response.output_text.delta",
+          "data": "{\"type\":\"response.output_text.delta\",\"item_id\":\"msg_1\",\"output_index\":0,\"content_index\":0,\"delta\":\"一\"}"
+        },
+        {
+          "event": "response.output_text.delta",
+          "data": "{\"type\":\"response.output_text.delta\",\"item_id\":\"msg_1\",\"output_index\":0,\"content_index\":0,\"delta\":\"二\"}"
+        },
+        {
+          "event": "response.output_text.delta",
+          "data": "{\"type\":\"response.output_text.delta\",\"item_id\":\"msg_1\",\"output_index\":0,\"content_index\":0,\"delta\":\"三\"}"
+        },
+        {
+          "event": "response.completed",
+          "data": "{\"type\":\"response.completed\",\"response\":{\"id\":\"resp_68a2\",\"status\":\"completed\",\"usage\":{\"input_tokens\":9,\"input_tokens_details\":{\"cached_tokens\":0},\"output_tokens\":3,\"output_tokens_details\":{\"reasoning_tokens\":0},\"total_tokens\":12}}}"
+        }
+      ]
+    }
+  }
+}
