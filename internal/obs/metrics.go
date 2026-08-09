@@ -8,13 +8,15 @@ import (
 
 // Metrics 是网关的核心指标集。
 type Metrics struct {
-	Requests      *prometheus.CounterVec
-	Duration      *prometheus.HistogramVec
-	FirstByte     *prometheus.HistogramVec
-	UpstreamError *prometheus.CounterVec
-	Degradations  *prometheus.CounterVec
-	Tokens        *prometheus.CounterVec
-	StreamAborted *prometheus.CounterVec
+	Requests       *prometheus.CounterVec
+	Duration       *prometheus.HistogramVec
+	FirstByte      *prometheus.HistogramVec
+	UpstreamError  *prometheus.CounterVec
+	Degradations   *prometheus.CounterVec
+	Emulations     *prometheus.CounterVec
+	NotImplemented *prometheus.CounterVec
+	Tokens         *prometheus.CounterVec
+	StreamAborted  *prometheus.CounterVec
 }
 
 // NewMetrics 注册全部指标。
@@ -53,6 +55,25 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 			Help: "按能力统计的降级次数（转换路径丢弃了该能力的部分语义）。",
 		}, []string{"inbound", "outbound", "capability"}),
 
+		// 模拟计数对应矩阵里的 EMULATE 格子。
+		//
+		// 它与降级计数是两回事：降级意味着客户端少拿到了东西，模拟意味着
+		// 客户端拿全了、但那份完整性由网关垫着。这个数字直接告诉运维
+		// 「重启会影响多少请求」——它正是重启时会出事的那批。
+		Emulations: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "omugw_emulations_total",
+			Help: "按能力统计的网关模拟次数（上游不提供，由网关自行实现）。",
+		}, []string{"inbound", "outbound", "capability"}),
+
+		// 打到 PLANNED 路径上的请求数。
+		//
+		// 单列是因为它衡量的不是故障，而是**期望与现实的差距**：
+		// 有人在用一条还没建好的路。这个数字上涨说明该排期了，不是该修 bug。
+		NotImplemented: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "omugw_not_implemented_total",
+			Help: "打到已设计但尚未实现的转换路径上的请求数。",
+		}, []string{"inbound", "outbound"}),
+
 		// token 计数必须带 fidelity 标签。
 		//
 		// 把 estimated 和 authoritative 加在同一个计数器里，得到的数字既不能
@@ -72,9 +93,28 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 
 	reg.MustRegister(
 		m.Requests, m.Duration, m.FirstByte,
-		m.UpstreamError, m.Degradations, m.Tokens, m.StreamAborted,
+		m.UpstreamError, m.Degradations, m.Emulations, m.NotImplemented,
+		m.Tokens, m.StreamAborted,
 	)
 	return m
+}
+
+// ObserveVerdict 记录一次能力裁决的结果。
+//
+// 降级与模拟分开计数：前者意味着客户端少拿到了东西，后者意味着客户端拿全了、
+// 但那份完整性由网关垫着。把两者合并会让运维看不出「重启会影响多少请求」。
+func (m *Metrics) ObserveVerdict(inbound, outbound string, degraded, emulated []string) {
+	for _, c := range degraded {
+		m.Degradations.WithLabelValues(inbound, outbound, c).Inc()
+	}
+	for _, c := range emulated {
+		m.Emulations.WithLabelValues(inbound, outbound, c).Inc()
+	}
+}
+
+// ObserveNotImplemented 记录一次打到 PLANNED 路径上的请求。
+func (m *Metrics) ObserveNotImplemented(inbound, outbound string) {
+	m.NotImplemented.WithLabelValues(inbound, outbound).Inc()
 }
 
 // ObserveUsage 按可信等级记录 token 用量。

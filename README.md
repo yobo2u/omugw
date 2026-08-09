@@ -3,7 +3,14 @@
 多协议双向转换的 AI 网关数据面。不把 OpenAI 格式当作内部总线，而是在
 **入站协议**与**出站 Provider** 之间建立可控的转换层。
 
-> **状态：Phase 1 开发中（M0）。尚不可用于生产。**
+> **状态：M0 完成——声明层已建好，实现层尚未开始。**
+>
+> 降级矩阵已登记 14 条转换路径，但**其中 0 条已实现**：codec 与 transport 属于
+> M1。网关当前只响应健康检查，任何转换请求都会得到 `501`。启动时它会自己把
+> 这件事喊出来。
+>
+> 这个状态是刻意可见的，不是没写完就上线——见
+> [ADR-0001](docs/adr/0001-declarations-must-be-redeemed-by-fixtures.md)。
 
 ## 这个项目和别人不一样的地方
 
@@ -99,7 +106,12 @@ CosyVoice 流式 TTS——这套 `run-task` 指令流是 OpenAI 兼容层完全�
 | 多副本共享状态（Redis） | Phase 1 内存态凭据池，单实例正确 |
 | 跨 Provider 多模态资源搬运 | 显式 REJECT，不做自动搬运 |
 
-多模态 / 实时能力的 Provider 优先级：**DashScope > OpenAI > Gemini > Anthropic**。
+**多模态 / 实时能力的接入顺序**：DashScope > OpenAI > Gemini > Anthropic。
+
+> 这条与上面的「出站选路偏好」方向相反，但两者度量的不是同一件事，不矛盾：
+> **接入顺序**说的是「先给哪家做 image / video / speech / realtime 的适配」；
+> **选路偏好**说的是「同一个模型有多条路可走时，走哪条最不丢语义」。
+> 前者是排期，后者是运行时决策。
 注意这条轴与文本协议轴独立——Anthropic 在多模态轴排最后，但 Anthropic Messages
 入站在文本轴上是 Phase 2 第一优先。
 

@@ -25,8 +25,11 @@ const (
 	ProtoOpenAIChat      Protocol = "openai.chat"
 	ProtoOpenAIResponses Protocol = "openai.responses"
 	ProtoOpenAIRealtime  Protocol = "openai.realtime"
-	ProtoOpenAIAudio     Protocol = "openai.audio"
-	ProtoOpenAIImages    Protocol = "openai.images"
+
+	// OpenAI 的 /v1/audio 与 /v1/images 端点尚未设计可表达性声明，因此这里
+	// 不预留常量。留一个没有声明的协议常量是陷阱：谁拿它建路径，会撞上
+	// 「缺少可表达性声明」这种在说代码问题的错误，而真相是「这个协议还没设计」。
+	// 真要做时连同声明一起加，一次想清楚。roadmap 见 README。
 
 	// DashScope 有三个各自独立的入站协议，对应三种线格式。
 	// 把它们合成一个「DashScope 协议」会让转换器无从下手——

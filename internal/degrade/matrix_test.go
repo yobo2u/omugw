@@ -17,6 +17,12 @@ var updateDoc = flag.Bool("update-matrix", false, "重新生成 docs/degradation
 
 const docPath = "../../docs/degradation-matrix.md"
 
+// protoNeverRegistered 是测试专用的假协议。
+//
+// 拿一个真实规划中的协议名当「未注册」的反例，会让读者以为它本该注册；
+// 用一个明显不存在的名字，测试意图才不会被误读。
+const protoNeverRegistered Protocol = "test.never-registered"
+
 // TestPhase1IsComplete 是这个包存在的理由。
 //
 // Route.Build 要求每条已注册路径对 canonical.AllCapabilities() 中的每一项都
@@ -423,7 +429,7 @@ func TestCheckFailsClosedOnUnknownRoute(t *testing.T) {
 	m := implementedMatrix(t, nil)
 	var err error
 
-	_, err = m.Check(ProtoOpenAIImages, ProviderAnthropicMessages,
+	_, err = m.Check(protoNeverRegistered, ProviderAnthropicMessages,
 		[]canonical.Capability{canonical.CapTextGeneration})
 	if err == nil {
 		t.Fatal("未注册的路径必须失败，不得静默放行")

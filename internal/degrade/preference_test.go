@@ -337,7 +337,7 @@ func TestBestOutboundFailsWhenNothingRegistered(t *testing.T) {
 	m := implementedMatrix(t, nil)
 	var err error
 
-	_, _, err = m.BestOutbound(ProtoOpenAIImages,
+	_, _, err = m.BestOutbound(protoNeverRegistered,
 		[]Provider{ProviderOpenAICompat},
 		[]canonical.Capability{canonical.CapTextGeneration})
 	if err == nil {

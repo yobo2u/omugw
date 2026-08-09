@@ -155,6 +155,43 @@ func TestObserveErrorLabelsRetryability(t *testing.T) {
 	}
 }
 
+// TestVerdictSeparatesDegradeFromEmulate 固化两者不能合并计数。
+//
+// 降级 = 客户端少拿到了东西；模拟 = 客户端拿全了但由网关垫着。
+// 合并之后运维就看不出「重启会影响多少请求」——而那正是模拟能力的风险所在。
+func TestVerdictSeparatesDegradeFromEmulate(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m := NewMetrics(reg)
+
+	m.ObserveVerdict("openai.responses", "dashscope.native",
+		[]string{"structured_output"}, []string{"stateful_conversation"})
+
+	if n := countSamples(t, reg, "omugw_degradations_total"); n != 1 {
+		t.Errorf("降级计数样本数 = %d, 期望 1", n)
+	}
+	if n := countSamples(t, reg, "omugw_emulations_total"); n != 1 {
+		t.Errorf("模拟计数样本数 = %d, 期望 1", n)
+	}
+}
+
+// TestNotImplementedIsCountedSeparately 固化「打到 PLANNED 路径」不是故障。
+//
+// 它衡量的是期望与现实的差距——有人在用一条还没建好的路。这个数字上涨说明
+// 该排期了，不是该修 bug，所以不能混进 upstream_errors。
+func TestNotImplementedIsCountedSeparately(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m := NewMetrics(reg)
+
+	m.ObserveNotImplemented("openai.responses", "anthropic.messages")
+
+	if n := countSamples(t, reg, "omugw_not_implemented_total"); n != 1 {
+		t.Errorf("未实现计数样本数 = %d, 期望 1", n)
+	}
+	if n := countSamples(t, reg, "omugw_upstream_errors_total"); n != 0 {
+		t.Error("未实现不是上游错误，不该计入 upstream_errors")
+	}
+}
+
 func countSamples(t *testing.T, reg *prometheus.Registry, name string) int {
 	t.Helper()
 	families, err := reg.Gather()
