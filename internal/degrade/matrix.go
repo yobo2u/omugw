@@ -27,7 +27,13 @@ const (
 	ProtoOpenAIRealtime  Protocol = "openai.realtime"
 	ProtoOpenAIAudio     Protocol = "openai.audio"
 	ProtoOpenAIImages    Protocol = "openai.images"
-	ProtoDashScopeNative Protocol = "dashscope.native"
+
+	// DashScope 有三个各自独立的入站协议，对应三种线格式。
+	// 把它们合成一个「DashScope 协议」会让转换器无从下手——
+	// 它们的消息模型、传输方式与能力集都不一样。
+	ProtoDashScopeNative    Protocol = "dashscope.native"    // HTTP
+	ProtoDashScopeRealtime  Protocol = "dashscope.realtime"  // /api-ws/v1/realtime，事件流
+	ProtoDashScopeInference Protocol = "dashscope.inference" // /api-ws/v1/inference，run-task 指令流
 )
 
 // Provider 是出站 Provider 标识。
@@ -62,6 +68,20 @@ const (
 	// Reject：这条路径无法支持该能力，请求必须失败。
 	// Note 必须写清楚**为什么**，它会成为错误消息的一部分。
 	Reject Disposition = "REJECT"
+
+	// Emulate：上游不提供该能力，由网关自行实现。
+	//
+	// 与 Passthrough 分开是因为它有真实的运维代价——网关要替上游保管状态，
+	// 于是有了存储、过期、多副本一致性这些新问题。客户端看到的能力是完整的，
+	// 但运维要知道这份完整性是网关垫出来的。Note 必须写明代价。
+	Emulate Disposition = "EMULATE"
+
+	// NotApplicable：该能力在这条路径上不可达。
+	//
+	// 它不是「拒绝」——入站协议根本没有字段可以表达它，客户端连发都发不出来。
+	// 由 Expressibility 自动推导，不需要也不允许手工声明。不计入保留度分母：
+	// 一条字节直通的路径不该因为「客户端表达不了 computer_use」而被扣分。
+	NotApplicable Disposition = "N/A"
 )
 
 // Rule 是矩阵中的一格。
@@ -132,6 +152,14 @@ func (r *Route) Reject(note string, caps ...canonical.Capability) *Route {
 	return r
 }
 
+// Emulate 声明若干项能力由网关自行实现，note 必须写明运维代价。
+func (r *Route) Emulate(note string, caps ...canonical.Capability) *Route {
+	for _, c := range caps {
+		r.set(c, Rule{Disposition: Emulate, Note: note})
+	}
+	return r
+}
+
 // Derive 以另一条已声明的路径为基准创建新路径，用于协议族内部的近似路径
 // （例如 OpenAI Chat 与 OpenAI Responses 面对同一个出站 Provider）。
 //
@@ -142,6 +170,13 @@ func (r *Route) Derive(in Protocol, out Provider) *Route {
 	n := NewRoute(in, out)
 	n.Homogeneous = r.Homogeneous
 	for c, rule := range r.rules {
+		// 不继承自动补上的 NotApplicable。它反映的是**基准协议**的表达力，
+		// 换一个入站协议就未必成立——Responses 表达得出 computer_use，
+		// 而 Chat 表达不出来。继承它会让派生路径既无法为该能力表态，
+		// 又在 Build 时被判成「声明了表达不出来的能力」。
+		if rule.Disposition == NotApplicable {
+			continue
+		}
 		n.rules[c] = rule
 	}
 	return n
@@ -167,15 +202,59 @@ func (r *Route) Override(c canonical.Capability, d Disposition, note string) *Ro
 // 字段被吞了。新增 Capability 常量时，所有已注册路径都会在这里失败——
 // 这是刻意的设计，不是需要绕过的麻烦。
 func (r *Route) Build() (*Route, error) {
-	var missing []string
-	for _, c := range canonical.AllCapabilities() {
+	spec, ok := expressible[r.In]
+	if !ok {
+		r.errs = append(r.errs,
+			fmt.Sprintf("inbound protocol %q has no expressibility declaration", r.In))
+		sort.Strings(r.errs)
+		return nil, fmt.Errorf("degrade: route %s -> %s: %s", r.In, r.Out, strings.Join(r.errs, "; "))
+	}
+
+	// 只有入站协议表达得出来的能力才需要路径声明。其余的由 Expressibility
+	// 自动补成 NotApplicable——让每条路径为客户端根本发不出来的字段辩解，
+	// 既是无谓的负担，也会把「不适用」误算成「有损失」。
+	want := map[canonical.Capability]bool{}
+	for _, c := range ExpressibleSet(r.In) {
+		want[c] = true
+	}
+
+	var missing, extra []string
+	for c := range want {
 		if _, ok := r.rules[c]; !ok {
 			missing = append(missing, string(c))
 		}
 	}
+	for c := range r.rules {
+		if !want[c] {
+			extra = append(extra, string(c))
+		}
+	}
+	sort.Strings(missing)
+	sort.Strings(extra)
+
 	if len(missing) > 0 {
 		r.errs = append(r.errs, "undeclared capabilities: "+strings.Join(missing, ", "))
 	}
+	if len(extra) > 0 {
+		// 为一个客户端表达不出来的能力写声明，说明作者对协议的理解有偏差。
+		// 与其静默忽略，不如让它失败。
+		r.errs = append(r.errs, "declared but not expressible by "+string(r.In)+": "+
+			strings.Join(extra, ", "))
+	}
+
+	for _, c := range canonical.AllCapabilities() {
+		if want[c] {
+			continue
+		}
+		note := ""
+		if target, ok := spec.Elsewhere[c]; ok {
+			note = fmt.Sprintf("%s 表达不了该能力，请改用入站协议 %s", r.In, target)
+		} else if why, ok := spec.Impossible[c]; ok {
+			note = why
+		}
+		r.rules[c] = Rule{Disposition: NotApplicable, Note: note}
+	}
+
 	for c, rule := range r.rules {
 		if rule.Disposition != Passthrough && rule.Note == "" {
 			r.errs = append(r.errs, fmt.Sprintf("capability %q is %s but carries no note", c, rule.Disposition))
@@ -245,6 +324,12 @@ type Verdict struct {
 	// Degraded 列出被降级的能力及原因，应当作为响应头返回给客户端——
 	// 客户端有权知道它请求的 cache_control 并没有生效。
 	Degraded []CapabilityNote
+
+	// Emulated 列出由网关代为实现的能力。
+	//
+	// 它同样要告知客户端，但含义与降级相反：能力是完整的，只是这份完整性由
+	// 网关垫出来，因而带着网关侧的可用性边界（比如内存态会话在重启后丢失）。
+	Emulated []CapabilityNote
 }
 
 // CapabilityNote 把一项能力与其处置说明绑在一起。
@@ -276,8 +361,16 @@ func (m *Matrix) Check(in Protocol, out Provider, caps []canonical.Capability) (
 		case Reject:
 			return Verdict{}, canonical.Newf(canonical.ClassUnsupported,
 				"转换路径 %s -> %s 不支持 %q：%s", in, out, c, rule.Note)
+		case NotApplicable:
+			// 入站协议表达不出这项能力，却在请求里出现了——说明入站解码器
+			// 把某个字段解成了它不该解成的东西。这是网关自己的 bug，
+			// 不能当成客户端的问题放行。
+			return Verdict{}, canonical.Newf(canonical.ClassInternal,
+				"入站协议 %s 不应产生能力 %q，解码器可能有误：%s", in, c, rule.Note)
 		case Degrade:
 			v.Degraded = append(v.Degraded, CapabilityNote{Capability: c, Note: rule.Note})
+		case Emulate:
+			v.Emulated = append(v.Emulated, CapabilityNote{Capability: c, Note: rule.Note})
 		}
 	}
 	return v, nil

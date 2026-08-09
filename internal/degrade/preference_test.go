@@ -176,27 +176,64 @@ func TestRankOutboundDropsUnregistered(t *testing.T) {
 // 排在前面但会拒绝本次请求所需能力的路径，不如排在后面但真能跑通的路径——
 // 光按偏好序选第一个，会让一个本可以成功的请求失败。
 func TestBestOutboundSkipsRejectingRoute(t *testing.T) {
+	// 用一个自造的两条路径矩阵，而不是 Phase1——Phase1 里的首选路径恰好是
+	// 同源直通、什么都接受，构造不出「首选拒绝」的场景。测试要验的是选路逻辑，
+	// 不该受真实矩阵当下形态的牵制。
+	m := NewMatrix()
+
+	var others []canonical.Capability
+	for _, c := range ExpressibleSet(ProtoOpenAIChat) {
+		if c != canonical.CapVisionInput {
+			others = append(others, c)
+		}
+	}
+
+	// 偏好序里排第一，但拒绝视觉输入。
+	if err := m.Add(NewRoute(ProtoOpenAIChat, ProviderOpenAICompat).
+		Pass(others...).
+		Reject("测试用：这条路径不支持视觉输入", canonical.CapVisionInput).
+		Build()); err != nil {
+		t.Fatal(err)
+	}
+	// 排第二，但真能跑通。
+	if err := m.Add(NewRoute(ProtoOpenAIChat, ProviderDashScopeCompatible).
+		Pass(ExpressibleSet(ProtoOpenAIChat)...).
+		Build()); err != nil {
+		t.Fatal(err)
+	}
+
+	caps := []canonical.Capability{canonical.CapTextGeneration, canonical.CapVisionInput}
+	got, _, err := m.BestOutbound(ProtoOpenAIChat,
+		[]Provider{ProviderOpenAICompat, ProviderDashScopeCompatible}, caps)
+	if err != nil {
+		t.Fatalf("应当能找到可用路径: %v", err)
+	}
+	if got != ProviderDashScopeCompatible {
+		t.Errorf("选中 %q，期望跳过拒绝视觉输入的首选路径后选中 dashscope.compatible", got)
+	}
+}
+
+// TestBestOutboundPrefersHomogeneous 固化「同源优先于全局偏好序」。
+//
+// 反例是真实存在的：对 dashscope.realtime 入站，DashScope 侧直通是零损失的，
+// 而 openai.realtime 要反向重采样并丢掉 input_image_buffer——可在全局偏好序里
+// openai.realtime 排得更靠前。不把同源提到最前，选路就会主动挑一条更差的路。
+func TestBestOutboundPrefersHomogeneous(t *testing.T) {
 	m, err := Phase1()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// 视频输入：openai.compat 拒绝，dashscope.compatible 降级但可用。
-	caps := []canonical.Capability{canonical.CapTextGeneration, canonical.CapVideoInput}
+	ranked := m.RankOutbound(ProtoDashScopeRealtime,
+		[]Provider{ProviderOpenAIRealtime, ProviderDashScopeWSRealtime})
+	if len(ranked) == 0 || ranked[0] != ProviderDashScopeWSRealtime {
+		t.Fatalf("同源直通应排第一，实际顺序 %v", ranked)
+	}
 
-	got, verdict, err := m.BestOutbound(ProtoOpenAIResponses, []Provider{
-		ProviderOpenAICompat,
-		ProviderDashScopeCompatible,
-		ProviderDashScopeNative,
-	}, caps)
-	if err != nil {
-		t.Fatalf("应当能找到可用路径: %v", err)
-	}
-	if got != ProviderDashScopeCompatible {
-		t.Errorf("选中 %q，期望跳过拒绝视频输入的 openai.compat 后选中 dashscope.compatible", got)
-	}
-	if len(verdict.Degraded) == 0 {
-		t.Error("该路径对视频输入是降级，应当在 Verdict 中报告出来")
+	homo := mustRoute(t, m, ProtoDashScopeRealtime, ProviderDashScopeWSRealtime)
+	hetero := mustRoute(t, m, ProtoDashScopeRealtime, ProviderOpenAIRealtime)
+	if homo.Preservation().Score() <= hetero.Preservation().Score() {
+		t.Error("同源直通的保留度应当严格高于异构转换，否则这条偏好没有依据")
 	}
 }
 
@@ -266,35 +303,52 @@ func TestDerivedRouteStaysComplete(t *testing.T) {
 	if !ok {
 		t.Fatal("openai.responses -> openai.compat 未注册")
 	}
-	pass, deg, rej := r.Stats()
-	if got, want := pass+deg+rej, len(canonical.AllCapabilities()); got != want {
-		t.Errorf("派生路径覆盖 %d 项能力，应为 %d 项", got, want)
+	p := r.Preservation()
+	declared := p.Passthrough + p.Emulate + p.Degrade + p.Reject
+	if want := len(ExpressibleSet(ProtoOpenAIResponses)); declared != want {
+		t.Errorf("派生路径为 %d 项可表达能力表态，应为 %d 项", declared, want)
+	}
+	if total := declared + p.NotApplicable; total != len(canonical.AllCapabilities()) {
+		t.Errorf("派生路径的格子总数 %d，应为 %d", total, len(canonical.AllCapabilities()))
 	}
 }
 
-// TestResponsesStatelessReasonDiffersFromChat 固化一处真实差异。
+// TestStatefulConversationIsNAOnChatButEmulatedOnResponses 固化一处真实差异，
+// 也是分层之后才说得清的一处。
 //
-// Chat Completions 是协议本身没有服务端会话；Responses 是协议支持而网关
-// 主动选择不用。对客户端而言这两句话含义完全不同——一个是「换个端点」，
-// 一个是「等下个版本」。
-func TestResponsesStatelessReasonDiffersFromChat(t *testing.T) {
+// Chat Completions 的线格式里根本没有 previous_response_id 这类字段，客户端
+// 连发都发不出来——那不是「被拒绝」，是不可达，正确的提示是「请改用
+// openai.responses」。Responses 表达得出来，于是网关用自己的
+// ConversationStore 把它垫上。
+//
+// 旧模型把两者都记成 REJECT，等于告诉 Chat 用户「这条路不支持」，
+// 而真相是「你走错门了」。
+func TestStatefulConversationIsNAOnChatButEmulatedOnResponses(t *testing.T) {
 	m, err := Phase1()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	chat, _ := m.Lookup(ProtoOpenAIChat, ProviderOpenAICompat, canonical.CapStatefulConversation)
-	resp, _ := m.Lookup(ProtoOpenAIResponses, ProviderOpenAICompat, canonical.CapStatefulConversation)
+	chat, ok := m.Lookup(ProtoOpenAIChat, ProviderOpenAICompat, canonical.CapStatefulConversation)
+	if !ok {
+		t.Fatal("openai.chat 的 stateful_conversation 未登记")
+	}
+	if chat.Disposition != NotApplicable {
+		t.Errorf("Chat 应为 N/A（协议表达不出来），实际 %s", chat.Disposition)
+	}
+	if !strings.Contains(chat.Note, string(ProtoOpenAIResponses)) {
+		t.Errorf("N/A 必须指明该去哪个协议，实际: %s", chat.Note)
+	}
 
-	if chat.Disposition != Reject || resp.Disposition != Reject {
-		t.Fatalf("两者都应为 REJECT，实际 chat=%s responses=%s",
-			chat.Disposition, resp.Disposition)
+	resp, ok := m.Lookup(ProtoOpenAIResponses, ProviderOpenAICompat, canonical.CapStatefulConversation)
+	if !ok {
+		t.Fatal("openai.responses 的 stateful_conversation 未登记")
 	}
-	if chat.Note == resp.Note {
-		t.Error("两者的拒绝理由不同，不应共用同一句说明")
+	if resp.Disposition != Emulate {
+		t.Errorf("Responses 应为 EMULATE（网关垫上），实际 %s", resp.Disposition)
 	}
-	if !strings.Contains(resp.Note, "store=false") {
-		t.Errorf("Responses 的说明应指出是无状态模式的选择，实际: %s", resp.Note)
+	if !strings.Contains(resp.Note, "重启") {
+		t.Errorf("EMULATE 的说明必须写明可用性边界，实际: %s", resp.Note)
 	}
 }
 

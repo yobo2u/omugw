@@ -4,87 +4,47 @@ import (
 	"github.com/yobo2u/omugw/internal/canonical"
 )
 
-// 能力分组，只为让下面的路径声明可读。分组不改变语义——每一项能力仍然必须
-// 被逐一处置，Route.Build 会验证这一点。
-var (
-	realtimeCaps = []canonical.Capability{
-		canonical.CapRealtimeSession,
-		canonical.CapRealtimeImageInput,
-		canonical.CapRealtimeCommitModes,
-		canonical.CapRealtimeServerVAD,
-		canonical.CapRealtimeInterruptTurns,
-	}
-	mediaGenCaps = []canonical.Capability{
-		canonical.CapImageGeneration,
-		canonical.CapVideoGeneration,
-	}
-	speechCaps = []canonical.Capability{
-		canonical.CapSpeechSynthesis,
-		canonical.CapSpeechRecognition,
-	}
-	vectorCaps = []canonical.Capability{
-		canonical.CapEmbedding,
-		canonical.CapRerank,
-	}
-)
-
 // 反复出现的处置说明，抽出来避免同一条理由在各路径里写出不同版本。
 const (
-	noteSignatureLost = "Anthropic thinking 签名经 Canonical 转换后失效，" +
-		"带失效签名的多轮 tool use 会被上游拒绝，因此在异构路径上直接拒绝而非静默丢弃"
+	noteNoAudioIn    = "Anthropic Messages 不接受音频输入"
+	noteNoAudioOut   = "该 Provider 不产生音频输出"
 	noteFileRefBound = "文件引用绑定具体 Provider，跨 Provider 不可迁移；" +
 		"网关不代下载再上传（原则 2.6），请改用 URL 或内联字节"
-	noteWrongEndpoint = "该能力不在这条端点上，须经对应的专用入站端点"
-	noteNoRealtime    = "Realtime 能力仅在 WebSocket 会话中可用，HTTP 端点无法表达"
-	noteComputerUse   = "computer use 的工具 schema 各家不兼容，不在 Phase 1 范围"
+	noteStrictSchema = "该 Provider 无 strict json_schema 校验，schema 降级为提示词约束，" +
+		"模型可能返回不合规 JSON"
+	noteSearchSwitch = "DashScope 的 enable_search 是布尔开关，承载不了 OpenAI web_search 工具的" +
+		"参数，仅开关本身被映射"
+	noteBuiltinTool = "该内建工具在 Phase 1 不做跨 Provider 映射——各家的工具 schema 不兼容，" +
+		"勉强映射只会让模型收到一个它读不懂的定义"
+	noteImageViaJobs = "Responses 的内建 image_generation 工具在 Phase 1 不做路由，" +
+		"请改用 /v1/jobs 端点"
 
-	// Responses 与 Chat Completions 的实质差异：前者协议上**支持**服务端会话，
-	// 是网关主动选择不用；后者是协议本身没有。对客户端而言这两句话的含义
-	// 完全不同——一个是「换个端点」，一个是「等下个版本」。
-	noteResponsesStateless = "Phase 1 以无状态模式运行（store=false），" +
-		"previous_response_id 不受支持；ConversationStore 接口已预留，Phase 2 接入"
+	// 网关侧模拟服务端会话的代价。这句话必须跟着 EMULATE 一起出现——
+	// 客户端拿到的能力是完整的，但这份完整性是网关垫出来的，
+	// 运维得知道它的边界在哪。
+	noteEmulatedSession = "上游无服务端会话，由网关侧 ConversationStore 模拟提供。" +
+		"Phase 1 为内存态：单副本正确，进程重启后历史丢失，多副本部署下会话不共享"
 )
 
 // Phase1 构造 Phase 1 的降级矩阵。
 //
 // 只登记**已实现**的转换路径。后续里程碑新增路径时必须在这里补充完整声明，
 // 否则该路径在 Check 时会以「未注册的转换路径」失败——这正是期望的行为。
+//
+// 每条路径只需为入站协议**表达得出来**的能力表态；其余由 Expressibility
+// 自动补成 NotApplicable（见 expressibility_phase1.go）。
 func Phase1() (*Matrix, error) {
 	m := NewMatrix()
 
-	// —— OpenAI Chat 入站 ——
-	//
-	// 入站优先级上排第三（见 InboundPriority）。它是覆盖面最广的客户端协议，
-	// 但表达力弱于 Responses——先声明它是因为其余 OpenAI 系路径都从它派生。
+	// ————————————————————————————————
+	// OpenAI Chat Completions 入站
+	// ————————————————————————————————
 
 	// 同源快通道。字节级透传，只改写鉴权，不进 Canonical。
+	// 客户端能表达的每一项它都原样转发——包括我们没特别处理过的字段。
 	chatToOpenAI := NewRoute(ProtoOpenAIChat, ProviderOpenAICompat).
 		MarkHomogeneous().
-		Pass(
-			canonical.CapTextGeneration,
-			canonical.CapStreaming,
-			canonical.CapToolCalling,
-			canonical.CapParallelToolCalls,
-			canonical.CapStructuredOutput,
-			canonical.CapReasoning,
-			canonical.CapVisionInput,
-			canonical.CapAudioInput,
-			canonical.CapFileInput,
-			canonical.CapAudioOutput,
-			canonical.CapPromptCache,
-			canonical.CapWebSearch,
-		).
-		Reject("OpenAI Chat Completions 不产生带签名的推理块；出现签名说明数据来自其他协议",
-			canonical.CapReasoningSignature).
-		Reject("OpenAI Chat Completions 不接受视频输入",
-			canonical.CapVideoInput).
-		Reject(noteWrongEndpoint, mediaGenCaps...).
-		Reject(noteWrongEndpoint, speechCaps...).
-		Reject(noteWrongEndpoint, vectorCaps...).
-		Reject("Chat Completions 无服务端会话状态，请改用 Responses 端点",
-			canonical.CapStatefulConversation).
-		Reject(noteNoRealtime, realtimeCaps...).
-		Reject(noteComputerUse, canonical.CapComputerUse)
+		Pass(ExpressibleSet(ProtoOpenAIChat)...)
 	if err := m.Add(chatToOpenAI.Build()); err != nil {
 		return nil, err
 	}
@@ -98,25 +58,11 @@ func Phase1() (*Matrix, error) {
 			canonical.CapVisionInput,
 			canonical.CapReasoning,
 		).
-		Degrade("Anthropic 无 strict json_schema 校验，schema 降级为提示词约束，"+
-			"模型可能返回不合规 JSON",
-			canonical.CapStructuredOutput).
-		Degrade("OpenAI 自动前缀缓存与 Anthropic 显式 cache_control 断点语义互斥，"+
-			"缓存意图被丢弃（请求仍然有效，但不会命中缓存）",
-			canonical.CapPromptCache).
-		Reject(noteSignatureLost, canonical.CapReasoningSignature).
-		Reject("Anthropic Messages 不接受音频输入", canonical.CapAudioInput).
-		Reject("Anthropic Messages 不接受视频输入", canonical.CapVideoInput).
+		Degrade(noteStrictSchema, canonical.CapStructuredOutput).
+		Reject(noteNoAudioIn, canonical.CapAudioInput).
+		Reject(noteNoAudioOut, canonical.CapAudioOutput).
 		Reject(noteFileRefBound, canonical.CapFileInput).
-		Reject("Anthropic 不产生音频输出", canonical.CapAudioOutput).
-		Reject("Anthropic 不提供图像/视频生成", mediaGenCaps...).
-		Reject("Anthropic 不提供语音能力", speechCaps...).
-		Reject("Anthropic 不提供 embedding / rerank", vectorCaps...).
-		Reject("Anthropic Messages 无服务端会话状态", canonical.CapStatefulConversation).
-		Reject("Anthropic 无 Realtime API", realtimeCaps...).
-		Reject("OpenAI 与 Anthropic 的内建 web_search 工具参数不兼容，Phase 1 不做映射",
-			canonical.CapWebSearch).
-		Reject(noteComputerUse, canonical.CapComputerUse)
+		Reject(noteBuiltinTool, canonical.CapWebSearch)
 	if err := m.Add(chatToAnthropic.Build()); err != nil {
 		return nil, err
 	}
@@ -133,23 +79,10 @@ func Phase1() (*Matrix, error) {
 		).
 		Degrade("DashScope 兼容模式支持 json_object，但不保证 strict json_schema 校验",
 			canonical.CapStructuredOutput).
-		Degrade("DashScope 兼容模式的缓存由上游自动管理，显式缓存意图被丢弃",
-			canonical.CapPromptCache).
-		Degrade("兼容模式接受 video_url，但帧采样率与时长上限无 OpenAI 对应字段，采用上游默认值",
-			canonical.CapVideoInput).
-		Degrade("DashScope 的 enable_search 是布尔开关，承载不了 OpenAI web_search 工具的参数，"+
-			"仅开关本身被映射",
-			canonical.CapWebSearch).
-		Reject(noteSignatureLost, canonical.CapReasoningSignature).
+		Degrade(noteSearchSwitch, canonical.CapWebSearch).
 		Reject(noteFileRefBound, canonical.CapFileInput).
 		Reject("兼容模式不返回音频；音频输出须经 Qwen-Omni Realtime 或 Native 端点",
-			canonical.CapAudioOutput).
-		Reject("兼容模式的 chat 端点不承载该能力，须走 DashScope Native", mediaGenCaps...).
-		Reject("兼容模式的 chat 端点不承载该能力，须走 DashScope Native", speechCaps...).
-		Reject("兼容模式的 chat 端点不承载该能力，须走 DashScope Native", vectorCaps...).
-		Reject("DashScope 兼容模式无服务端会话状态", canonical.CapStatefulConversation).
-		Reject(noteNoRealtime, realtimeCaps...).
-		Reject(noteComputerUse, canonical.CapComputerUse)
+			canonical.CapAudioOutput)
 	if err := m.Add(chatToDSCompat.Build()); err != nil {
 		return nil, err
 	}
@@ -161,127 +94,73 @@ func Phase1() (*Matrix, error) {
 			canonical.CapToolCalling,
 			canonical.CapVisionInput,
 			canonical.CapAudioInput,
-			canonical.CapVideoInput,
 			canonical.CapReasoning,
 		).
 		Degrade("DashScope Native 的并行工具调用行为由上游模型决定，无显式开关可映射",
 			canonical.CapParallelToolCalls).
 		Degrade("DashScope Native 支持 response_format=json_object，无 strict schema 校验",
 			canonical.CapStructuredOutput).
-		Degrade("DashScope Native 的缓存由上游自动管理，显式缓存意图被丢弃",
-			canonical.CapPromptCache).
-		Degrade("DashScope 的 enable_search 是布尔开关，承载不了 OpenAI web_search 工具的参数",
-			canonical.CapWebSearch).
-		Reject(noteSignatureLost, canonical.CapReasoningSignature).
+		Degrade(noteSearchSwitch, canonical.CapWebSearch).
 		Reject(noteFileRefBound, canonical.CapFileInput).
 		Reject("音频输出需要 Qwen-Omni 的输出格式参数，Chat Completions 入站无法表达",
-			canonical.CapAudioOutput).
-		Reject("图像/视频生成是异步任务，须经 /v1/jobs 端点", mediaGenCaps...).
-		Reject("语音须经 /v1/audio 入站端点", speechCaps...).
-		Reject("embedding / rerank 须经各自的独立入站端点", vectorCaps...).
-		Reject("DashScope Native generation 无服务端会话状态",
-			canonical.CapStatefulConversation).
-		Reject(noteNoRealtime, realtimeCaps...).
-		Reject(noteComputerUse, canonical.CapComputerUse)
+			canonical.CapAudioOutput)
 	if err := m.Add(chatToDSNative.Build()); err != nil {
 		return nil, err
 	}
 
-	// —— OpenAI Responses 入站（入站优先级第一）——
+	// ————————————————————————————————
+	// OpenAI Responses 入站（入站优先级第一）
+	// ————————————————————————————————
 	//
-	// 从对应的 Chat 路径派生。两者对同一个出站 Provider 的处置绝大部分相同，
-	// 差异逐条 Override 出来——这样「Responses 比 Chat 多/少了什么」是代码里
-	// 能直接读到的，而不是要靠对比两段几乎一样的声明去发现。
-	for _, base := range []*Route{chatToOpenAI, chatToAnthropic, chatToDSCompat, chatToDSNative} {
-		r := base.Derive(ProtoOpenAIResponses, base.Out).
-			Override(canonical.CapStatefulConversation, Reject, noteResponsesStateless)
+	// 从对应的 Chat 路径派生，差异逐条 Override 出来。相对 Chat，Responses 多出
+	// 三样真东西：服务端会话、内建工具（computer_use / image_generation）、
+	// 更完整的推理配置。前者由网关模拟，后两者 Phase 1 不做跨 Provider 映射。
 
-		if base.Out == ProviderOpenAICompat {
-			// Responses 把图像生成做成了内建工具（image_generation），
-			// 与 Chat 的「换个端点」不是一回事。Phase 1 统一走 /v1/jobs，
-			// 因此这里的拒绝理由要说清是网关不路由，而不是协议不支持。
-			r = r.Override(canonical.CapImageGeneration, Reject,
-				"Responses 的内建 image_generation 工具在 Phase 1 不做路由，请改用 /v1/jobs 端点")
+	responsesExtras := func(r *Route, homogeneous bool) *Route {
+		r = r.Emulate(noteEmulatedSession, canonical.CapStatefulConversation)
+		if homogeneous {
+			// 字节直通路径原样转发一切，内建工具也不例外。
+			// 早先把 computer_use 在直通路径上判成 REJECT 是错的：
+			// 网关根本没碰这个字段，凭什么替上游拒绝。
+			return r.Pass(canonical.CapComputerUse, canonical.CapImageGeneration)
 		}
+		return r.
+			Reject(noteBuiltinTool, canonical.CapComputerUse).
+			Reject(noteImageViaJobs, canonical.CapImageGeneration)
+	}
 
+	if err := m.Add(responsesExtras(
+		chatToOpenAI.Derive(ProtoOpenAIResponses, ProviderOpenAICompat), true,
+	).Build()); err != nil {
+		return nil, err
+	}
+	for _, base := range []*Route{chatToAnthropic, chatToDSCompat, chatToDSNative} {
+		r := responsesExtras(base.Derive(ProtoOpenAIResponses, base.Out), false)
 		if err := m.Add(r.Build()); err != nil {
 			return nil, err
 		}
 	}
 
-	// —— DashScope Native 入站（入站优先级第二）——
+	// ————————————————————————————————
+	// DashScope Native 入站（入站优先级第二）
+	// ————————————————————————————————
 	//
-	// 同源快通道。讲原生协议的客户端本来就不需要任何转换，让它们走兼容层
-	// 是净损失——这条路径的存在就是「尽量保留原生能力」的直接体现，
-	// 它的透传格子数也是全矩阵最高的。
+	// 同源快通道。讲原生协议的客户端本来就不需要任何转换，让它们走兼容层是
+	// 净损失。这条路径的保留度是满分，也应该是满分。
 	if err := m.Add(NewRoute(ProtoDashScopeNative, ProviderDashScopeNative).
 		MarkHomogeneous().
-		Pass(
-			canonical.CapTextGeneration,
-			canonical.CapStreaming,
-			canonical.CapToolCalling,
-			canonical.CapParallelToolCalls,
-			canonical.CapStructuredOutput,
-			canonical.CapReasoning,
-			canonical.CapVisionInput,
-			canonical.CapAudioInput,
-			canonical.CapVideoInput,
-			canonical.CapFileInput,
-			canonical.CapAudioOutput,
-			canonical.CapImageGeneration,
-			canonical.CapVideoGeneration,
-			canonical.CapSpeechSynthesis,
-			canonical.CapSpeechRecognition,
-			canonical.CapEmbedding,
-			canonical.CapRerank,
-			canonical.CapPromptCache,
-			canonical.CapWebSearch,
-		).
-		Reject("DashScope 不产生带签名的推理块；出现签名说明数据来自其他协议",
-			canonical.CapReasoningSignature).
-		Reject("DashScope Native 的 HTTP 端点无服务端会话状态",
-			canonical.CapStatefulConversation).
-		Reject(noteNoRealtime, realtimeCaps...).
-		Reject(noteComputerUse, canonical.CapComputerUse).
+		Pass(ExpressibleSet(ProtoDashScopeNative)...).
 		Build()); err != nil {
 		return nil, err
 	}
 
-	// —— OpenAI Realtime 入站 ——
+	// ————————————————————————————————
+	// OpenAI Realtime 入站
+	// ————————————————————————————————
 
-	// 同源快通道。
 	if err := m.Add(NewRoute(ProtoOpenAIRealtime, ProviderOpenAIRealtime).
 		MarkHomogeneous().
-		Pass(
-			canonical.CapTextGeneration,
-			canonical.CapStreaming,
-			canonical.CapToolCalling,
-			canonical.CapParallelToolCalls,
-			canonical.CapAudioInput,
-			canonical.CapAudioOutput,
-			canonical.CapSpeechSynthesis,
-			canonical.CapSpeechRecognition,
-			canonical.CapStatefulConversation,
-			canonical.CapRealtimeSession,
-			canonical.CapRealtimeServerVAD,
-			canonical.CapRealtimeInterruptTurns,
-		).
-		Reject("OpenAI Realtime 未提供 input_image_buffer 事件",
-			canonical.CapRealtimeImageInput).
-		Reject("server_commit / commit 是 Qwen-TTS-Realtime 特有的提交模式，OpenAI 无对应概念",
-			canonical.CapRealtimeCommitModes).
-		Reject("Realtime 会话不返回推理内容块",
-			canonical.CapReasoning, canonical.CapReasoningSignature).
-		Reject("Realtime 会话不支持 response_format", canonical.CapStructuredOutput).
-		Reject("Realtime 会话无 prompt cache 概念", canonical.CapPromptCache).
-		Reject("Realtime 会话的图像输入须走 conversation item，Phase 1 不支持",
-			canonical.CapVisionInput).
-		Reject("Realtime 会话不接受视频输入", canonical.CapVideoInput).
-		Reject(noteFileRefBound, canonical.CapFileInput).
-		Reject(noteWrongEndpoint, mediaGenCaps...).
-		Reject(noteWrongEndpoint, vectorCaps...).
-		Reject("Realtime 会话不支持内建 web_search 工具", canonical.CapWebSearch).
-		Reject(noteComputerUse, canonical.CapComputerUse).
+		Pass(ExpressibleSet(ProtoOpenAIRealtime)...).
 		Build()); err != nil {
 		return nil, err
 	}
@@ -290,8 +169,7 @@ func Phase1() (*Matrix, error) {
 	//
 	// DashScope 的 /api-ws/v1/realtime 与 OpenAI Realtime 事件模型基本一致
 	// （session.update / input_audio_buffer.append / response.create /
-	// response.audio.delta ...），绝大多数事件原样转发即可。实际差异只有下面
-	// 登记的三处，全部是可控工程量而非架构障碍。
+	// response.audio.delta ...），绝大多数事件原样转发即可。
 	if err := m.Add(NewRoute(ProtoOpenAIRealtime, ProviderDashScopeWSRealtime).
 		MarkHomogeneous().
 		Pass(
@@ -311,24 +189,69 @@ func Phase1() (*Matrix, error) {
 			canonical.CapAudioInput).
 		Degrade("DashScope Realtime 未提供并行工具调用开关，行为由上游模型决定",
 			canonical.CapParallelToolCalls).
-		Reject("input_image_buffer.append 是 DashScope 独有事件，OpenAI Realtime 客户端无法产生",
-			canonical.CapRealtimeImageInput).
-		Reject("Qwen-TTS-Realtime 的 server_commit / commit 模式在 OpenAI Realtime 协议中"+
-			"无对应字段，无法由客户端指定",
-			canonical.CapRealtimeCommitModes).
-		Reject("Realtime 会话不返回推理内容块",
-			canonical.CapReasoning, canonical.CapReasoningSignature).
-		Reject("Realtime 会话不支持 response_format", canonical.CapStructuredOutput).
-		Reject("Realtime 会话无 prompt cache 概念", canonical.CapPromptCache).
-		Reject("Qwen-Omni-Realtime 的图像输入依赖 input_image_buffer，OpenAI 客户端无法产生",
-			canonical.CapVisionInput).
-		Reject("Realtime 会话不接受视频输入", canonical.CapVideoInput).
-		Reject(noteFileRefBound, canonical.CapFileInput).
-		Reject(noteWrongEndpoint, mediaGenCaps...).
-		Reject(noteWrongEndpoint, vectorCaps...).
-		Reject("Realtime 会话不支持内建 web_search 工具", canonical.CapWebSearch).
-		Reject(noteComputerUse, canonical.CapComputerUse).
 		Build()); err != nil {
+		return nil, err
+	}
+
+	// ————————————————————————————————
+	// DashScope Realtime 入站（B 类，/api-ws/v1/realtime）
+	// ————————————————————————————————
+
+	if err := m.Add(NewRoute(ProtoDashScopeRealtime, ProviderDashScopeWSRealtime).
+		MarkHomogeneous().
+		Pass(ExpressibleSet(ProtoDashScopeRealtime)...).
+		Build()); err != nil {
+		return nil, err
+	}
+
+	// 反向路径：DashScope Realtime 客户端 → OpenAI Realtime 上游。
+	// 与上面那条对称，代价也对称——只是重采样方向反过来，
+	// 且 DashScope 侧多出的两项能力在 OpenAI 侧没有落点。
+	if err := m.Add(NewRoute(ProtoDashScopeRealtime, ProviderOpenAIRealtime).
+		Pass(
+			canonical.CapTextGeneration,
+			canonical.CapStreaming,
+			canonical.CapToolCalling,
+			canonical.CapAudioOutput,
+			canonical.CapSpeechSynthesis,
+			canonical.CapSpeechRecognition,
+			canonical.CapStatefulConversation,
+			canonical.CapRealtimeSession,
+			canonical.CapRealtimeServerVAD,
+			canonical.CapRealtimeInterruptTurns,
+		).
+		Degrade("输入音频需从 DashScope 的 16 kHz 重采样到 OpenAI 的 24 kHz；"+
+			"上采样补不回原本就没采到的高频信息，只是满足格式要求",
+			canonical.CapAudioInput).
+		Degrade("OpenAI Realtime 未提供并行工具调用开关，行为由上游模型决定",
+			canonical.CapParallelToolCalls).
+		Reject("OpenAI Realtime 没有 input_image_buffer 事件，图像输入无处安放",
+			canonical.CapRealtimeImageInput, canonical.CapVisionInput).
+		Reject("server_commit / commit 是 Qwen-TTS-Realtime 特有的提交模式，"+
+			"OpenAI Realtime 协议中没有对应字段",
+			canonical.CapRealtimeCommitModes).
+		Build()); err != nil {
+		return nil, err
+	}
+
+	// ————————————————————————————————
+	// DashScope Inference 入站（A 类，/api-ws/v1/inference）
+	// ————————————————————————————————
+	//
+	// run-task 指令流，承载 Paraformer 实时 ASR 与 CosyVoice 流式 TTS。
+	// 在此之前这个 Provider 没有任何入站路径指向它——两个模型从任何入口都
+	// 到不了。这条路径就是补上那个洞。
+	if err := m.Add(NewRoute(ProtoDashScopeInference, ProviderDashScopeWSInference).
+		MarkHomogeneous().
+		Pass(ExpressibleSet(ProtoDashScopeInference)...).
+		Build()); err != nil {
+		return nil, err
+	}
+
+	// 最后一道校验：所有「该能力请去别处」的转介，目标必须真的存在。
+	// 少了这一步，一句「realtime 请走 dashscope.realtime」可以指向一个从未
+	// 注册的协议，用户按提示改了协议还是撞墙。
+	if err := m.checkElsewhereTargets(); err != nil {
 		return nil, err
 	}
 

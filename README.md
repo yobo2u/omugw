@@ -20,6 +20,12 @@
 
 - **转换是有损的，损失必须显式。** 维护代码化的[降级矩阵](docs/degradation-matrix.md)，
   未注册的 `(入站协议, 出站 Provider, 能力)` 组合一律显式报错，绝不静默丢字段。
+  「这条路承载不了」和「这个协议表达不出来」严格分开——后者是协议属性，
+  不该算成路径的损失，也必须注明该去哪个协议找。
+- **上游没有的，网关能垫就垫。** Anthropic 与 DashScope 都是无状态协议，
+  而 Responses 的客户端可以只发 `previous_response_id`。这道鸿沟由
+  `internal/convstore` 填平，矩阵里记为 `EMULATE`——客户端拿到的能力是完整的，
+  但说明里必须写清这份完整性带着网关自己的可用性边界。
 - **同源走快通道。** 入站协议族 == 出站 Provider 族时字节级透传，只改写鉴权，
   不进 Canonical——保住 TTFT，绕开绝大多数转换 bug。
 - **流式 failover 只在首字节之前有效。** 首字节发出后上游失败一律不重试
@@ -48,10 +54,14 @@ omugw 的 core **不包含**任何 OAuth 刷新、账号封禁冷却、客户端
 
 | # | 协议族 | 协议 | 状态 |
 |---|---|---|---|
-| 1 | **OpenAI** | `openai.responses`（无状态）、`openai.chat`、`openai.realtime` | ✅ Phase 1 |
-| 2 | **DashScope Native** | `dashscope.native` | ✅ Phase 1 |
+| 1 | **OpenAI** | `openai.responses`、`openai.chat`、`openai.realtime` | ✅ Phase 1 |
+| 2 | **DashScope** | `dashscope.native`（HTTP）、`dashscope.realtime`（`/api-ws/v1/realtime`）、`dashscope.inference`（`/api-ws/v1/inference`，run-task） | ✅ Phase 1 |
 | 3 | Anthropic Messages | — | Phase 2 |
 | 4 | Gemini | — | Phase 2 |
+
+DashScope 拆成三个协议而不是一个：三种线格式的消息模型、传输方式与能力集都不同，
+合成一个会让转换器无从下手。`dashscope.inference` 承载 Paraformer 实时 ASR 与
+CosyVoice 流式 TTS——这套 `run-task` 指令流是 OpenAI 兼容层完全表达不了的。
 
 **出站选路偏好**（越靠前越优先，依据是原生能力保留度）：
 
@@ -83,7 +93,7 @@ omugw 的 core **不包含**任何 OAuth 刷新、账号封禁冷却、客户端
 | Gemini（文本 + 多模态 + Live API） | 入站优先级第 4 族，Phase 2 |
 | Anthropic 多模态 | 多模态轴优先级 4，最后（无 realtime API，仅 vision 输入） |
 | WebRTC 传输 | 只做 WebSocket |
-| Responses 有状态（`store=true`） | 需自建 conversation store 子系统 |
+| 跨副本共享的会话状态 | Phase 1 的 `internal/convstore` 是内存态：单副本正确，重启丢失，多副本不共享。跨副本需换 Redis |
 | 控制面 / Admin UI / 计费 | 归 omapi |
 | 订阅账号池实现 | 归 omsub |
 | 多副本共享状态（Redis） | Phase 1 内存态凭据池，单实例正确 |

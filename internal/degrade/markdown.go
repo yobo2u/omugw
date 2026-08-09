@@ -20,12 +20,23 @@ func (m *Matrix) Markdown() string {
 	b.WriteString("> **本文件由 `internal/degrade` 自动生成，请勿手工编辑。**\n")
 	b.WriteString("> 修改 `internal/degrade/rules_phase1.go` 后运行 `make matrix-update` 重新生成。\n\n")
 
-	b.WriteString("每条转换路径都必须对**每一项**能力明确表态。三种处置：\n\n")
-	b.WriteString("| 处置 | 含义 |\n|---|---|\n")
-	b.WriteString("| `PASSTHROUGH` | 能力完整传递给上游，无语义损失 |\n")
+	b.WriteString("每条转换路径都必须对入站协议**表达得出来**的每一项能力明确表态：\n\n")
+	b.WriteString("| 处置 | 含义 | 计入保留度 |\n|---|---|---|\n")
+	b.WriteString("| `PASSTHROUGH` | 能力完整传递给上游，无语义损失 | 满分 |\n")
+	b.WriteString("| `EMULATE` | 上游不提供，由网关自行实现；客户端拿到的能力是完整的，" +
+		"但带着网关侧的可用性边界 | 满分 |\n")
 	b.WriteString("| `DEGRADE` | 请求仍然有效，但部分语义被丢弃；" +
-		"网关通过 `" + DegradationHeader + "` 响应头告知客户端 |\n")
-	b.WriteString("| `REJECT` | 这条路径无法支持该能力，请求直接失败（HTTP 422） |\n\n")
+		"网关通过 `" + DegradationHeader + "` 响应头告知客户端 | 半分 |\n")
+	b.WriteString("| `REJECT` | 这条路径无法承载该能力，请求直接失败（HTTP 422） | 零分 |\n")
+	b.WriteString("| `N/A` | 入站协议根本表达不出该能力，客户端连发都发不出来；" +
+		"由可表达性声明自动推导，注明该去哪个协议 | **不进分母** |\n\n")
+
+	b.WriteString("`N/A` 单列是有原因的。早先的版本把它和 `REJECT` 混为一谈，" +
+		"结果一条零损失的字节直通路径只拿到 0.704 分——读起来像丢了三成能力，" +
+		"实际一点没丢。**可表达性是协议的属性，不是路径的属性**：" +
+		"OpenAI Chat 的客户端没有字段可以发出 Anthropic 的推理签名，" +
+		"不该让每条 `openai.chat` 路径为此扣分。\n\n")
+
 	b.WriteString("**未登记的组合按 `REJECT` 处理。** 这是刻意的失败方向：" +
 		"漏配一格的后果是请求被拒绝，而不是请求丢了半数字段还返回 200。\n\n")
 
@@ -81,12 +92,17 @@ func (m *Matrix) writePreservation(b *strings.Builder) {
 		}
 		fmt.Fprintf(b, "`%s`", p)
 	}
-	b.WriteString("\n\n保留度 = (透传 + 0.5 × 降级) / 总能力数。" +
-		"降级不计零分，是因为请求仍然成功，只是丢了部分语义——" +
+	b.WriteString("\n\n保留度 = (透传 + 模拟 + 0.5 × 降级) / **可表达能力数**。" +
+		"分母只算入站协议表达得出来的能力：客户端发不出来的东西，" +
+		"这条路径没有义务为它负责。降级不计零分，是因为请求仍然成功——" +
 		"把它与「直接失败」等同看待，会让选路偏向一条谁都用不了的路径。\n\n")
+	b.WriteString("**同源快通道永远排在最前，然后才轮到全局偏好序。** " +
+		"固定的全局顺序表达不了「同源优先」，而后者依赖入站协议是谁——" +
+		"对 `dashscope.realtime` 入站，DashScope 侧直通是零损失的，" +
+		"可在全局序里 `openai.realtime` 排得更靠前。\n\n")
 
-	b.WriteString("| 入站 | 出站 | 快通道 | 透传 | 降级 | 拒绝 | 保留度 |\n")
-	b.WriteString("|---|---|---|---:|---:|---:|---:|\n")
+	b.WriteString("| 入站 | 出站 | 快通道 | 透传 | 模拟 | 降级 | 拒绝 | N/A | 保留度 |\n")
+	b.WriteString("|---|---|---|---:|---:|---:|---:|---:|---:|\n")
 
 	// 按入站分组，组内按选路偏好排序——与运行时的实际选路顺序一致。
 	byInbound := map[Protocol][]Provider{}
@@ -107,18 +123,23 @@ func (m *Matrix) writePreservation(b *strings.Builder) {
 			if r.Homogeneous {
 				fast = "✅"
 			}
-			fmt.Fprintf(b, "| `%s` | `%s` | %s | %d | %d | %d | %.3f |\n",
-				in, out, fast, p.Passthrough, p.Degrade, p.Reject, p.Score())
+			fmt.Fprintf(b, "| `%s` | `%s` | %s | %d | %d | %d | %d | %d | %.3f |\n",
+				in, out, fast,
+				p.Passthrough, p.Emulate, p.Degrade, p.Reject, p.NotApplicable,
+				p.Score())
 		}
 	}
 	b.WriteString("\n")
 }
 
 // Stats 汇总各处置的格子数，用于快速判断某条路径的「有损程度」。
+//
+// NotApplicable 不在返回值里——它衡量的是入站协议的表达力，不是这条路径的
+// 得失。要看它请用 Preservation()。
 func (r *Route) Stats() (pass, degrade, reject int) {
 	for _, rule := range r.rules {
 		switch rule.Disposition {
-		case Passthrough:
+		case Passthrough, Emulate:
 			pass++
 		case Degrade:
 			degrade++

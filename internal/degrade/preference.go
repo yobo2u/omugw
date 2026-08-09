@@ -36,8 +36,12 @@ var InboundPriority = []InboundFamily{
 		ProtoOpenAIChat,
 		ProtoOpenAIRealtime,
 	}},
-	{Name: "DashScope Native", Protocols: []Protocol{
+	// DashScope 有三个各自独立的线格式，能力集互不相同。
+	// 族内按表达力排序：HTTP native 最全，realtime 次之，run-task 指令流最窄。
+	{Name: "DashScope", Protocols: []Protocol{
 		ProtoDashScopeNative,
+		ProtoDashScopeRealtime,
+		ProtoDashScopeInference,
 	}},
 	{Name: "Anthropic Messages"},
 	{Name: "Gemini"},
@@ -78,27 +82,51 @@ func preferenceRank(p Provider) int {
 // Preservation 是一条路径的原生能力保留度。
 type Preservation struct {
 	Passthrough int
+	Emulate     int
 	Degrade     int
 	Reject      int
+
+	// NotApplicable 是入站协议压根表达不出来的能力数。
+	//
+	// 它**不进分母**。早先的版本把它算作损失，结果一条零损失的字节直通路径
+	// 只拿到 0.704 分，读起来像丢了三成能力——那不是路径的问题，是分母选错了。
+	NotApplicable int
 }
 
 // Score 把保留度压成一个可比较的数值。
 //
-// 透传计满分，降级计半分，拒绝计零分。降级不是零分是因为请求仍然成功，
-// 只是丢了部分语义——把它和「直接失败」等同看待会让选路偏向一条谁都用不了
-// 的路径。
+// 分母只算入站协议**表达得出来**的能力：客户端发不出来的东西，这条路径没有
+// 义务为它负责。
+//
+// 透传与网关模拟计满分（客户端拿到的能力是完整的），降级计半分，拒绝计零分。
+// 降级不是零分是因为请求仍然成功，只是丢了部分语义——把它和「直接失败」等同
+// 看待，会让选路偏向一条谁都用不了的路径。
 func (p Preservation) Score() float64 {
-	total := p.Passthrough + p.Degrade + p.Reject
+	total := p.Passthrough + p.Emulate + p.Degrade + p.Reject
 	if total == 0 {
 		return 0
 	}
-	return (float64(p.Passthrough) + 0.5*float64(p.Degrade)) / float64(total)
+	return (float64(p.Passthrough+p.Emulate) + 0.5*float64(p.Degrade)) / float64(total)
 }
 
 // Preservation 报告这条路径保留了多少原生能力。
 func (r *Route) Preservation() Preservation {
-	pass, deg, rej := r.Stats()
-	return Preservation{Passthrough: pass, Degrade: deg, Reject: rej}
+	var p Preservation
+	for _, rule := range r.rules {
+		switch rule.Disposition {
+		case Passthrough:
+			p.Passthrough++
+		case Emulate:
+			p.Emulate++
+		case Degrade:
+			p.Degrade++
+		case Reject:
+			p.Reject++
+		case NotApplicable:
+			p.NotApplicable++
+		}
+	}
+	return p
 }
 
 // RankOutbound 按选路偏好对候选 Provider 排序，并剔除没有注册路径的候选。
@@ -113,7 +141,21 @@ func (m *Matrix) RankOutbound(in Protocol, candidates []Provider) []Provider {
 			out = append(out, c)
 		}
 	}
+	// 同源快通道永远排在最前，然后才轮到全局偏好序。
+	//
+	// 固定的全局顺序表达不了「同源优先」——它依赖入站协议是谁。举个真实的例子：
+	// 对 dashscope.realtime 入站，DashScope 侧的直通是零损失的，而 openai.realtime
+	// 需要反向重采样并丢掉 input_image_buffer；但在全局序里 openai.realtime 排得
+	// 更靠前。不把同源提到最前，选路就会主动挑一条更差的路。
+	homogeneous := func(p Provider) bool {
+		r, ok := m.Route(in, p)
+		return ok && r.Homogeneous
+	}
 	sort.SliceStable(out, func(i, j int) bool {
+		hi, hj := homogeneous(out[i]), homogeneous(out[j])
+		if hi != hj {
+			return hi
+		}
 		ri, rj := preferenceRank(out[i]), preferenceRank(out[j])
 		if ri != rj {
 			return ri < rj
