@@ -132,6 +132,35 @@ func (r *Route) Reject(note string, caps ...canonical.Capability) *Route {
 	return r
 }
 
+// Derive 以另一条已声明的路径为基准创建新路径，用于协议族内部的近似路径
+// （例如 OpenAI Chat 与 OpenAI Responses 面对同一个出站 Provider）。
+//
+// 它不是省事的手段。逐字复制 27 条声明不会让人多想一遍，只会增加复制粘贴的
+// 出错面；而 Derive + Override 把「这两条路径究竟哪里不同」变成代码里能一眼
+// 读到的答案。Build 的完整性校验对派生路径同样生效。
+func (r *Route) Derive(in Protocol, out Provider) *Route {
+	n := NewRoute(in, out)
+	n.Homogeneous = r.Homogeneous
+	for c, rule := range r.rules {
+		n.rules[c] = rule
+	}
+	return n
+}
+
+// Override 覆盖继承来的声明。note 必须说明为什么这条路径与基准不同。
+//
+// 只能覆盖已存在的声明——对一个从未声明过的能力谈「覆盖」没有意义，
+// 那种情况说明基准路径选错了。
+func (r *Route) Override(c canonical.Capability, d Disposition, note string) *Route {
+	if _, ok := r.rules[c]; !ok {
+		r.errs = append(r.errs,
+			fmt.Sprintf("capability %q was never declared, nothing to override", c))
+		return r
+	}
+	r.rules[c] = Rule{Disposition: d, Note: note}
+	return r
+}
+
 // Build 校验这条路径已经对**每一项**能力表态。
 //
 // 这是整个包的核心约束。漏掉一格就编译不过测试，而不是等到线上才发现某个

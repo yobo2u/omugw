@@ -40,11 +40,37 @@ omugw 的 core **不包含**任何 OAuth 刷新、账号封禁冷却、客户端
 
 ### ✅ 在范围内
 
+总原则：**尽量保留原生能力**。协议优先级按「能表达多少原生能力」排序，
+而不是流行度——用一个表达力弱的协议当主入口，等于在网关门口就先砍掉一层语义。
+
+**入站协议族按优先级**（族内按表达力从强到弱；同族共用编解码与错误信封，
+接入一个之后再接入另一个的边际成本很低，因此按族排期）：
+
+| # | 协议族 | 协议 | 状态 |
+|---|---|---|---|
+| 1 | **OpenAI** | `openai.responses`（无状态）、`openai.chat`、`openai.realtime` | ✅ Phase 1 |
+| 2 | **DashScope Native** | `dashscope.native` | ✅ Phase 1 |
+| 3 | Anthropic Messages | — | Phase 2 |
+| 4 | Gemini | — | Phase 2 |
+
+**出站选路偏好**（越靠前越优先，依据是原生能力保留度）：
+
+| # | 出站 Provider | 说明 |
+|---|---|---|
+| 1 | **OpenAI 兼容穿透** | 字节透传，语义零损失 |
+| 2 | **DashScope Compatible 穿透** | 同为透传，走 DashScope 侧兼容层 |
+| 3 | DashScope Native | 需转换，但能表达 DashScope 独有能力 |
+| 4 | Anthropic Messages | 异构转换，损失最多 |
+
+这个顺序不是拍脑袋定的：CI 会拿它与降级矩阵里实际的透传格子数对账，
+新增一条声称优先、实际却丢更多能力的路径会被拦下来。
+完整量化见[降级矩阵](docs/degradation-matrix.md#选路偏好与原生能力保留度)。
+
+**其余范围**：
+
 | 类别 | 内容 |
 |---|---|
-| 入站协议 | OpenAI Chat Completions、OpenAI Responses（**无状态**）、OpenAI Realtime |
-| 出站 Provider | OpenAI 兼容、Anthropic Messages、DashScope Compatible、**DashScope Native（全量）** |
-| DashScope Native | generation / multimodal / embedding / rerank / image / video / speech / realtime |
+| DashScope Native 能力 | generation / multimodal / embedding / rerank / image / video / speech / realtime |
 | 传输 | HTTP、SSE、WebSocket（`/api-ws/v1/inference` 与 `/api-ws/v1/realtime` 两类）、异步 Job |
 | 多模态 | DashScope（优先级 1，全量）、OpenAI（优先级 2：image / audio / realtime） |
 | 治理 | API Key 鉴权、内存态凭据池、首字节前 failover、冷却、结构化审计 |
@@ -53,10 +79,9 @@ omugw 的 core **不包含**任何 OAuth 刷新、账号封禁冷却、客户端
 
 | 排除项 | 去向 |
 |---|---|
-| Anthropic Messages **入站** | Phase 2 文本协议轴第一位 |
-| Gemini 文本协议 | Phase 2 |
-| Gemini 多模态 + Live API | Phase 2 多模态轴第一位（优先级 3） |
-| Anthropic 多模态 | 优先级 4，最后（无 realtime API，仅 vision 输入） |
+| Anthropic Messages **入站** | 入站优先级第 3 族，Phase 2 |
+| Gemini（文本 + 多模态 + Live API） | 入站优先级第 4 族，Phase 2 |
+| Anthropic 多模态 | 多模态轴优先级 4，最后（无 realtime API，仅 vision 输入） |
 | WebRTC 传输 | 只做 WebSocket |
 | Responses 有状态（`store=true`） | 需自建 conversation store 子系统 |
 | 控制面 / Admin UI / 计费 | 归 omapi |

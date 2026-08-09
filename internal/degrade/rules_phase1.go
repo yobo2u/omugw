@@ -37,6 +37,12 @@ const (
 	noteWrongEndpoint = "该能力不在这条端点上，须经对应的专用入站端点"
 	noteNoRealtime    = "Realtime 能力仅在 WebSocket 会话中可用，HTTP 端点无法表达"
 	noteComputerUse   = "computer use 的工具 schema 各家不兼容，不在 Phase 1 范围"
+
+	// Responses 与 Chat Completions 的实质差异：前者协议上**支持**服务端会话，
+	// 是网关主动选择不用；后者是协议本身没有。对客户端而言这两句话的含义
+	// 完全不同——一个是「换个端点」，一个是「等下个版本」。
+	noteResponsesStateless = "Phase 1 以无状态模式运行（store=false），" +
+		"previous_response_id 不受支持；ConversationStore 接口已预留，Phase 2 接入"
 )
 
 // Phase1 构造 Phase 1 的降级矩阵。
@@ -46,10 +52,13 @@ const (
 func Phase1() (*Matrix, error) {
 	m := NewMatrix()
 
-	// —— M1：OpenAI Chat 入站 ——
+	// —— OpenAI Chat 入站 ——
+	//
+	// 入站优先级上排第三（见 InboundPriority）。它是覆盖面最广的客户端协议，
+	// 但表达力弱于 Responses——先声明它是因为其余 OpenAI 系路径都从它派生。
 
 	// 同源快通道。字节级透传，只改写鉴权，不进 Canonical。
-	if err := m.Add(NewRoute(ProtoOpenAIChat, ProviderOpenAICompat).
+	chatToOpenAI := NewRoute(ProtoOpenAIChat, ProviderOpenAICompat).
 		MarkHomogeneous().
 		Pass(
 			canonical.CapTextGeneration,
@@ -75,12 +84,12 @@ func Phase1() (*Matrix, error) {
 		Reject("Chat Completions 无服务端会话状态，请改用 Responses 端点",
 			canonical.CapStatefulConversation).
 		Reject(noteNoRealtime, realtimeCaps...).
-		Reject(noteComputerUse, canonical.CapComputerUse).
-		Build()); err != nil {
+		Reject(noteComputerUse, canonical.CapComputerUse)
+	if err := m.Add(chatToOpenAI.Build()); err != nil {
 		return nil, err
 	}
 
-	if err := m.Add(NewRoute(ProtoOpenAIChat, ProviderAnthropicMessages).
+	chatToAnthropic := NewRoute(ProtoOpenAIChat, ProviderAnthropicMessages).
 		Pass(
 			canonical.CapTextGeneration,
 			canonical.CapStreaming,
@@ -107,12 +116,12 @@ func Phase1() (*Matrix, error) {
 		Reject("Anthropic 无 Realtime API", realtimeCaps...).
 		Reject("OpenAI 与 Anthropic 的内建 web_search 工具参数不兼容，Phase 1 不做映射",
 			canonical.CapWebSearch).
-		Reject(noteComputerUse, canonical.CapComputerUse).
-		Build()); err != nil {
+		Reject(noteComputerUse, canonical.CapComputerUse)
+	if err := m.Add(chatToAnthropic.Build()); err != nil {
 		return nil, err
 	}
 
-	if err := m.Add(NewRoute(ProtoOpenAIChat, ProviderDashScopeCompatible).
+	chatToDSCompat := NewRoute(ProtoOpenAIChat, ProviderDashScopeCompatible).
 		Pass(
 			canonical.CapTextGeneration,
 			canonical.CapStreaming,
@@ -140,12 +149,12 @@ func Phase1() (*Matrix, error) {
 		Reject("兼容模式的 chat 端点不承载该能力，须走 DashScope Native", vectorCaps...).
 		Reject("DashScope 兼容模式无服务端会话状态", canonical.CapStatefulConversation).
 		Reject(noteNoRealtime, realtimeCaps...).
-		Reject(noteComputerUse, canonical.CapComputerUse).
-		Build()); err != nil {
+		Reject(noteComputerUse, canonical.CapComputerUse)
+	if err := m.Add(chatToDSCompat.Build()); err != nil {
 		return nil, err
 	}
 
-	if err := m.Add(NewRoute(ProtoOpenAIChat, ProviderDashScopeNative).
+	chatToDSNative := NewRoute(ProtoOpenAIChat, ProviderDashScopeNative).
 		Pass(
 			canonical.CapTextGeneration,
 			canonical.CapStreaming,
@@ -173,12 +182,72 @@ func Phase1() (*Matrix, error) {
 		Reject("DashScope Native generation 无服务端会话状态",
 			canonical.CapStatefulConversation).
 		Reject(noteNoRealtime, realtimeCaps...).
+		Reject(noteComputerUse, canonical.CapComputerUse)
+	if err := m.Add(chatToDSNative.Build()); err != nil {
+		return nil, err
+	}
+
+	// —— OpenAI Responses 入站（入站优先级第一）——
+	//
+	// 从对应的 Chat 路径派生。两者对同一个出站 Provider 的处置绝大部分相同，
+	// 差异逐条 Override 出来——这样「Responses 比 Chat 多/少了什么」是代码里
+	// 能直接读到的，而不是要靠对比两段几乎一样的声明去发现。
+	for _, base := range []*Route{chatToOpenAI, chatToAnthropic, chatToDSCompat, chatToDSNative} {
+		r := base.Derive(ProtoOpenAIResponses, base.Out).
+			Override(canonical.CapStatefulConversation, Reject, noteResponsesStateless)
+
+		if base.Out == ProviderOpenAICompat {
+			// Responses 把图像生成做成了内建工具（image_generation），
+			// 与 Chat 的「换个端点」不是一回事。Phase 1 统一走 /v1/jobs，
+			// 因此这里的拒绝理由要说清是网关不路由，而不是协议不支持。
+			r = r.Override(canonical.CapImageGeneration, Reject,
+				"Responses 的内建 image_generation 工具在 Phase 1 不做路由，请改用 /v1/jobs 端点")
+		}
+
+		if err := m.Add(r.Build()); err != nil {
+			return nil, err
+		}
+	}
+
+	// —— DashScope Native 入站（入站优先级第二）——
+	//
+	// 同源快通道。讲原生协议的客户端本来就不需要任何转换，让它们走兼容层
+	// 是净损失——这条路径的存在就是「尽量保留原生能力」的直接体现，
+	// 它的透传格子数也是全矩阵最高的。
+	if err := m.Add(NewRoute(ProtoDashScopeNative, ProviderDashScopeNative).
+		MarkHomogeneous().
+		Pass(
+			canonical.CapTextGeneration,
+			canonical.CapStreaming,
+			canonical.CapToolCalling,
+			canonical.CapParallelToolCalls,
+			canonical.CapStructuredOutput,
+			canonical.CapReasoning,
+			canonical.CapVisionInput,
+			canonical.CapAudioInput,
+			canonical.CapVideoInput,
+			canonical.CapFileInput,
+			canonical.CapAudioOutput,
+			canonical.CapImageGeneration,
+			canonical.CapVideoGeneration,
+			canonical.CapSpeechSynthesis,
+			canonical.CapSpeechRecognition,
+			canonical.CapEmbedding,
+			canonical.CapRerank,
+			canonical.CapPromptCache,
+			canonical.CapWebSearch,
+		).
+		Reject("DashScope 不产生带签名的推理块；出现签名说明数据来自其他协议",
+			canonical.CapReasoningSignature).
+		Reject("DashScope Native 的 HTTP 端点无服务端会话状态",
+			canonical.CapStatefulConversation).
+		Reject(noteNoRealtime, realtimeCaps...).
 		Reject(noteComputerUse, canonical.CapComputerUse).
 		Build()); err != nil {
 		return nil, err
 	}
 
-	// —— M7：OpenAI Realtime 入站 ——
+	// —— OpenAI Realtime 入站 ——
 
 	// 同源快通道。
 	if err := m.Add(NewRoute(ProtoOpenAIRealtime, ProviderOpenAIRealtime).
