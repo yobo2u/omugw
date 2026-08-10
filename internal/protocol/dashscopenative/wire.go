@@ -40,19 +40,22 @@ type Message struct {
 
 // Parameters 是采样与行为参数。只建模能力识别需要的几项，其余直通。
 type Parameters struct {
-	Tools           json.RawMessage `json:"tools"`
-	EnableSearch    *bool           `json:"enable_search"`
-	EnableThinking  *bool           `json:"enable_thinking"`
-	ReasoningEffort *string         `json:"reasoning_effort"`
+	Tools          json.RawMessage `json:"tools"`
+	EnableSearch   *bool           `json:"enable_search"`
+	EnableThinking *bool           `json:"enable_thinking"`
 }
 
 // ContentPart 是多模态内容块。Type 区分文本 / 图像 / 音频 / 视频 / 文件。
 type ContentPart struct {
 	Type string `json:"type"`
 	Text string `json:"text"`
-	// 图像 / 音频 / 视频 / 文件的负载字段名各异，统一用 Raw 兜底后按需解析。
+
 	Image string `json:"image"`
 	Audio string `json:"audio"`
-	Video string `json:"video"`
 	File  string `json:"file"`
+
+	// Video 官方定义是 **array 或 string**：传图像列表（视频帧）时是数组。
+	// 用 string 建模会让带数组 video 的内容块整段解不出来，连同兄弟块一起丢，
+	// 内联上限随之被绕过——所以这里收原始字节，按两种形态分别解。
+	Video json.RawMessage `json:"video"`
 }

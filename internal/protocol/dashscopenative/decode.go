@@ -124,14 +124,22 @@ func decodeContent(raw json.RawMessage) ([]canonical.Part, int64, error) {
 		}
 		return []canonical.Part{canonical.Text(s)}, 0, nil
 	}
-	var parts []ContentPart
-	if err := json.Unmarshal(raw, &parts); err != nil {
+	// 逐元素解：先收成 RawMessage 数组，再一块一块解。整段一次性解进
+	// []ContentPart 的话，任何一块的类型不匹配（例如 video 传数组）都会让
+	// 整个数组解析失败，连同兄弟块一起丢——图片的内联字节因此不计入，
+	// 入口的内联上限就被绕过了。损失必须局限在解不出来的那一块。
+	var rawParts []json.RawMessage
+	if err := json.Unmarshal(raw, &rawParts); err != nil {
 		// 既不是字符串也不是数组——宽松起见跳过，直通会把原始字节带走。
 		return nil, 0, nil
 	}
 	var out []canonical.Part
 	var inline int64
-	for _, p := range parts {
+	for _, rp := range rawParts {
+		var p ContentPart
+		if err := json.Unmarshal(rp, &p); err != nil {
+			continue // 只丢解不出来的这一块，不牵连兄弟块
+		}
 		part, n := decodePart(p)
 		if part.Kind != "" {
 			out = append(out, part)
@@ -154,8 +162,8 @@ func decodePart(p ContentPart) (canonical.Part, int64) {
 			return mediaPart(canonical.MediaImage, p.Image)
 		case p.Audio != "":
 			return mediaPart(canonical.MediaAudio, p.Audio)
-		case p.Video != "":
-			return mediaPart(canonical.MediaVideo, p.Video)
+		case len(p.Video) > 0:
+			return videoPart(p.Video)
 		case p.File != "":
 			return mediaPart(canonical.MediaFile, p.File)
 		case p.Text != "":
@@ -172,12 +180,36 @@ func decodePart(p ContentPart) (canonical.Part, int64) {
 	case "audio":
 		return mediaPart(canonical.MediaAudio, p.Audio)
 	case "video":
-		return mediaPart(canonical.MediaVideo, p.Video)
+		return videoPart(p.Video)
 	case "file":
 		return mediaPart(canonical.MediaFile, p.File)
 	default:
 		return canonical.Part{}, 0
 	}
+}
+
+// videoPart 解 video 的两种形态：单个字符串，或图像列表（视频帧）数组。
+//
+// 数组形态每一帧都可能是 data URI，字节数必须逐帧累加——只算第一帧会让
+// 其余帧绕过内联上限。Part 本身只留第一帧，够用于能力识别。
+func videoPart(raw json.RawMessage) (canonical.Part, int64) {
+	if len(raw) == 0 {
+		return canonical.Part{}, 0
+	}
+	var one string
+	if err := json.Unmarshal(raw, &one); err == nil {
+		return mediaPart(canonical.MediaVideo, one)
+	}
+	var many []string
+	if err := json.Unmarshal(raw, &many); err != nil || len(many) == 0 {
+		return canonical.Part{}, 0
+	}
+	first, inline := mediaPart(canonical.MediaVideo, many[0])
+	for _, ref := range many[1:] {
+		_, n := mediaPart(canonical.MediaVideo, ref)
+		inline += n
+	}
+	return first, inline
 }
 
 // mediaPart 把负载归一成 Media：data: URI 计内联字节，其余按 URL 透传。

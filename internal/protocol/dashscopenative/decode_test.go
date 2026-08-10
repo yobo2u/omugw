@@ -119,6 +119,52 @@ func TestDecodeCountsKeyBasedMultimodal(t *testing.T) {
 	}
 }
 
+// TestDecodeVideoArrayDoesNotDropSiblings 固化「一块解不出来不得牵连兄弟块」。
+//
+// video 官方是 array 或 string；把整段 content 一次性解进 []ContentPart 时，
+// 数组形态的 video 会让整段解析失败，兄弟块（含带 data URI 的图片）一起丢，
+// InlineBytes 归零、入口内联上限被绕过。这是评审点名的真实洞。
+func TestDecodeVideoArrayDoesNotDropSiblings(t *testing.T) {
+	big := strings.Repeat("A", 40) // 合法 base64，解码后 30 字节
+	d := mustDecode(t, `{"model":"m","input":{"messages":[{"role":"user","content":[
+	  {"text":"看图"},
+	  {"image":"data:image/jpeg;base64,`+big+`"},
+	  {"video":["data:image/jpeg;base64,`+big+`","https://example.com/2.jpg"]}
+	]}]}}`)
+
+	// 图片 30 + 视频首帧 30 = 60；URL 帧不计。
+	if d.InlineBytes != 60 {
+		t.Errorf("InlineBytes = %d, 期望 60（数组 video 不得吃掉兄弟块的字节）", d.InlineBytes)
+	}
+	if !hasCap(d.Capabilities(), canonical.CapVisionInput) {
+		t.Errorf("兄弟图片块应仍报告 vision_input: %v", d.Capabilities())
+	}
+	if !hasCap(d.Capabilities(), canonical.CapVideoInput) {
+		t.Errorf("数组形态 video 应报告 video_input: %v", d.Capabilities())
+	}
+}
+
+// TestDecodeVideoStringStillWorks 保证字符串形态没被改坏。
+func TestDecodeVideoStringStillWorks(t *testing.T) {
+	d := mustDecode(t, `{"model":"m","input":{"messages":[{"role":"user","content":[
+	  {"video":"https://example.com/v.mp4"}]}]}}`)
+	if !hasCap(d.Capabilities(), canonical.CapVideoInput) {
+		t.Errorf("字符串形态 video 应报告 video_input: %v", d.Capabilities())
+	}
+}
+
+// TestDecodeMalformedPartOnlyDropsItself 固化损失局限在解不出来的那一块。
+func TestDecodeMalformedPartOnlyDropsItself(t *testing.T) {
+	big := strings.Repeat("A", 40)
+	d := mustDecode(t, `{"model":"m","input":{"messages":[{"role":"user","content":[
+	  {"image":"data:image/png;base64,`+big+`"},
+	  {"image":12345}
+	]}]}}`)
+	if d.InlineBytes != 30 {
+		t.Errorf("InlineBytes = %d, 期望 30（坏块不得牵连好块）", d.InlineBytes)
+	}
+}
+
 func TestDecodeAcceptsUnknownFields(t *testing.T) {
 	// 同源直通的契约：没建模的字段也要透传，不能拒。
 	d := mustDecode(t, `{"model":"m",
