@@ -91,11 +91,12 @@ func implementedMatrix(t *testing.T, avail Availability) *Matrix {
 // 那种做法。想转正就得同时改代码、写 fixture、改这份名单，三处都动过一遍，
 // 就很难是无意的。
 func TestImplementedRoutesAreExplicit(t *testing.T) {
-	// 已转正：OpenAI 族的两条同源直通（Responses 与 Chat）。
-	// 其余仍为 PLANNED，dashscope.compatible / dashscope.native 排在其后。
+	// 已转正：OpenAI 族两条同源直通 + DashScope Native 文本生成同源直通。
+	// 其余仍为 PLANNED，dashscope.compatible / anthropic 等排在其后。
 	want := map[string]bool{
-		string(ProtoOpenAIResponses) + " -> " + string(ProviderOpenAICompat): true,
-		string(ProtoOpenAIChat) + " -> " + string(ProviderOpenAICompat):      true,
+		string(ProtoOpenAIResponses) + " -> " + string(ProviderOpenAICompat):    true,
+		string(ProtoOpenAIChat) + " -> " + string(ProviderOpenAICompat):         true,
+		string(ProtoDashScopeNative) + " -> " + string(ProviderDashScopeNative): true,
 	}
 
 	m, err := Phase1()

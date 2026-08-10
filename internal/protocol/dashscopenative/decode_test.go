@@ -1,0 +1,164 @@
+package dashscopenative
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/yobo2u/omugw/internal/canonical"
+)
+
+func mustDecode(t *testing.T, body string) *Decoded {
+	t.Helper()
+	d, err := Decode([]byte(body))
+	if err != nil {
+		t.Fatalf("Decode 失败: %v\n请求: %s", err, body)
+	}
+	return d
+}
+
+func hasCap(caps []canonical.Capability, want canonical.Capability) bool {
+	for _, c := range caps {
+		if c == want {
+			return true
+		}
+	}
+	return false
+}
+
+func TestDecodeBasicText(t *testing.T) {
+	d := mustDecode(t, `{"model":"qwen-plus",
+	  "input":{"messages":[{"role":"user","content":"你好"}]},
+	  "parameters":{"result_format":"message"}}`)
+
+	if d.Request.Model != "qwen-plus" {
+		t.Errorf("Model = %q", d.Request.Model)
+	}
+	if len(d.Request.Messages) != 1 || d.Request.Messages[0].Role != canonical.RoleUser {
+		t.Errorf("消息解码异常: %+v", d.Request.Messages)
+	}
+	if !hasCap(d.Capabilities(), canonical.CapTextGeneration) {
+		t.Errorf("应报告 text_generation: %v", d.Capabilities())
+	}
+}
+
+func TestDecodeExtractsSystem(t *testing.T) {
+	d := mustDecode(t, `{"model":"m",
+	  "input":{"messages":[
+	    {"role":"system","content":"你是助手"},
+	    {"role":"user","content":"hi"}]}}`)
+	if len(d.Request.System) != 1 || d.Request.System[0].Text != "你是助手" {
+		t.Errorf("system 应被提取到 System: %+v", d.Request.System)
+	}
+	if len(d.Request.Messages) != 1 {
+		t.Errorf("system 不应留在 Messages: %+v", d.Request.Messages)
+	}
+}
+
+func TestDecodeReportsToolCalling(t *testing.T) {
+	d := mustDecode(t, `{"model":"m",
+	  "input":{"messages":[{"role":"user","content":"天气"}]},
+	  "parameters":{"tools":[{"type":"function","function":{
+	    "name":"get_weather","parameters":{"type":"object"}}}]}}`)
+	if len(d.Request.Tools) != 1 || d.Request.Tools[0].Name != "get_weather" {
+		t.Fatalf("工具解码异常: %+v", d.Request.Tools)
+	}
+	if !hasCap(d.Capabilities(), canonical.CapToolCalling) {
+		t.Errorf("应报告 tool_calling: %v", d.Capabilities())
+	}
+}
+
+func TestDecodeReportsWebSearch(t *testing.T) {
+	d := mustDecode(t, `{"model":"m",
+	  "input":{"messages":[{"role":"user","content":"x"}]},
+	  "parameters":{"enable_search":true}}`)
+	if !hasCap(d.Capabilities(), canonical.CapWebSearch) {
+		t.Errorf("应报告 web_search: %v", d.Capabilities())
+	}
+}
+
+func TestDecodeReportsReasoning(t *testing.T) {
+	d := mustDecode(t, `{"model":"m",
+	  "input":{"messages":[{"role":"user","content":"x"}]},
+	  "parameters":{"enable_thinking":true}}`)
+	if d.Request.Reasoning == nil {
+		t.Fatal("enable_thinking 应解出 Reasoning")
+	}
+	if !hasCap(d.Capabilities(), canonical.CapReasoning) {
+		t.Errorf("应报告 reasoning: %v", d.Capabilities())
+	}
+}
+
+func TestDecodeCountsInlineImageBytes(t *testing.T) {
+	big := strings.Repeat("A", 40) // 合法 base64，解码后 30 字节
+	d := mustDecode(t, `{"model":"m",
+	  "input":{"messages":[{"role":"user","content":[
+	    {"type":"text","text":"看图"},
+	    {"type":"image","image":"data:image/png;base64,`+big+`"}]}]}}`)
+	if d.InlineBytes != 30 {
+		t.Errorf("InlineBytes = %d, 期望 30", d.InlineBytes)
+	}
+	if !hasCap(d.Capabilities(), canonical.CapVisionInput) {
+		t.Errorf("应报告 vision_input: %v", d.Capabilities())
+	}
+}
+
+// TestDecodeCountsKeyBasedMultimodal 固化官方多模态示例的纯键式内容块
+// （{"image":"..."}，没有 type 字段）也要被识别——否则图片能力漏报、
+// data URI 字节数不计入，入口的内联上限会被绕过。
+func TestDecodeCountsKeyBasedMultimodal(t *testing.T) {
+	big := strings.Repeat("A", 40) // 合法 base64，解码后 30 字节
+	d := mustDecode(t, `{"model":"m",
+	  "input":{"messages":[{"role":"user","content":[
+	    {"text":"看图"},
+	    {"image":"data:image/jpeg;base64,`+big+`"}]}]}}`)
+	if d.InlineBytes != 30 {
+		t.Errorf("纯键式 image 的 InlineBytes = %d, 期望 30", d.InlineBytes)
+	}
+	if !hasCap(d.Capabilities(), canonical.CapVisionInput) {
+		t.Errorf("纯键式 image 应报告 vision_input: %v", d.Capabilities())
+	}
+}
+
+func TestDecodeAcceptsUnknownFields(t *testing.T) {
+	// 同源直通的契约：没建模的字段也要透传，不能拒。
+	d := mustDecode(t, `{"model":"m",
+	  "input":{"messages":[{"role":"user","content":"x"}]},
+	  "parameters":{"some_future_param":123}}`)
+	if d.Request.Model != "m" {
+		t.Errorf("未知字段不应导致拒绝: %q", d.Request.Model)
+	}
+}
+
+func TestDecodeRejectsMissingModel(t *testing.T) {
+	_, err := Decode([]byte(`{"input":{"messages":[{"role":"user","content":"x"}]}}`))
+	if err == nil {
+		t.Fatal("缺少 model 应当被拒绝")
+	}
+}
+
+// TestDecodeAcceptsToolCallContinuation 固化同源直通不得被不完整的 Canonical 投影
+// 否决：工具调用续轮里 assistant 的 content 为空、tool 角色携带结果，这些都是
+// 合法的 DashScope 请求，字节会被原样转发，解码器不能因为它们投影不出完整
+// Canonical 就拒绝。
+func TestDecodeAcceptsToolCallContinuation(t *testing.T) {
+	_, err := Decode([]byte(`{"model":"qwen-plus","input":{"messages":[
+	  {"role":"user","content":"天气"},
+	  {"role":"assistant","content":"","tool_calls":[{"id":"c1","type":"function",
+	    "function":{"name":"get_weather","arguments":"{\"city\":\"上海\"}"}}]},
+	  {"role":"tool","content":"晴","tool_call_id":"c1"}
+	]},"parameters":{"result_format":"message"}}`))
+	if err != nil {
+		t.Fatalf("合法的工具调用续轮被拒绝: %v", err)
+	}
+}
+
+// TestDecodeAcceptsEmptyAssistantContent 固化 assistant 空 content 不被拒绝。
+func TestDecodeAcceptsEmptyAssistantContent(t *testing.T) {
+	_, err := Decode([]byte(`{"model":"m","input":{"messages":[
+	  {"role":"user","content":"x"},
+	  {"role":"assistant","content":null}
+	]}}`))
+	if err != nil {
+		t.Fatalf("assistant 空 content 被拒绝: %v", err)
+	}
+}

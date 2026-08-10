@@ -7,7 +7,6 @@ import (
 	"net/http"
 
 	"github.com/yobo2u/omugw/internal/canonical"
-	"github.com/yobo2u/omugw/internal/protocol/openaiwire"
 	"github.com/yobo2u/omugw/internal/transport/httpx"
 	"github.com/yobo2u/omugw/internal/transport/sse"
 )
@@ -68,7 +67,8 @@ func relayJSON(w *tracked, resp *httpx.Response, extra map[string]string,
 // 而纯 io.Copy 做不到；计费也需要从 response.completed 里取出 usage。
 // 代价只是帧的空白格式被规范化——data 负载逐字保留，语义完全一致。
 func relayStream(w *tracked, resp *httpx.Response, extra map[string]string,
-	usageFromEvent func(ev sse.Event) (canonical.Usage, bool)) (canonical.Usage, error) {
+	usageFromEvent func(ev sse.Event) (canonical.Usage, bool),
+	encodeError func(e *canonical.Error) (int, []byte, map[string]string)) (canonical.Usage, error) {
 	defer resp.Body.Close()
 
 	copyUpstreamHeaders(w.Header(), resp.Header)
@@ -109,9 +109,11 @@ func relayStream(w *tracked, resp *httpx.Response, extra map[string]string,
 
 		// 首字节之后上游断了。**不能重试**——客户端已经收到内容，重试会让它
 		// 看到重复的字。发一个终止事件收尾，并把用量标记为不可知：
-		// 上游不会再送 usage 了，任何非零数字都是编造的。
+		// 上游不会再送 usage 了，任何非零数字都是编造的。错误负载按入站协议
+		// 的线格式编码，客户端才读得懂。
 		cerr := canonical.AsError(err)
-		_ = sw.Write(sse.Event{Event: "error", Data: errorEventData(cerr)})
+		_, errBody, _ := encodeError(cerr)
+		_ = sw.Write(sse.Event{Event: "error", Data: string(errBody)})
 		return canonical.UnavailableUsage(), cerr
 	}
 }
@@ -260,8 +262,54 @@ func toCanonicalChatUsage(env chatUsageEnvelope) canonical.Usage {
 	return u
 }
 
-// errorEventData 把统一错误编成流内终止事件的负载。
-func errorEventData(e *canonical.Error) string {
-	_, body, _ := openaiwire.EncodeError(e)
-	return string(body)
+// dashScopeUsageEnvelope 是 DashScope Native 的用量结构。
+//
+// 口径是 input_tokens / output_tokens；与 Responses 同名但挂在顶层 usage 下。
+// 流式时每一帧的 data 都携带累计用量，取最后一帧即全量。
+type dashScopeUsageEnvelope struct {
+	Usage *struct {
+		InputTokens         int64 `json:"input_tokens"`
+		OutputTokens        int64 `json:"output_tokens"`
+		PromptTokensDetails *struct {
+			CachedTokens int64 `json:"cached_tokens"`
+		} `json:"prompt_tokens_details"`
+	} `json:"usage"`
+}
+
+// extractDashScopeUsage 从非流式 DashScope 响应体里取出用量。
+func extractDashScopeUsage(body []byte) canonical.Usage {
+	var env dashScopeUsageEnvelope
+	if err := json.Unmarshal(body, &env); err != nil || env.Usage == nil {
+		return canonical.UnavailableUsage()
+	}
+	return toCanonicalDashScopeUsage(env)
+}
+
+// parseDashScopeUsageEvent 从流式事件里取出用量。
+//
+// DashScope 的 SSE 帧是 event: result + data: 完整响应信封，用量逐帧累计，
+// 故任何带 usage 的帧都可取，relay 保留最后一帧即全量。
+func parseDashScopeUsageEvent(ev sse.Event) (canonical.Usage, bool) {
+	if ev.Data == "" {
+		return canonical.Usage{}, false
+	}
+	var env dashScopeUsageEnvelope
+	if err := json.Unmarshal([]byte(ev.Data), &env); err != nil || env.Usage == nil {
+		return canonical.Usage{}, false
+	}
+	return toCanonicalDashScopeUsage(env), true
+}
+
+func toCanonicalDashScopeUsage(env dashScopeUsageEnvelope) canonical.Usage {
+	u := canonical.Usage{
+		// 数字直接来自上游响应，可用于计费。
+		Fidelity:     canonical.FidelityAuthoritative,
+		InputTokens:  env.Usage.InputTokens,
+		OutputTokens: env.Usage.OutputTokens,
+	}
+	if d := env.Usage.PromptTokensDetails; d != nil {
+		// cached_tokens 是「命中缓存的读取」，不是写入。
+		u.CacheReadInputTokens = d.CachedTokens
+	}
+	return u
 }

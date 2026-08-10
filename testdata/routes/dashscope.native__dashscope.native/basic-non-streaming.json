@@ -1,0 +1,42 @@
+{
+  "name": "dashscope.native__dashscope.native/basic-non-streaming",
+  "note": "同源直通的最小闭环：DashScope Native 文本生成请求原样转给上游（只改写鉴权与模型名），上游响应原样回给客户端。request 是**客户端发给网关**的内容，response 是被打桩的上游返回。用量口径是顶层 usage 下的 input_tokens / output_tokens。",
+  "request": {
+    "method": "POST",
+    "path": "/api/v1/services/aigc/text-generation/generation",
+    "headers": {
+      "authorization": "<redacted>",
+      "content-type": "application/json"
+    },
+    "body": {
+      "model": "logical-fast",
+      "input": {
+        "messages": [{ "role": "user", "content": "上海天气怎么样？" }]
+      },
+      "parameters": { "result_format": "message" }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "output": {
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "message": { "role": "assistant", "content": "今天多云，22 度。" }
+          }
+        ]
+      },
+      "usage": {
+        "input_tokens": 24,
+        "output_tokens": 11,
+        "total_tokens": 35,
+        "prompt_tokens_details": { "cached_tokens": 0 }
+      },
+      "request_id": "64fcc5ce-20ca-954a-97a1-5a2ca0f0f2ff"
+    }
+  }
+}

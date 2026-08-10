@@ -9,6 +9,7 @@ import (
 	"github.com/yobo2u/omugw/internal/credential"
 	"github.com/yobo2u/omugw/internal/degrade"
 	"github.com/yobo2u/omugw/internal/obs"
+	"github.com/yobo2u/omugw/internal/protocol/dashscopenative"
 	"github.com/yobo2u/omugw/internal/provider"
 	"github.com/yobo2u/omugw/internal/provider/passthrough"
 	"github.com/yobo2u/omugw/internal/router"
@@ -75,11 +76,14 @@ func Build(cfg config.Config, m *degrade.Matrix, metrics *obs.Metrics, log *slog
 		switch kind {
 		case degrade.ProviderOpenAICompat:
 			provs[p.Endpoint] = passthrough.New(kind, "/v1/responses", client, nil)
+		case degrade.ProviderDashScopeNative:
+			// 直通路径随请求走（handler 会注入实际路径），这里只是兜底默认值。
+			provs[p.Endpoint] = passthrough.New(kind, dashscopenative.TextGenerationPath, client, nil)
 		default:
 			// 未实现的协议族在这里就拒绝，而不是等请求打进来才发现没有适配器。
 			return nil, fmt.Errorf(
-				"gateway: provider %q 的协议族 %q 尚无出站适配器（M1 只实现了 %s）",
-				p.Endpoint, p.Kind, degrade.ProviderOpenAICompat)
+				"gateway: provider %q 的协议族 %q 尚无出站适配器（已实现 %s 与 %s）",
+				p.Endpoint, p.Kind, degrade.ProviderOpenAICompat, degrade.ProviderDashScopeNative)
 		}
 	}
 
@@ -116,6 +120,7 @@ func Build(cfg config.Config, m *degrade.Matrix, metrics *obs.Metrics, log *slog
 	}
 	mux.Handle("POST /v1/responses", NewResponsesHandler(deps))
 	mux.Handle("POST /v1/chat/completions", NewChatHandler(deps))
+	mux.Handle("POST "+dashscopenative.TextGenerationPath, NewDashScopeNativeHandler(deps))
 
 	return built, nil
 }

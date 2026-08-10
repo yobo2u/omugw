@@ -3,6 +3,7 @@ package provider
 
 import (
 	"context"
+	"net/http"
 
 	"github.com/yobo2u/omugw/internal/canonical"
 	"github.com/yobo2u/omugw/internal/credential"
@@ -35,6 +36,11 @@ type Request struct {
 	// 同一个 openai.compat 出站既要能打到 Responses 端点也要能打到 Chat 端点，
 	// 所以路径必须随请求走，而不能在装配适配器时写死。留空时适配器退回自身默认。
 	Path string
+
+	// Header 是客户端原始请求头。同源直通要把协议相关的头（如 DashScope 的
+	// X-DashScope-WorkSpace 租户头）原样带走，否则请求会落到错误的租户。
+	// 适配器只转发白名单内的头，Authorization 永远由网关自己的凭据覆盖。
+	Header http.Header
 }
 
 // Provider 是一个出站适配器。

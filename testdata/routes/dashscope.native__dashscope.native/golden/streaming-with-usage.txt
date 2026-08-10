@@ -1,0 +1,15 @@
+status: OK
+Content-Type: text/event-stream
+---
+event: result
+data: {"output":{"choices":[{"message":{"role":"assistant","content":"一"},"finish_reason":"null"}]},"usage":{"input_tokens":18,"output_tokens":1,"total_tokens":19},"request_id":"c9e7af1b-1a5a-9c61-9465-b5249ab92a8e"}
+
+event: result
+data: {"output":{"choices":[{"message":{"role":"assistant","content":"二"},"finish_reason":"null"}]},"usage":{"input_tokens":18,"output_tokens":2,"total_tokens":20},"request_id":"c9e7af1b-1a5a-9c61-9465-b5249ab92a8e"}
+
+event: result
+data: {"output":{"choices":[{"message":{"role":"assistant","content":"三"},"finish_reason":"null"}]},"usage":{"input_tokens":18,"output_tokens":3,"total_tokens":21},"request_id":"c9e7af1b-1a5a-9c61-9465-b5249ab92a8e"}
+
+event: result
+data: {"output":{"choices":[{"message":{"role":"assistant","content":""},"finish_reason":"stop"}]},"usage":{"input_tokens":18,"output_tokens":3,"total_tokens":21},"request_id":"c9e7af1b-1a5a-9c61-9465-b5249ab92a8e"}
+

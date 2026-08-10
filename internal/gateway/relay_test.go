@@ -70,3 +70,48 @@ func TestExtractResponsesUsageStillWorks(t *testing.T) {
 		t.Errorf("Responses 用量解析被改坏: %+v", u)
 	}
 }
+
+// TestExtractDashScopeUsage 固化 DashScope Native 的用量口径：顶层 usage 下的
+// input_tokens / output_tokens。
+func TestExtractDashScopeUsage(t *testing.T) {
+	body := []byte(`{"request_id":"r1",
+	  "output":{"choices":[{"finish_reason":"stop"}]},
+	  "usage":{"input_tokens":22,"output_tokens":17,"total_tokens":39,
+	    "prompt_tokens_details":{"cached_tokens":4}}}`)
+	u := extractDashScopeUsage(body)
+	if u.Fidelity != canonical.FidelityAuthoritative {
+		t.Errorf("Fidelity = %v, 期望 authoritative", u.Fidelity)
+	}
+	if u.InputTokens != 22 || u.OutputTokens != 17 {
+		t.Errorf("tokens = %d/%d, 期望 22/17", u.InputTokens, u.OutputTokens)
+	}
+	if u.CacheReadInputTokens != 4 {
+		t.Errorf("CacheReadInputTokens = %d, 期望 4", u.CacheReadInputTokens)
+	}
+}
+
+// TestExtractDashScopeUsageUnavailable 固化「解不出来就是不可知」。
+func TestExtractDashScopeUsageUnavailable(t *testing.T) {
+	if u := extractDashScopeUsage([]byte(`{"request_id":"x"}`)); u.Fidelity != canonical.FidelityUnavailable {
+		t.Errorf("缺少 usage 应为 unavailable, 实际 %v", u.Fidelity)
+	}
+}
+
+// TestParseDashScopeUsageEvent 固化流式用量逐帧携带、任何带 usage 的帧都可取。
+func TestParseDashScopeUsageEvent(t *testing.T) {
+	frame := sse.Event{Event: "result",
+		Data: `{"request_id":"r1","output":{"choices":[{"finish_reason":"null"}]},
+		  "usage":{"input_tokens":22,"output_tokens":2,"total_tokens":24}}`}
+	u, ok := parseDashScopeUsageEvent(frame)
+	if !ok {
+		t.Fatal("带 usage 的帧应当被取出")
+	}
+	if u.InputTokens != 22 || u.OutputTokens != 2 {
+		t.Errorf("tokens = %d/%d, 期望 22/2", u.InputTokens, u.OutputTokens)
+	}
+
+	// 不带 usage 的帧（如错误帧）不应产出用量。
+	if _, ok := parseDashScopeUsageEvent(sse.Event{Data: `{"code":"err"}`}); ok {
+		t.Error("无 usage 的帧不应产出用量")
+	}
+}

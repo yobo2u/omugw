@@ -166,9 +166,14 @@ func Phase1() (*Matrix, error) {
 	//
 	// 同源快通道。讲原生协议的客户端本来就不需要任何转换，让它们走兼容层是
 	// 净损失。这条路径的保留度是满分，也应该是满分。
+	//
+	// 转正的第三条路径。DashScope Native 一个协议族对应多个上游端点，本期转正
+	// 的是文本生成；门槛同样是端到端 fixture 通过，见
+	// testdata/routes/dashscope.native__dashscope.native/ 与 ADR-0001。
 	if err := m.Add(NewRoute(ProtoDashScopeNative, ProviderDashScopeNative).
 		MarkHomogeneous().
 		Pass(ExpressibleSet(ProtoDashScopeNative)...).
+		MarkImplemented().
 		Build()); err != nil {
 		return nil, err
 	}

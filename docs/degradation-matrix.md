@@ -39,7 +39,7 @@
 | 入站 | 出站 | 状态 | 快通道 | 透传 | 模拟 | 降级 | 拒绝 | N/A | 设计目标 | 当前可用 |
 |---|---|---|---|---:|---:|---:|---:|---:|---:|---:|
 | `dashscope.inference` | `dashscope.ws.inference` | 规划中 | ✅ | 6 | 0 | 0 | 0 | 21 | 1.000 | — |
-| `dashscope.native` | `dashscope.native` | 规划中 | ✅ | 18 | 0 | 0 | 0 | 9 | 1.000 | — |
+| `dashscope.native` | `dashscope.native` | 已实现 | ✅ | 18 | 0 | 0 | 0 | 9 | 1.000 | 1.000 |
 | `dashscope.realtime` | `dashscope.ws.realtime` | 规划中 | ✅ | 15 | 0 | 0 | 0 | 12 | 1.000 | — |
 | `dashscope.realtime` | `openai.realtime` | 规划中 |  | 10 | 0 | 2 | 3 | 12 | 0.733 | — |
 | `openai.chat` | `openai.compat` | 已实现 | ✅ | 11 | 0 | 0 | 0 | 16 | 1.000 | 1.000 |

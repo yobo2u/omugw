@@ -1,0 +1,20 @@
+status: OK
+Content-Type: application/json
+---
+{
+      "output": {
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "message": { "role": "assistant", "content": "今天多云，22 度。" }
+          }
+        ]
+      },
+      "usage": {
+        "input_tokens": 24,
+        "output_tokens": 11,
+        "total_tokens": 35,
+        "prompt_tokens_details": { "cached_tokens": 0 }
+      },
+      "request_id": "64fcc5ce-20ca-954a-97a1-5a2ca0f0f2ff"
+    }

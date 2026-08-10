@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/yobo2u/omugw/internal/degrade"
+	"github.com/yobo2u/omugw/internal/protocol/dashscopenative"
 	"github.com/yobo2u/omugw/internal/testkit"
 )
 
@@ -18,6 +19,9 @@ const routeFixtures = "../../testdata/routes/openai.responses__openai.compat"
 
 // chatRouteFixtures 是 Chat Completions 同源直通路径的 fixture 目录。
 const chatRouteFixtures = "../../testdata/routes/openai.chat__openai.compat"
+
+// dashScopeNativeRouteFixtures 是 DashScope Native 同源直通路径的 fixture 目录。
+const dashScopeNativeRouteFixtures = "../../testdata/routes/dashscope.native__dashscope.native"
 
 // TestRouteConformance 回放路径 fixture。
 //
@@ -74,6 +78,46 @@ func TestChatRouteConformance(t *testing.T) {
 			}
 
 			golden := filepath.Join(chatRouteFixtures, "golden", caseName(f.Name)+".txt")
+			testkit.Golden(t, golden, []byte(renderResult(rec)))
+		})
+	}
+}
+
+// TestDashScopeNativeRouteConformance 回放 DashScope Native 同源直通路径的 fixture。
+//
+// DashScope 的「是否流式」在 X-DashScope-SSE 头里，不在请求体，所以这里按 fixture
+// 响应是否为 SSE 来决定要不要给请求带上这个头——否则解码器判不出流式，relay 会
+// 走错分支。
+func TestDashScopeNativeRouteConformance(t *testing.T) {
+	for _, f := range testkit.LoadDir(t, dashScopeNativeRouteFixtures) {
+		t.Run(caseName(f.Name), func(t *testing.T) {
+			var gotPath string
+			up := newUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+				gotPath = r.URL.Path
+				writeFixtureResponse(t, w, f)
+			})
+			hs := newDashScopeNativeHarness(t, true, up)
+
+			body, err := json.Marshal(f.Request.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req := httptest.NewRequest(http.MethodPost, hs.path, strings.NewReader(string(body)))
+			req.Header.Set("Authorization", "Bearer "+testKey)
+			req.Header.Set("Content-Type", "application/json")
+			if f.Response.SSE != nil {
+				req.Header.Set(dashscopenative.SSEHeader, "enable")
+			}
+			rec := httptest.NewRecorder()
+			hs.h.ServeHTTP(rec, req)
+
+			// harness 的 provider 默认路径是 /v1/responses；只有 handler 把请求
+			// 路径注入进去，上游才会收到 DashScope 端点。这是 Path 注入的实证。
+			if gotPath != dashscopenative.TextGenerationPath {
+				t.Errorf("上游收到路径 %q，期望 %q（Path 注入未生效）", gotPath, dashscopenative.TextGenerationPath)
+			}
+
+			golden := filepath.Join(dashScopeNativeRouteFixtures, "golden", caseName(f.Name)+".txt")
 			testkit.Golden(t, golden, []byte(renderResult(rec)))
 		})
 	}

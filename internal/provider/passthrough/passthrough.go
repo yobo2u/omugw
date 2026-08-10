@@ -16,6 +16,8 @@ import (
 
 	"github.com/yobo2u/omugw/internal/canonical"
 	"github.com/yobo2u/omugw/internal/degrade"
+	"github.com/yobo2u/omugw/internal/protocol/dashscopenative"
+	"github.com/yobo2u/omugw/internal/protocol/dashscopewire"
 	"github.com/yobo2u/omugw/internal/protocol/openaiwire"
 	"github.com/yobo2u/omugw/internal/provider"
 	"github.com/yobo2u/omugw/internal/transport/httpx"
@@ -27,6 +29,19 @@ type Provider struct {
 	path   string
 	client *httpx.Client
 	now    func() time.Time
+}
+
+// forwardedHeaders 列出各协议族需要原样带给上游的客户端头（白名单）。
+//
+// Authorization 永远不在此列——它由网关自己的凭据覆盖。这里只放协议语义相关的
+// 头：DashScope 用 X-DashScope-WorkSpace 选择子 Workspace（租户边界），
+// DataInspection / Async 控制内容审查与异步行为，丢了会改变请求语义。
+var forwardedHeaders = map[degrade.Provider][]string{
+	degrade.ProviderDashScopeNative: {
+		"X-DashScope-WorkSpace",
+		"X-DashScope-DataInspection",
+		"X-DashScope-Async",
+	},
 }
 
 // New 构造直通适配器。path 是上游端点路径，例如 "/v1/responses"。
@@ -58,6 +73,19 @@ func (p *Provider) Call(ctx context.Context, req provider.Request) (*httpx.Respo
 	// 网关用**自己的**凭据。客户端发来的 Authorization 到此为止——
 	// 转发它等于把网关的 API Key 泄露给上游，而上游没有理由知道它。
 	hreq.Header.Set("Authorization", "Bearer "+req.Credential.Secret)
+	// DashScope Native 的「是否流式」在头上，得替客户端把这个信号带过去，
+	// 否则上游会按非流式返回，整条流的语义就变了。
+	if p.kind == degrade.ProviderDashScopeNative && req.Stream {
+		hreq.Header.Set(dashscopenative.SSEHeader, "enable")
+	}
+	// 同源直通要保住协议相关的头。DashScope 用 X-DashScope-WorkSpace 选子租户、
+	// DataInspection / Async 等控制行为，丢了它们请求会落到错误的租户或改变语义。
+	// 只转发白名单内的头——既不漏租户边界，也不把客户端的杂项头泄给上游。
+	for _, name := range forwardedHeaders[p.kind] {
+		if v := req.Header.Get(name); v != "" {
+			hreq.Header.Set(name, v)
+		}
+	}
 
 	resp, err := p.client.Do(ctx, hreq)
 	if err != nil {
@@ -105,6 +133,10 @@ func (p *Provider) decodeError(resp *httpx.Response) error {
 		}
 	}
 
+	// 错误信封按协议族解：DashScope 是扁平 {code,message}，OpenAI 系是嵌套 error 对象。
+	if p.kind == degrade.ProviderDashScopeNative {
+		return dashscopewire.DecodeError(resp.StatusCode, body, resp.Header, p.now())
+	}
 	return openaiwire.DecodeError(resp.StatusCode, body, resp.Header, p.now())
 }
 

@@ -17,6 +17,7 @@ import (
 	"github.com/yobo2u/omugw/internal/credential"
 	"github.com/yobo2u/omugw/internal/degrade"
 	"github.com/yobo2u/omugw/internal/obs"
+	"github.com/yobo2u/omugw/internal/protocol/dashscopenative"
 	"github.com/yobo2u/omugw/internal/provider"
 	"github.com/yobo2u/omugw/internal/provider/passthrough"
 	"github.com/yobo2u/omugw/internal/router"
@@ -53,9 +54,17 @@ type harness struct {
 }
 
 // newHarness 是 Responses 入站的 harness。
+//
+// 已实现的路径用 openai.compat（已转正）；要测 PLANNED 行为就把目标指到一条
+// 仍未实现的路径上。不去「取消转正」——那需要给生产代码开一个只为测试存在的
+// 后门，而后门迟早会被当成正常用法。
 func newHarness(t *testing.T, implemented bool, ups ...*upstream) *harness {
 	t.Helper()
-	return newHarnessFor(t, "/v1/responses", "/v1/responses", NewResponsesHandler, implemented, ups...)
+	kind := degrade.ProviderOpenAICompat
+	if !implemented {
+		kind = degrade.ProviderDashScopeCompatible
+	}
+	return newHarnessFor(t, "/v1/responses", "/v1/responses", kind, NewResponsesHandler, ups...)
 }
 
 // newChatHarness 是 Chat Completions 入站的 harness。
@@ -66,23 +75,33 @@ func newHarness(t *testing.T, implemented bool, ups ...*upstream) *harness {
 // 一样，即使 Path 注入被删掉测试也照样通过，等于没测。
 func newChatHarness(t *testing.T, implemented bool, ups ...*upstream) *harness {
 	t.Helper()
-	return newHarnessFor(t, "/v1/chat/completions", "/v1/responses", NewChatHandler, implemented, ups...)
+	kind := degrade.ProviderOpenAICompat
+	if !implemented {
+		kind = degrade.ProviderDashScopeCompatible
+	}
+	return newHarnessFor(t, "/v1/chat/completions", "/v1/responses", kind, NewChatHandler, ups...)
 }
 
-func newHarnessFor(t *testing.T, requestPath, providerDefaultPath string, mk func(Deps) *Handler, implemented bool, ups ...*upstream) *harness {
+// newDashScopeNativeHarness 是 DashScope Native 入站的 harness。
+//
+// provider 默认路径故意用 /v1/responses（而非 DashScope 自己的端点），这样只有
+// 当 handler 真的注入了请求路径，上游才会收到正确端点——否则测试会失败。
+func newDashScopeNativeHarness(t *testing.T, implemented bool, ups ...*upstream) *harness {
+	t.Helper()
+	kind := degrade.ProviderDashScopeNative
+	if !implemented {
+		kind = degrade.ProviderDashScopeCompatible
+	}
+	return newHarnessFor(t, dashscopenative.TextGenerationPath, "/v1/responses",
+		kind, NewDashScopeNativeHandler, ups...)
+}
+
+func newHarnessFor(t *testing.T, requestPath, providerDefaultPath string, kind degrade.Provider, mk func(Deps) *Handler, ups ...*upstream) *harness {
 	t.Helper()
 
 	m, err := degrade.Phase1()
 	if err != nil {
 		t.Fatal(err)
-	}
-
-	// 已实现的路径用 openai.compat（M1 已转正）；要测 PLANNED 行为就把目标
-	// 指到一条仍未实现的路径上。不去「取消转正」——那需要给生产代码开一个
-	// 只为测试存在的后门，而后门迟早会被当成正常用法。
-	kind := degrade.ProviderOpenAICompat
-	if !implemented {
-		kind = degrade.ProviderDashScopeCompatible
 	}
 
 	timeouts := config.Timeouts{
@@ -410,6 +429,26 @@ func TestOversizedInlinePayloadIsRejected(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "内联") {
 		t.Errorf("错误应说明是内联负载超限: %s", rec.Body.String())
+	}
+}
+
+// TestDashScopeNativeErrorsUseFlatEnvelope 固化 DashScope Native 入站的错误必须用
+// 它自己的扁平 {code,message} 信封，而不是 OpenAI 的嵌套 {"error":...}——
+// 客户端按自己说的协议解析错误，给错信封它就读不懂。
+func TestDashScopeNativeErrorsUseFlatEnvelope(t *testing.T) {
+	hs := newDashScopeNativeHarness(t, true, jsonUpstream(t, `{}`))
+
+	// 缺少 model → bad_request，经 fail() 用 dashscopewire 编码。
+	rec := hs.do(t, `{"input":{"messages":[{"role":"user","content":"x"}]}}`, true)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("状态码 = %d, 期望 400", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `"code"`) || !strings.Contains(body, `"message"`) {
+		t.Errorf("DashScope 错误应为扁平 {code,message} 信封: %s", body)
+	}
+	if strings.Contains(body, `"error"`) {
+		t.Errorf("DashScope 错误不应是 OpenAI 嵌套 error 信封: %s", body)
 	}
 }
 

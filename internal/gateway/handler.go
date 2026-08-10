@@ -17,6 +17,8 @@ import (
 	"github.com/yobo2u/omugw/internal/credential"
 	"github.com/yobo2u/omugw/internal/degrade"
 	"github.com/yobo2u/omugw/internal/obs"
+	"github.com/yobo2u/omugw/internal/protocol/dashscopenative"
+	"github.com/yobo2u/omugw/internal/protocol/dashscopewire"
 	"github.com/yobo2u/omugw/internal/protocol/openaichat"
 	"github.com/yobo2u/omugw/internal/protocol/openairesponses"
 	"github.com/yobo2u/omugw/internal/protocol/openaiwire"
@@ -60,17 +62,29 @@ func (d *decodedRequest) Capabilities() []canonical.Capability { return d.caps }
 // 抽取用量、以及同源直通时对应的上游端点路径。
 type inbound struct {
 	protocol degrade.Protocol
-	decode   func(raw []byte) (*decodedRequest, error)
+
+	// decode 把原始请求体解成统一视图。带上 *http.Request 是因为有的协议把
+	// 关键信号放在头上而非体里——DashScope Native 用 X-DashScope-SSE 头声明
+	// 流式，请求体里没有等价字段，只看 body 判不出是否流式。
+	decode func(r *http.Request, raw []byte) (*decodedRequest, error)
 
 	// usageJSON 从非流式响应体抽取用量；usageEvent 从流式事件抽取用量。
 	// 两者形状因协议而异——Responses 是 input_tokens + response.completed 事件，
-	// Chat 是 prompt_tokens + chat.completion.chunk——不能共用一套解析。
+	// Chat 是 prompt_tokens + chat.completion.chunk，DashScope Native 是
+	// input_tokens 且每一帧都携带——不能共用一套解析。
 	usageJSON  func(body []byte) canonical.Usage
 	usageEvent func(ev sse.Event) (canonical.Usage, bool)
 
-	// upstreamPath 是同源直通时打到的上游端点。网关对上游说的是客户端那套
-	// 线格式，所以路径由入站协议决定，而不是由出站 Provider 决定。
-	upstreamPath string
+	// upstreamPath 返回同源直通时打到的上游端点。网关对上游说的是客户端那套
+	// 线格式，所以路径由入站协议决定，而不是由出站 Provider 决定。多数协议是
+	// 固定值；DashScope Native 一个入站协议对应多个上游端点（文本 / 图像 /
+	// 语音…），路径随请求走，直接取请求路径。
+	upstreamPath func(r *http.Request) string
+
+	// encodeError 把统一错误编成入站协议的线格式回给客户端。OpenAI 系是嵌套
+	// {"error":...}，DashScope Native 是扁平 {code,message,request_id}——客户端
+	// 按自己说的协议解析错误，给错信封它就读不懂。
+	encodeError func(e *canonical.Error) (status int, body []byte, headers map[string]string)
 }
 
 // Handler 处理某一条入站协议的请求。
@@ -85,6 +99,9 @@ func NewResponsesHandler(d Deps) *Handler { return newHandler(d, responsesInboun
 // NewChatHandler 构造 /v1/chat/completions 的处理器。
 func NewChatHandler(d Deps) *Handler { return newHandler(d, chatInbound()) }
 
+// NewDashScopeNativeHandler 构造 DashScope Native 端点的处理器。
+func NewDashScopeNativeHandler(d Deps) *Handler { return newHandler(d, dashScopeNativeInbound()) }
+
 func newHandler(d Deps, in inbound) *Handler {
 	if d.Now == nil {
 		d.Now = time.Now
@@ -96,7 +113,7 @@ func newHandler(d Deps, in inbound) *Handler {
 func responsesInbound() inbound {
 	return inbound{
 		protocol: degrade.ProtoOpenAIResponses,
-		decode: func(raw []byte) (*decodedRequest, error) {
+		decode: func(_ *http.Request, raw []byte) (*decodedRequest, error) {
 			d, err := openairesponses.Decode(raw)
 			if err != nil {
 				return nil, err
@@ -105,7 +122,8 @@ func responsesInbound() inbound {
 		},
 		usageJSON:    extractUsage,
 		usageEvent:   parseUsageEvent,
-		upstreamPath: "/v1/responses",
+		upstreamPath: func(*http.Request) string { return "/v1/responses" },
+		encodeError:  openaiwire.EncodeError,
 	}
 }
 
@@ -113,7 +131,7 @@ func responsesInbound() inbound {
 func chatInbound() inbound {
 	return inbound{
 		protocol: degrade.ProtoOpenAIChat,
-		decode: func(raw []byte) (*decodedRequest, error) {
+		decode: func(_ *http.Request, raw []byte) (*decodedRequest, error) {
 			d, err := openaichat.Decode(raw)
 			if err != nil {
 				return nil, err
@@ -122,7 +140,35 @@ func chatInbound() inbound {
 		},
 		usageJSON:    extractChatUsage,
 		usageEvent:   parseChatUsageEvent,
-		upstreamPath: "/v1/chat/completions",
+		upstreamPath: func(*http.Request) string { return "/v1/chat/completions" },
+		encodeError:  openaiwire.EncodeError,
+	}
+}
+
+// dashScopeNativeInbound 把 DashScope Native 协议接入主链路。
+//
+// 一个入站协议对应上游一堆端点（文本生成 / 多模态 / embedding / 图像 / 语音…），
+// 所以这里不写死路径，直通时按请求路径原样打到上游同名端点。本期只保证文本
+// 生成的解码与用量抽取是准确的；其余端点字节照样透传，解码只做尽力而为的
+// 能力识别。
+func dashScopeNativeInbound() inbound {
+	return inbound{
+		protocol: degrade.ProtoDashScopeNative,
+		decode: func(r *http.Request, raw []byte) (*decodedRequest, error) {
+			d, err := dashscopenative.Decode(raw)
+			if err != nil {
+				return nil, err
+			}
+			// 流式由 X-DashScope-SSE 头声明，体里没有等价字段。
+			if r.Header.Get(dashscopenative.SSEHeader) == "enable" {
+				d.Request.Stream = true
+			}
+			return &decodedRequest{Request: d.Request, caps: d.Capabilities(), InlineBytes: d.InlineBytes}, nil
+		},
+		usageJSON:    extractDashScopeUsage,
+		usageEvent:   parseDashScopeUsageEvent,
+		upstreamPath: func(r *http.Request) string { return r.URL.Path },
+		encodeError:  dashscopewire.EncodeError,
 	}
 }
 
@@ -155,7 +201,7 @@ func (h *Handler) serve(w *tracked, r *http.Request) (outcome, outbound string, 
 		return "bad_request", outbound, err
 	}
 
-	decoded, err := h.in.decode(raw)
+	decoded, err := h.in.decode(r, raw)
 	if err != nil {
 		return "bad_request", outbound, err
 	}
@@ -242,7 +288,8 @@ func (h *Handler) dispatch(w *tracked, r *http.Request, in dispatchInput) (strin
 				Raw:        in.raw,
 				Canonical:  &in.decoded.Request,
 				Stream:     in.decoded.Request.Stream,
-				Path:       h.in.upstreamPath,
+				Path:       h.in.upstreamPath(r),
+				Header:     r.Header,
 			})
 			if err != nil {
 				lease.Fail(err)
@@ -300,7 +347,7 @@ func (h *Handler) dispatch(w *tracked, r *http.Request, in dispatchInput) (strin
 // relay 按流式与否选择转发方式。
 func (h *Handler) relay(w *tracked, resp *httpx.Response, in dispatchInput) (canonical.Usage, error) {
 	if in.decoded.Request.Stream {
-		return relayStream(w, resp, in.headers, h.in.usageEvent)
+		return relayStream(w, resp, in.headers, h.in.usageEvent, h.in.encodeError)
 	}
 	return relayJSON(w, resp, in.headers, h.in.usageJSON)
 }
@@ -381,7 +428,7 @@ func (h *Handler) fail(w *tracked, err error) {
 		return
 	}
 
-	status, body, headers := openaiwire.EncodeError(cerr)
+	status, body, headers := h.in.encodeError(cerr)
 	for k, v := range headers {
 		w.Header().Set(k, v)
 	}

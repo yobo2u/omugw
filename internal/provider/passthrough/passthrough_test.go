@@ -298,6 +298,85 @@ func TestNonObjectBodyIsRejected(t *testing.T) {
 	}
 }
 
+// TestDashScopeTenantHeadersForwarded 固化同源直通要保住租户边界头：
+// X-DashScope-WorkSpace 必须原样带给上游，否则请求会落到错误的子租户；
+// 而客户端的 Authorization 必须被网关自己的凭据覆盖，绝不透传。
+func TestDashScopeTenantHeadersForwarded(t *testing.T) {
+	srv, got := serve(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"output":{}}`)
+	})
+
+	p := New(degrade.ProviderDashScopeNative, "/api/v1/services/aigc/text-generation/generation",
+		httpx.New(config.Default().Timeouts, nil), nil)
+
+	clientHeader := http.Header{}
+	clientHeader.Set("X-DashScope-WorkSpace", "ws-tenant-1")
+	clientHeader.Set("X-DashScope-DataInspection", "enable")
+	clientHeader.Set("Authorization", "Bearer client-secret-must-not-leak")
+	clientHeader.Set("X-Random-Client-Header", "should-not-forward")
+
+	resp, err := p.Call(context.Background(), provider.Request{
+		Target: router.Target{
+			Kind:           degrade.ProviderDashScopeNative,
+			Endpoint:       "test",
+			BaseURL:        srv.URL,
+			UpstreamModel:  "qwen-turbo",
+			CredentialPool: "test",
+		},
+		Credential: credential.Credential{ID: "k1", Secret: "sk-gateway-own"},
+		Raw:        []byte(`{"model":"m","input":{"messages":[{"role":"user","content":"x"}]}}`),
+		Header:     clientHeader,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if got.header.Get("X-DashScope-WorkSpace") != "ws-tenant-1" {
+		t.Errorf("租户头未透传: %q", got.header.Get("X-DashScope-WorkSpace"))
+	}
+	if got.header.Get("X-DashScope-DataInspection") != "enable" {
+		t.Errorf("DataInspection 头未透传: %q", got.header.Get("X-DashScope-DataInspection"))
+	}
+	if auth := got.header.Get("Authorization"); auth != "Bearer sk-gateway-own" {
+		t.Errorf("Authorization 应为网关凭据，实际 %q（客户端密钥泄露风险）", auth)
+	}
+	if got.header.Get("X-Random-Client-Header") != "" {
+		t.Error("白名单之外的客户端头不应透传给上游")
+	}
+}
+
+// TestDashScopeStreamingSetsSSEHeader 固化流式信号要替客户端带给上游。
+func TestDashScopeStreamingSetsSSEHeader(t *testing.T) {
+	srv, got := serve(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"output":{}}`)
+	})
+
+	p := New(degrade.ProviderDashScopeNative, "/api/v1/services/aigc/text-generation/generation",
+		httpx.New(config.Default().Timeouts, nil), nil)
+
+	resp, err := p.Call(context.Background(), provider.Request{
+		Target: router.Target{
+			Kind:           degrade.ProviderDashScopeNative,
+			Endpoint:       "test",
+			BaseURL:        srv.URL,
+			UpstreamModel:  "qwen-turbo",
+			CredentialPool: "test",
+		},
+		Credential: credential.Credential{ID: "k1", Secret: "sk-x"},
+		Raw:        []byte(`{"model":"m","input":{"messages":[{"role":"user","content":"x"}]}}`),
+		Stream:     true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if got.header.Get("X-DashScope-SSE") != "enable" {
+		t.Errorf("流式请求应带 X-DashScope-SSE: enable，实际 %q", got.header.Get("X-DashScope-SSE"))
+	}
+}
+
 // TestRequestPathOverridesDefault 固化「上游路径随请求走」：同一个 openai.compat
 // 适配器既要打 Responses 端点也要打 Chat 端点，路径不能写死在装配时。
 func TestRequestPathOverridesDefault(t *testing.T) {

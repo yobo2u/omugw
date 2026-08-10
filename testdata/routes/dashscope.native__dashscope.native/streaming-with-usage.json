@@ -1,0 +1,45 @@
+{
+  "name": "dashscope.native__dashscope.native/streaming-with-usage",
+  "note": "流式转发。DashScope 的流式由 X-DashScope-SSE: enable 头声明，SSE 帧是 event:result + data:完整响应信封，用量逐帧累计（最后一帧为全量）。frames 复现上游把多个帧挤在一次 Write 里的真实行为。与 OpenAI 不同，DashScope 流没有 [DONE] 哨兵，以 finish_reason=stop 的帧收尾。",
+  "request": {
+    "method": "POST",
+    "path": "/api/v1/services/aigc/text-generation/generation",
+    "headers": {
+      "authorization": "<redacted>",
+      "content-type": "application/json",
+      "x-dashscope-sse": "enable"
+    },
+    "body": {
+      "model": "logical-fast",
+      "input": {
+        "messages": [{ "role": "user", "content": "数到三" }]
+      },
+      "parameters": { "result_format": "message", "incremental_output": true }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": { "content-type": "text/event-stream" },
+    "sse": {
+      "frames": [2, 2],
+      "events": [
+        {
+          "event": "result",
+          "data": "{\"output\":{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"一\"},\"finish_reason\":\"null\"}]},\"usage\":{\"input_tokens\":18,\"output_tokens\":1,\"total_tokens\":19},\"request_id\":\"c9e7af1b-1a5a-9c61-9465-b5249ab92a8e\"}"
+        },
+        {
+          "event": "result",
+          "data": "{\"output\":{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"二\"},\"finish_reason\":\"null\"}]},\"usage\":{\"input_tokens\":18,\"output_tokens\":2,\"total_tokens\":20},\"request_id\":\"c9e7af1b-1a5a-9c61-9465-b5249ab92a8e\"}"
+        },
+        {
+          "event": "result",
+          "data": "{\"output\":{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"三\"},\"finish_reason\":\"null\"}]},\"usage\":{\"input_tokens\":18,\"output_tokens\":3,\"total_tokens\":21},\"request_id\":\"c9e7af1b-1a5a-9c61-9465-b5249ab92a8e\"}"
+        },
+        {
+          "event": "result",
+          "data": "{\"output\":{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":\"stop\"}]},\"usage\":{\"input_tokens\":18,\"output_tokens\":3,\"total_tokens\":21},\"request_id\":\"c9e7af1b-1a5a-9c61-9465-b5249ab92a8e\"}"
+        }
+      ]
+    }
+  }
+}
