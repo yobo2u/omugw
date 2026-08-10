@@ -1,7 +1,7 @@
 # internal/protocol
 
 线格式编解码。命名分两类：`<name>wire` 只做**错误信封**（编码 + 解码 + 分类），
-完整协议包（`openairesponses`、`openaichat`）做请求解码与能力识别。
+完整协议包（`openairesponses`、`openaichat`、`dashscopenative`）做请求解码与能力识别。
 
 ## STRUCTURE
 
@@ -9,6 +9,7 @@
 |---|---|
 | `openairesponses/` | `openai.responses` 完整编解码：`wire.go` 结构、`decode.go` 入站、`response.go` 非流式出站、`stream.go` 流式状态机 |
 | `openaichat/` | `openai.chat` 入站解码：`wire.go` 结构、`decode.go` 入站。同源直通路径，响应/流字节原样转发，无需出站编码 |
+| `dashscopenative/` | `dashscope.native` 入站解码（文本生成）。**宽松解码**（不拒未知字段）；流式由 `X-DashScope-SSE` 头声明而非请求体；一个协议族多端点，直通路径随请求走 |
 | `openaiwire/` | OpenAI 族错误信封 `{"error":{message,type,param,code}}` + 限流头 |
 | `dashscopewire/` | DashScope 扁平信封 `{code,message}` + `DecodeWSFailure`（`task-failed` 事件） |
 | `anthropicwire/` | Anthropic 顶层判别式信封 `{"type":"error","error":{...}}` |
