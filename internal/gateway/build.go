@@ -127,7 +127,7 @@ func Build(cfg config.Config, m *degrade.Matrix, metrics *obs.Metrics, log *slog
 	// DashScope Native 命名空间兜底：未投放端点返回协议化 501。
 	// 依赖 net/http.ServeMux 的最长前缀匹配机制，精确注册的 TextGenerationPath 会优先命中。
 	mux.HandleFunc("POST "+dashscopenative.NamespacePrefix, func(w http.ResponseWriter, r *http.Request) {
-		metrics.ObserveNotImplemented(string(degrade.ProviderDashScopeNative), "planned")
+		metrics.ObserveNotImplemented(string(degrade.ProtoDashScopeNative), "planned")
 		status, body, headers := dashscopewire.EncodeError(canonical.Newf(canonical.ClassNotImplemented, "DashScope Native 端点 %s 尚未实现", r.URL.Path))
 		for k, v := range headers {
 			w.Header().Set(k, v)

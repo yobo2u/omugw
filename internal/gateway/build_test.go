@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/yobo2u/omugw/internal/config"
@@ -18,7 +19,10 @@ import (
 )
 
 func TestBuiltMux_DashScopeNativeFallback_WithUpstream(t *testing.T) {
-	m, _ := degrade.Phase1()
+	m, err := degrade.Phase1()
+	if err != nil {
+		t.Fatalf("加载 Phase1 矩阵失败: %v", err)
+	}
 
 	reg := prometheus.NewRegistry()
 	metrics := obs.NewMetrics(reg)
@@ -45,7 +49,7 @@ func TestBuiltMux_DashScopeNativeFallback_WithUpstream(t *testing.T) {
 			{Match: "*", Targets: []config.TargetSpec{{Endpoint: "ep1", UpstreamModel: "test-model"}}},
 		},
 		Timeouts: config.Timeouts{
-			Connect: 1000000000, FirstByte: 2000000000, Total: 3000000000, Idle: 1000000000,
+			Connect: time.Second, FirstByte: 2 * time.Second, Total: 3 * time.Second, Idle: time.Second,
 		},
 		Limits: config.Limits{
 			MaxRequestBytes: 1024 * 1024,
@@ -55,7 +59,7 @@ func TestBuiltMux_DashScopeNativeFallback_WithUpstream(t *testing.T) {
 
 	built, err := gateway.Build(cfg, m, metrics, log)
 	if err != nil {
-		t.Fatalf("Build failed: %v", err)
+		t.Fatalf("构建失败: %v", err)
 	}
 
 	tests := []struct {
@@ -125,22 +129,22 @@ func TestBuiltMux_DashScopeNativeFallback_WithUpstream(t *testing.T) {
 			built.Mux.ServeHTTP(rec, req)
 
 			if rec.Code != tt.expectedStatus {
-				t.Errorf("expected status %d, got %d", tt.expectedStatus, rec.Code)
+				t.Errorf("期望状态码 %d，实际 %d", tt.expectedStatus, rec.Code)
 			}
 
 			if tt.expectUpstream {
 				if upstreamCalls != 1 {
-					t.Errorf("expected 1 upstream call, got %d", upstreamCalls)
+					t.Errorf("期望 1 次上游调用，实际 %d", upstreamCalls)
 				}
 			} else {
 				if upstreamCalls != 0 {
-					t.Errorf("expected 0 upstream calls, got %d", upstreamCalls)
+					t.Errorf("期望 0 次上游调用，实际 %d", upstreamCalls)
 				}
 			}
 
 			if tt.expectedCode != "" {
 				if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
-					t.Errorf("expected Content-Type application/json, got %q", ct)
+					t.Errorf("期望 Content-Type application/json，实际 %q", ct)
 				}
 
 				var body struct {
@@ -148,14 +152,14 @@ func TestBuiltMux_DashScopeNativeFallback_WithUpstream(t *testing.T) {
 					Msg  string `json:"message"`
 				}
 				if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-					t.Fatalf("failed to parse response body: %v", err)
+					t.Fatalf("解析响应体失败: %v", err)
 				}
 				if body.Code != tt.expectedCode {
-					t.Errorf("expected code %q, got %q", tt.expectedCode, body.Code)
+					t.Errorf("期望 code %q，实际 %q", tt.expectedCode, body.Code)
 				}
 
 				if tt.expectedMsg != "" && body.Msg != tt.expectedMsg {
-					t.Errorf("expected message %q, got %q", tt.expectedMsg, body.Msg)
+					t.Errorf("期望 message %q，实际 %q", tt.expectedMsg, body.Msg)
 				}
 
 			}
@@ -165,7 +169,7 @@ func TestBuiltMux_DashScopeNativeFallback_WithUpstream(t *testing.T) {
 	// 验证指标
 	metricsFamilies, err := reg.Gather()
 	if err != nil {
-		t.Fatalf("Gather failed: %v", err)
+		t.Fatalf("收集指标失败: %v", err)
 	}
 	var notImplementedCount float64
 	for _, mf := range metricsFamilies {
@@ -180,16 +184,16 @@ func TestBuiltMux_DashScopeNativeFallback_WithUpstream(t *testing.T) {
 						outbound = lp.GetValue()
 					}
 				}
-				if inbound == string(degrade.ProviderDashScopeNative) && outbound == "planned" {
+				if inbound == string(degrade.ProtoDashScopeNative) && outbound == "planned" {
 					notImplementedCount += m.GetCounter().GetValue()
 				} else {
-					t.Errorf("unexpected metric label: inbound=%s, outbound=%s", inbound, outbound)
+					t.Errorf("意外的指标标签: inbound=%s, outbound=%s", inbound, outbound)
 				}
 			}
 		}
 	}
 	if notImplementedCount != 3 {
-		t.Errorf("expected 3 not implemented metrics, got %v", notImplementedCount)
+		t.Errorf("期望 3 次未实现指标，实际 %v", notImplementedCount)
 	}
 
 }
@@ -200,12 +204,12 @@ func TestBuiltMux_HealthOnlyMode_NoFallback(t *testing.T) {
 	metrics := obs.NewMetrics(reg)
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	// Empty config = health only
+	// 空配置 = 仅健康检查模式
 	cfg := config.Config{}
 
 	built, err := gateway.Build(cfg, m, metrics, log)
 	if err != nil {
-		t.Fatalf("Build failed: %v", err)
+		t.Fatalf("构建失败: %v", err)
 	}
 
 	req := httptest.NewRequest("POST", "/api/v1/services/aigc/multimodal-generation/generation", nil)
@@ -214,6 +218,6 @@ func TestBuiltMux_HealthOnlyMode_NoFallback(t *testing.T) {
 	built.Mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNotFound {
-		t.Errorf("expected 404 in health-only mode, got %d", rec.Code)
+		t.Errorf("仅健康检查模式期望 404，实际 %d", rec.Code)
 	}
 }
