@@ -199,11 +199,7 @@ func TestDashScopeNativeRouteConformance(t *testing.T) {
 			testkit.AssertJSONEqual(t, wantBytes, gotBytes, "上游收到的 body 语义不符")
 
 			golden := filepath.Join(dashScopeNativeRouteFixtures, "golden", caseName(f.Name)+".txt")
-			res := renderResult(rec)
-			if f.Name == "tools-and-search" && !strings.HasSuffix(res, "\n") {
-				res += "\n"
-			}
-			testkit.Golden(t, golden, []byte(res))
+			testkit.Golden(t, golden, []byte(renderResult(rec)))
 		})
 	}
 }
