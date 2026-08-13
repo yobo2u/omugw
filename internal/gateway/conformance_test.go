@@ -1,7 +1,9 @@
 package gateway
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -91,9 +93,21 @@ func TestChatRouteConformance(t *testing.T) {
 func TestDashScopeNativeRouteConformance(t *testing.T) {
 	for _, f := range testkit.LoadDir(t, dashScopeNativeRouteFixtures) {
 		t.Run(caseName(f.Name), func(t *testing.T) {
-			var gotPath string
+			var (
+				gotMethod string
+				gotPath   string
+				gotHeader http.Header
+				gotBody   []byte
+			)
 			up := newUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+				gotMethod = r.Method
 				gotPath = r.URL.Path
+				gotHeader = r.Header.Clone()
+				var err error
+				gotBody, err = io.ReadAll(r.Body)
+				if err != nil {
+					t.Fatal(err)
+				}
 				writeFixtureResponse(t, w, f)
 			})
 			hs := newDashScopeNativeHarness(t, true, up)
@@ -102,20 +116,87 @@ func TestDashScopeNativeRouteConformance(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			req := httptest.NewRequest(http.MethodPost, hs.path, strings.NewReader(string(body)))
-			req.Header.Set("Authorization", "Bearer "+testKey)
-			req.Header.Set("Content-Type", "application/json")
-			if f.Response.SSE != nil {
-				req.Header.Set(dashscopenative.SSEHeader, "enable")
+
+			method := f.Request.Method
+			if method == "" {
+				method = http.MethodPost
 			}
+			path := f.Request.Path
+			if path == "" {
+				path = hs.path
+			}
+
+			req := httptest.NewRequest(method, path, bytes.NewReader(body))
+
+			for k, v := range f.Request.Headers {
+				if v == "<redacted>" {
+					continue
+				}
+				req.Header.Set(k, v)
+			}
+			req.Header.Set("Authorization", "Bearer "+testKey)
+			if req.Header.Get("Content-Type") == "" {
+				req.Header.Set("Content-Type", "application/json")
+			}
+
 			rec := httptest.NewRecorder()
 			hs.h.ServeHTTP(rec, req)
 
-			// harness 的 provider 默认路径是 /v1/responses；只有 handler 把请求
-			// 路径注入进去，上游才会收到 DashScope 端点。这是 Path 注入的实证。
+			if gotMethod != method {
+				t.Errorf("上游收到 method %q，期望 %q", gotMethod, method)
+			}
 			if gotPath != dashscopenative.TextGenerationPath {
 				t.Errorf("上游收到路径 %q，期望 %q（Path 注入未生效）", gotPath, dashscopenative.TextGenerationPath)
 			}
+
+			if auth := gotHeader.Get("Authorization"); auth != "Bearer sk-a" {
+				t.Errorf("上游收到 Authorization %q，期望 Bearer sk-a", auth)
+			}
+
+			if f.Response.SSE != nil {
+				if sse := gotHeader.Get(dashscopenative.SSEHeader); sse != "enable" {
+					t.Errorf("上游收到 SSE 头 %q，期望 enable", sse)
+				}
+			} else {
+				if sse := gotHeader.Get(dashscopenative.SSEHeader); sse != "" && sse != "disable" {
+					t.Errorf("上游收到 SSE 头 %q，期望空或 disable", sse)
+				}
+			}
+
+			// Header keys are case-insensitive in http.Header, but f.Request.Headers is a map[string]string.
+			// We should iterate over f.Request.Headers to find Workspace header case-insensitively.
+			var ws string
+			for k, v := range f.Request.Headers {
+				if strings.ToLower(k) == "x-dashscope-workspace" {
+					ws = v
+					break
+				}
+			}
+			if ws != "" && ws != "<redacted>" {
+				if got := gotHeader.Get("X-DashScope-WorkSpace"); got != ws {
+					t.Errorf("上游收到 Workspace 头 %q，期望 %q", got, ws)
+				}
+			}
+
+			var gotJSON map[string]any
+			if err := json.Unmarshal(gotBody, &gotJSON); err != nil {
+				t.Fatalf("上游收到非 JSON body: %v", err)
+			}
+			var wantJSON map[string]any
+			if err := json.Unmarshal(body, &wantJSON); err != nil {
+				t.Fatalf("fixture body 非 JSON: %v", err)
+			}
+
+			if gotModel, _ := gotJSON["model"].(string); gotModel != "upstream-model" {
+				t.Errorf("上游收到 model %q，期望 upstream-model", gotModel)
+			}
+
+			delete(gotJSON, "model")
+			delete(wantJSON, "model")
+
+			gotBytes, _ := json.Marshal(gotJSON)
+			wantBytes, _ := json.Marshal(wantJSON)
+			testkit.AssertJSONEqual(t, wantBytes, gotBytes, "上游收到的 body 语义不符")
 
 			golden := filepath.Join(dashScopeNativeRouteFixtures, "golden", caseName(f.Name)+".txt")
 			testkit.Golden(t, golden, []byte(renderResult(rec)))

@@ -1,0 +1,63 @@
+{
+  "name": "tools-and-search",
+  "note": "证明 Native 路径兑现了 tool calling、web search、reasoning 能力",
+  "request": {
+    "method": "POST",
+    "path": "/api/v1/services/aigc/text-generation/generation",
+    "headers": {
+      "authorization": "<redacted>",
+      "content-type": "application/json",
+      "x-dashscope-workspace": "ws-123"
+    },
+    "body": {
+      "model": "qwen-max",
+      "input": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "What is the weather in Tokyo?"
+          }
+        ]
+      },
+      "parameters": {
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "get_weather",
+              "description": "Get weather",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "location": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "enable_search": true,
+        "enable_thinking": true
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json",
+      "x-request-id": "req-123"
+    },
+    "body": {
+      "output": {
+        "text": "The weather in Tokyo is sunny.",
+        "finish_reason": "stop"
+      },
+      "usage": {
+        "input_tokens": 10,
+        "output_tokens": 10
+      },
+      "request_id": "req-123"
+    }
+  }
+}
