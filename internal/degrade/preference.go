@@ -111,6 +111,19 @@ type Preservation struct {
 	// EmulateOff 是被运维关掉的模拟能力数，已从 Emulate 中扣除。
 	EmulateOff int
 
+	// NotRedeemed 是设计上有效、但当前尚未投放的能力数。
+	//
+	// 它**不从**上面几列扣除：那几列记的是设计处置，而设计不因为投放进度改变。
+	// 它只影响当前可用那一列——一项还没写的能力，此刻一分都不该拿。
+	NotRedeemed int
+
+	// availableWeight 是当前真的能用到的权重和：已投放且开关可用的格子按
+	// 透传/模拟计 1 分、降级计 0.5 分，其余计 0 分。
+	//
+	// 单独累加而不是从设计分里减，是因为两者的口径本就不同——设计分回答
+	// 「这条路最终能做到什么」，它回答「此刻能做到什么」。
+	availableWeight float64
+
 	// NotApplicable 是入站协议压根表达不出来的能力数。
 	//
 	// 它**不进分母**。早先的版本把它算作损失，结果一条零损失的字节直通路径
@@ -136,7 +149,7 @@ func (p Preservation) DesignScore() float64 {
 	return (float64(pass) + 0.5*float64(p.Degrade)) / float64(total)
 }
 
-// AvailableScore 是**当前可用**保留度：被关掉的模拟能力不计分。
+// AvailableScore 是**当前可用**保留度：未投放的能力与被关掉的模拟能力都不计分。
 //
 // 它回答「此刻真的能用到什么」，是选路的唯一依据。
 func (p Preservation) AvailableScore() float64 {
@@ -144,31 +157,49 @@ func (p Preservation) AvailableScore() float64 {
 	if total == 0 {
 		return 0
 	}
-	return (float64(p.Passthrough+p.Emulate) + 0.5*float64(p.Degrade)) / float64(total)
+	return p.availableWeight / float64(total)
 }
 
-// Gated 报告这条路径是否存在被开关影响的能力——即两列分数是否会不同。
-func (p Preservation) Gated() bool { return p.EmulateOff > 0 }
+// Gated 报告这条路径的两列分数是否会不同——被开关关掉的，或还没投放的。
+func (p Preservation) Gated() bool { return p.EmulateOff > 0 || p.NotRedeemed > 0 }
+
+// Redeemed 是已投放的格子数。REJECT 按设计就该失败，不在投放之列。
+func (p Preservation) Redeemed() int { return p.denominator() - p.Reject - p.NotRedeemed }
 
 // Preservation 报告这条路径保留了多少原生能力，按矩阵当前的可用性配置计算。
+//
+// 设计计数与可用权重分两路累加：前者只看处置声明，后者还要问这项能力投放了没有。
 func (r *Route) Preservation(avail Availability) Preservation {
 	var p Preservation
-	for _, rule := range r.rules {
+	for c, rule := range r.rules {
+		var weight float64
 		switch rule.Disposition {
 		case Passthrough:
 			p.Passthrough++
+			weight = 1
 		case Emulate:
 			if avail.Enabled(rule.RequiresFeature) {
 				p.Emulate++
+				weight = 1
 			} else {
 				p.EmulateOff++
 			}
 		case Degrade:
 			p.Degrade++
+			weight = 0.5
 		case Reject:
 			p.Reject++
 		case NotApplicable:
 			p.NotApplicable++
+			// N/A 不进分母，也就谈不上投放，跳过下面的计数。
+			continue
+		}
+		if r.Redeems(c) {
+			p.availableWeight += weight
+		} else if rule.Disposition != Reject {
+			// REJECT 的格子按设计就该失败，没有「等它投放」一说，
+			// 算进未投放数只会让人以为它将来会变得可用。
+			p.NotRedeemed++
 		}
 	}
 	return p
@@ -197,7 +228,7 @@ func (m *Matrix) rank(in Protocol, candidates []Provider, onlyImplemented bool) 
 	out := make([]Provider, 0, len(candidates))
 	for _, c := range candidates {
 		r, ok := m.Route(in, c)
-		if !ok || (onlyImplemented && !r.Implemented) {
+		if !ok || (onlyImplemented && !r.Implemented()) {
 			continue
 		}
 		out = append(out, c)

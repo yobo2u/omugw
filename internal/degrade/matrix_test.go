@@ -54,7 +54,7 @@ func TestPhase1IsComplete(t *testing.T) {
 		}
 
 		status := "规划中"
-		if r.Implemented {
+		if r.Implemented() {
 			status = "已实现"
 		}
 		t.Logf("%-22s -> %-24s %s  pass=%2d emu=%d(off %d) deg=%d rej=%d n/a=%2d  设计=%.3f 可用=%.3f",
@@ -76,7 +76,7 @@ func implementedMatrix(t *testing.T, avail Availability) *Matrix {
 		t.Fatal(err)
 	}
 	for _, r := range m.Routes() {
-		r.MarkImplemented()
+		r.Redeem(ExpressibleSet(r.In)...)
 	}
 	if avail != nil {
 		m.WithAvailability(avail)
@@ -87,7 +87,7 @@ func implementedMatrix(t *testing.T, avail Availability) *Matrix {
 // TestImplementedRoutesAreExplicit 要求已转正的路径逐条登记在这里。
 //
 // 转正是件需要有人明确点头的事，不该悄悄发生。任何一条路径被标记为已实现却
-// 没进这份名单，这里就会失败——包括「顺手加个 MarkImplemented 让测试过」
+// 没进这份名单，这里就会失败——包括「顺手加个 Redeem 让测试过」
 // 那种做法。想转正就得同时改代码、写 fixture、改这份名单，三处都动过一遍，
 // 就很难是无意的。
 func TestImplementedRoutesAreExplicit(t *testing.T) {
@@ -106,7 +106,7 @@ func TestImplementedRoutesAreExplicit(t *testing.T) {
 
 	got := map[string]bool{}
 	for _, r := range m.Routes() {
-		if r.Implemented {
+		if r.Implemented() {
 			got[string(r.In)+" -> "+string(r.Out)] = true
 		}
 	}
@@ -121,6 +121,112 @@ func TestImplementedRoutesAreExplicit(t *testing.T) {
 			t.Errorf("路径 %s 被标记为已实现，但不在名单里——"+
 				"转正请同步更新本测试与 fixture", k)
 		}
+	}
+}
+
+// TestRedeemedCapabilitiesAreExplicit 把「投放了哪些能力」也变成需要有人点头的事。
+//
+// 与 TestImplementedRoutesAreExplicit 同理，只是粒度从路径细到能力：路径转正
+// 只说明这条路开始通车，说明不了每个端点都通。悄悄多兑现一项能力，等于宣称
+// 一个还没写的端点可用。
+func TestRedeemedCapabilitiesAreExplicit(t *testing.T) {
+	// OpenAI 两条同源直通字节级转发，可表达的全部兑现；
+	// Native 一个协议对应多个上游端点，本期只投放了文本生成那一个。
+	want := map[string][]canonical.Capability{
+		string(ProtoOpenAIResponses) + " -> " + string(ProviderOpenAICompat): ExpressibleSet(ProtoOpenAIResponses),
+		string(ProtoOpenAIChat) + " -> " + string(ProviderOpenAICompat):      ExpressibleSet(ProtoOpenAIChat),
+		string(ProtoDashScopeNative) + " -> " + string(ProviderDashScopeNative): {
+			canonical.CapTextGeneration,
+			canonical.CapStreaming,
+			canonical.CapToolCalling,
+			canonical.CapReasoning,
+			canonical.CapWebSearch,
+		},
+	}
+
+	m, err := Phase1()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, r := range m.Routes() {
+		key := string(r.In) + " -> " + string(r.Out)
+		caps, listed := want[key]
+		if !listed {
+			for _, c := range canonical.AllCapabilities() {
+				if r.Redeems(c) {
+					t.Errorf("路径 %s 兑现了 %q，但不在名单里——"+
+						"投放请同步更新本测试与 fixture", key, c)
+				}
+			}
+			continue
+		}
+
+		redeemed := map[canonical.Capability]bool{}
+		for _, c := range caps {
+			redeemed[c] = true
+			if !r.Redeems(c) {
+				t.Errorf("路径 %s 应已投放 %q，实际未兑现", key, c)
+			}
+		}
+		for _, c := range canonical.AllCapabilities() {
+			if !redeemed[c] && r.Redeems(c) {
+				t.Errorf("路径 %s 多兑现了 %q，名单里没有它", key, c)
+			}
+		}
+	}
+}
+
+// TestRedeemingUndeliverableCapabilityFailsBuild 防的是「兑现一格根本没有内容的
+// 能力」。
+//
+// REJECT 的格子兑现了也没有实现可言，N/A 的格子客户端连发都发不出来。
+// 让这种声明在 Build 时就失败，比让它在文档里显示成「已投放」要好——
+// 后者是在为一个不存在的东西背书。
+func TestRedeemingUndeliverableCapabilityFailsBuild(t *testing.T) {
+	var others []canonical.Capability
+	for _, c := range ExpressibleSet(ProtoOpenAIChat) {
+		if c != canonical.CapAudioInput {
+			others = append(others, c)
+		}
+	}
+
+	_, err := NewRoute(ProtoOpenAIChat, ProviderAnthropicMessages).
+		Pass(others...).
+		Reject(noteNoAudioIn, canonical.CapAudioInput).
+		Redeem(canonical.CapAudioInput).
+		Build()
+	if err == nil {
+		t.Fatal("兑现一个 REJECT 格子应当 Build 失败")
+	}
+	if !strings.Contains(err.Error(), string(canonical.CapAudioInput)) {
+		t.Errorf("错误信息应指出是哪项能力，实际为: %v", err)
+	}
+
+	_, err = NewRoute(ProtoOpenAIChat, ProviderOpenAICompat).
+		Pass(ExpressibleSet(ProtoOpenAIChat)...).
+		Redeem(canonical.CapRerank). // openai.chat 表达不出 rerank
+		Build()
+	if err == nil {
+		t.Fatal("兑现一个不可表达的能力应当 Build 失败")
+	}
+}
+
+// TestDeriveDoesNotInheritRedemption 防的是「派生路径顺手继承了基准路径的投放」。
+//
+// 兑现集合说的是「这条路径的这个端点已经写好了」，而实现是一条路径一条路径写的。
+// 继承它，等于让一条还没动工的派生路径宣称自己可用。
+func TestDeriveDoesNotInheritRedemption(t *testing.T) {
+	base := NewRoute(ProtoOpenAIChat, ProviderOpenAICompat).
+		Pass(ExpressibleSet(ProtoOpenAIChat)...).
+		Redeem(ExpressibleSet(ProtoOpenAIChat)...)
+
+	derived := base.Derive(ProtoOpenAIResponses, ProviderOpenAICompat)
+	if derived.Implemented() {
+		t.Error("派生路径不该继承兑现集合——实现是逐条写的，不是继承来的")
+	}
+	if derived.Redeems(canonical.CapTextGeneration) {
+		t.Error("派生路径不该继承单项能力的兑现状态")
 	}
 }
 
@@ -153,6 +259,58 @@ func TestPlannedRouteIsRejectedAtRuntime(t *testing.T) {
 	}
 }
 
+// TestUnredeemedCapabilityIsRejectedAtRuntime 防的是「路径转正连带把整条协议
+// 的能力都算成可用」。
+//
+// DashScope Native 一个协议对应多个上游端点，本期只投放了文本生成那一个。
+// 视觉输入的**设计处置**仍是 PASSTHROUGH——那是这条路最终的样子，不该改；
+// 但它此刻没有落地，放行只会让请求打到一个不存在的实现上，客户端拿到的是
+// 一个看不懂的 5xx，而真相是「这个端点还没投放」。
+func TestUnredeemedCapabilityIsRejectedAtRuntime(t *testing.T) {
+	m, err := Phase1()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 设计处置不变：这是一条同源直通路径，视觉输入本就该原样转发。
+	rule, ok := m.Lookup(ProtoDashScopeNative, ProviderDashScopeNative, canonical.CapVisionInput)
+	if !ok || rule.Disposition != Passthrough {
+		t.Fatalf("vision_input 的设计处置应为 PASSTHROUGH，实际 %v", rule.Disposition)
+	}
+
+	// 但当前未投放，运行时必须挡下来。
+	_, err = m.Check(ProtoDashScopeNative, ProviderDashScopeNative,
+		[]canonical.Capability{canonical.CapTextGeneration, canonical.CapVisionInput})
+	if err == nil {
+		t.Fatal("未投放的能力必须报错，不得放行到一个尚不存在的实现上")
+	}
+	var cerr *canonical.Error
+	if !errors.As(err, &cerr) {
+		t.Fatalf("应返回 *canonical.Error，实际为 %T", err)
+	}
+	if cerr.Class != canonical.ClassNotImplemented {
+		t.Errorf("错误分类应为 not_implemented（等实现），而非 unsupported（改请求），实际 %q",
+			cerr.Class)
+	}
+	if cerr.HTTPStatus() != 501 {
+		t.Errorf("应映射到 501，实际为 %d", cerr.HTTPStatus())
+	}
+
+	// 已投放的五项必须照常放行，否则这道闸门就把整条路径也一起关了。
+	for _, c := range []canonical.Capability{
+		canonical.CapTextGeneration,
+		canonical.CapStreaming,
+		canonical.CapToolCalling,
+		canonical.CapReasoning,
+		canonical.CapWebSearch,
+	} {
+		if _, err := m.Check(ProtoDashScopeNative, ProviderDashScopeNative,
+			[]canonical.Capability{c}); err != nil {
+			t.Errorf("已投放的能力 %q 不该被拦下: %v", c, err)
+		}
+	}
+}
+
 // TestImplementedRoutesHaveFixtures 是 ADR-0001 的转正门槛。
 //
 // 一条路径标记为已实现，就必须有覆盖它的 fixture；每个 DEGRADE / EMULATE
@@ -163,7 +321,7 @@ func TestImplementedRoutesHaveFixtures(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, r := range m.Routes() {
-		if !r.Implemented {
+		if !r.Implemented() {
 			continue
 		}
 		if err := checkRouteFixtures(r, "../.."); err != nil {
@@ -180,8 +338,8 @@ func TestFixtureGateActuallyBites(t *testing.T) {
 	// 故意挑一条**没有** fixture 目录的路径来证明门槛会咬人。
 	// 不能挑已转正的路径——它们有 fixture，门槛放行是正确的，测不出「咬」。
 	fake := NewRoute(ProtoOpenAIChat, ProviderAnthropicMessages).
-		MarkImplemented().
-		Pass(ExpressibleSet(ProtoOpenAIChat)...)
+		Pass(ExpressibleSet(ProtoOpenAIChat)...).
+		Redeem(ExpressibleSet(ProtoOpenAIChat)...)
 	built, err := fake.Build()
 	if err != nil {
 		t.Fatal(err)

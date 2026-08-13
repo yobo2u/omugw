@@ -132,6 +132,34 @@ func TestGatedEmulationSplitsTheTwoColumns(t *testing.T) {
 	}
 }
 
+// TestAvailableScoreCountsOnlyRedeemed 防的是「设计满分被当成可用满分」。
+//
+// DashScope Native 的设计目标仍是 1.000——那条路最终该是零损失的同源直通，
+// 这个结论不因为投放进度而改变。但此刻只投放了 18 项里的 5 项，若可用分数也
+// 报 1.000，选路就会拿一个远超实际的分数去和别的路径比，把请求送进 501。
+func TestAvailableScoreCountsOnlyRedeemed(t *testing.T) {
+	m, err := Phase1()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	p := mustRoute(t, m, ProtoDashScopeNative, ProviderDashScopeNative).
+		Preservation(m.Availability())
+
+	if got := p.DesignScore(); got != 1.0 {
+		t.Errorf("设计目标应保持 1.000（同源直通零损失），实际 %.3f", got)
+	}
+	if want := len(ExpressibleSet(ProtoDashScopeNative)) - 5; p.NotRedeemed != want {
+		t.Errorf("未投放格子数 = %d，期望 %d", p.NotRedeemed, want)
+	}
+	if want := 5.0 / 18.0; p.AvailableScore() != want {
+		t.Errorf("当前可用应为 %.3f（18 项中 5 项已投放），实际 %.3f", want, p.AvailableScore())
+	}
+	if !p.Gated() {
+		t.Error("存在未投放的格子时两列分数应当不同")
+	}
+}
+
 // TestInboundPriorityIsRegistered 保证优先级序列里已排到的协议真的有路径，
 // 而不是只写在常量里好看。
 func TestInboundPriorityIsRegistered(t *testing.T) {
@@ -267,16 +295,16 @@ func TestBestOutboundSkipsRejectingRoute(t *testing.T) {
 
 	// 偏好序里排第一，但拒绝视觉输入。
 	if err := m.Add(NewRoute(ProtoOpenAIChat, ProviderOpenAICompat).
-		MarkImplemented().
 		Pass(others...).
 		Reject("测试用：这条路径不支持视觉输入", canonical.CapVisionInput).
+		Redeem(others...).
 		Build()); err != nil {
 		t.Fatal(err)
 	}
 	// 排第二，但真能跑通。
 	if err := m.Add(NewRoute(ProtoOpenAIChat, ProviderDashScopeCompatible).
-		MarkImplemented().
 		Pass(ExpressibleSet(ProtoOpenAIChat)...).
+		Redeem(ExpressibleSet(ProtoOpenAIChat)...).
 		Build()); err != nil {
 		t.Fatal(err)
 	}

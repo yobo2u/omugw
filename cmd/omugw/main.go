@@ -51,19 +51,19 @@ func run() error {
 	var implemented int
 	for _, r := range matrix.Routes() {
 		p := r.Preservation(matrix.Availability())
-		if r.Implemented {
+		if r.Implemented() {
 			implemented++
 		}
 		attrs := []any{
 			"inbound", string(r.In),
 			"outbound", string(r.Out),
-			"implemented", r.Implemented,
+			"implemented", r.Implemented(),
 			"fast_path", r.Homogeneous,
 			"design_score", p.DesignScore(),
 		}
 		// 未实现的路径不打印当前可用分数，与矩阵文档里那一列的 "—" 保持一致。
 		// 同一个数字在两处含义不同，正是 ADR-0002 要消灭的毛病。
-		if r.Implemented {
+		if r.Implemented() {
 			attrs = append(attrs, "available_score", p.AvailableScore())
 		}
 		log.Info("已注册转换路径", attrs...)

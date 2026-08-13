@@ -109,20 +109,30 @@ type Route struct {
 	// 不进 Canonical——这既保住了 TTFT，也绕开了绝大多数转换 bug。
 	Homogeneous bool
 
-	// Implemented 标记这条路径背后真的有 codec，而不只是一纸声明。
-	//
-	// 默认 false。M0 结束时矩阵登记了 14 条路径的全部处置，而 internal/ 下
-	// 一个 codec 都没有——矩阵在为不存在的实现背书，且没有任何机制能发现。
-	// 转正的门槛是端到端 fixture 通过（见 ADR-0001），不是有人认为写完了。
-	Implemented bool
-
 	rules map[canonical.Capability]Rule
-	errs  []string
+
+	// redeemed 是这条路径**当前真的投放了**的能力集合。
+	//
+	// 与 rules 的分工是整个包最容易混淆、也最要紧的一处：rules 是**设计处置**
+	// ——这条路最终该怎么对待每项能力；redeemed 是**当前投放**——此刻哪些能力
+	// 背后真的有实现。
+	//
+	// 早先这里是一个布尔字段，粒度是整条路径。DashScope Native 撞破了它：
+	// 一个协议对应文本生成、multimodal、embedding、rerank 多个上游端点，
+	// 本期只写了文本生成那一个，而那个布尔一置位，矩阵就替另外三个端点
+	// 也作了保证。默认为空，投放一项登记一项。
+	redeemed map[canonical.Capability]bool
+
+	errs []string
 }
 
 // NewRoute 开始声明一条路径。必须以 Build 结尾。
 func NewRoute(in Protocol, out Provider) *Route {
-	return &Route{In: in, Out: out, rules: map[canonical.Capability]Rule{}}
+	return &Route{
+		In: in, Out: out,
+		rules:    map[canonical.Capability]Rule{},
+		redeemed: map[canonical.Capability]bool{},
+	}
 }
 
 // Homogeneous 把这条路径标记为同源快通道。
@@ -175,14 +185,25 @@ func (r *Route) Emulate(feature, note string, caps ...canonical.Capability) *Rou
 	return r
 }
 
-// MarkImplemented 把路径转正。
+// Redeem 登记若干项能力**当前已经投放**。
 //
-// 只应在该路径的端到端 fixture 已经存在并通过之后调用；
-// TestImplementedRoutesHaveFixtures 会强制这一点。
-func (r *Route) MarkImplemented() *Route {
-	r.Implemented = true
+// 只应在这些能力的端到端 fixture 已经存在并通过之后调用；
+// TestImplementedRoutesHaveFixtures 与 TestRedeemedCapabilitiesAreExplicit
+// 会强制这一点。
+func (r *Route) Redeem(caps ...canonical.Capability) *Route {
+	for _, c := range caps {
+		r.redeemed[c] = true
+	}
 	return r
 }
+
+// Implemented 报告这条路径是否至少投放了一项能力，即它是否已经通车。
+//
+// 选路与文档用它区分「已实现」和「规划中」；单项能力能不能走，要另问 Redeems。
+func (r *Route) Implemented() bool { return len(r.redeemed) > 0 }
+
+// Redeems 报告某一项能力当前是否已投放。
+func (r *Route) Redeems(c canonical.Capability) bool { return r.redeemed[c] }
 
 // Derive 以另一条已声明的路径为基准创建新路径，用于协议族内部的近似路径
 // （例如 OpenAI Chat 与 OpenAI Responses 面对同一个出站 Provider）。
@@ -190,6 +211,9 @@ func (r *Route) MarkImplemented() *Route {
 // 它不是省事的手段。逐字复制 27 条声明不会让人多想一遍，只会增加复制粘贴的
 // 出错面；而 Derive + Override 把「这两条路径究竟哪里不同」变成代码里能一眼
 // 读到的答案。Build 的完整性校验对派生路径同样生效。
+//
+// 兑现集合不在继承之列：它说的是「这条路径的实现写好了」，而实现是逐条写的。
+// 继承它会让一条还没动工的派生路径宣称自己可用。
 func (r *Route) Derive(in Protocol, out Provider) *Route {
 	n := NewRoute(in, out)
 	n.Homogeneous = r.Homogeneous
@@ -277,6 +301,21 @@ func (r *Route) Build() (*Route, error) {
 			note = why
 		}
 		r.rules[c] = Rule{Disposition: NotApplicable, Note: note}
+	}
+
+	// 兑现一个 REJECT 或 N/A 的格子没有内容可言——前者按设计就该失败，
+	// 后者客户端连发都发不出来。让它在这里失败，好过在文档里显示成「已投放」，
+	// 那是在为一个不存在的东西背书。
+	var undeliverable []string
+	for c := range r.redeemed {
+		rule, ok := r.rules[c]
+		if !ok || rule.Disposition == Reject || rule.Disposition == NotApplicable {
+			undeliverable = append(undeliverable, string(c))
+		}
+	}
+	if len(undeliverable) > 0 {
+		sort.Strings(undeliverable)
+		r.errs = append(r.errs, "redeemed but not deliverable: "+strings.Join(undeliverable, ", "))
 	}
 
 	for c, rule := range r.rules {
@@ -396,7 +435,7 @@ func (m *Matrix) Check(in Protocol, out Provider, caps []canonical.Capability) (
 
 	// 已设计但未实现的路径必须明确报错。放行会让请求走进一个空壳，
 	// 客户端拿到的是一个语焉不详的 5xx，而真相是「这条路还没建」。
-	if !r.Implemented {
+	if !r.Implemented() {
 		return Verdict{}, canonical.Newf(canonical.ClassNotImplemented,
 			"转换路径 %s -> %s 已在降级矩阵中设计，但实现尚未落地", in, out)
 	}
@@ -418,6 +457,19 @@ func (m *Matrix) Check(in Protocol, out Provider, caps []canonical.Capability) (
 			// 不能当成客户端的问题放行。
 			return Verdict{}, canonical.Newf(canonical.ClassInternal,
 				"入站协议 %s 不应产生能力 %q，解码器可能有误：%s", in, c, rule.Note)
+		}
+
+		// 走到这里的处置在设计上都是有效的，于是才轮到问「投放了没有」。
+		// 顺序不能反：REJECT 与 N/A 有各自更确切的错误分类，先问投放会把
+		// 「这条路不支持」说成「这条路还没建」。
+		//
+		// 501 而不是 422：未投放的能力该等实现，不该让客户端改请求。
+		if !r.Redeems(c) {
+			return Verdict{}, canonical.Newf(canonical.ClassNotImplemented,
+				"转换路径 %s -> %s 已声明能力 %q，但当前尚未投放", in, out, c)
+		}
+
+		switch rule.Disposition {
 		case Degrade:
 			v.Degraded = append(v.Degraded, CapabilityNote{Capability: c, Note: rule.Note})
 		case Emulate:

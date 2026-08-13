@@ -32,7 +32,7 @@ const (
 // 这不是遗漏。M0 建立的是声明层——矩阵、可表达性、错误映射、测试基座——
 // 而 codec 与 transport 属于 M1。让路径默认 PLANNED，是让这个事实在运行时
 // 和文档里都藏不住（见 ADR-0001）。M1 转正前三条 openai.responses 路径时，
-// 会在对应位置加上 MarkImplemented，且必须先有 fixture。
+// 会在对应位置加上 Redeem，且必须先有 fixture。
 
 // Phase1 构造 Phase 1 的降级矩阵。
 //
@@ -56,7 +56,7 @@ func Phase1() (*Matrix, error) {
 	chatToOpenAI := NewRoute(ProtoOpenAIChat, ProviderOpenAICompat).
 		MarkHomogeneous().
 		Pass(ExpressibleSet(ProtoOpenAIChat)...).
-		MarkImplemented()
+		Redeem(ExpressibleSet(ProtoOpenAIChat)...)
 	if err := m.Add(chatToOpenAI.Build()); err != nil {
 		return nil, err
 	}
@@ -150,7 +150,7 @@ func Phase1() (*Matrix, error) {
 	// 让「这条路能用了」成为一个需要有人点头的动作。
 	if err := m.Add(responsesExtras(
 		chatToOpenAI.Derive(ProtoOpenAIResponses, ProviderOpenAICompat), true,
-	).MarkImplemented().Build()); err != nil {
+	).Redeem(ExpressibleSet(ProtoOpenAIResponses)...).Build()); err != nil {
 		return nil, err
 	}
 	for _, base := range []*Route{chatToAnthropic, chatToDSCompat, chatToDSNative} {
@@ -167,13 +167,25 @@ func Phase1() (*Matrix, error) {
 	// 同源快通道。讲原生协议的客户端本来就不需要任何转换，让它们走兼容层是
 	// 净损失。这条路径的保留度是满分，也应该是满分。
 	//
-	// 转正的第三条路径。DashScope Native 一个协议族对应多个上游端点，本期转正
-	// 的是文本生成；门槛同样是端到端 fixture 通过，见
+	// 转正的第三条路径。DashScope Native 一个协议对应多个上游端点，本期只投放
+	// 了文本生成那一个（/api/v1/services/aigc/text-generation/generation）。
+	//
+	// 因此处置与投放在这里第一次分了家：上面的 Pass 是**设计处置**——这条同源
+	// 直通路最终对每项能力都该原样转发；下面的 Redeem 是**当前投放**——只有文本
+	// 端点真的写了。multimodal、embedding、rerank 那几个端点还没动工，
+	// 它们的能力在运行时返回 501，而不是被当作可用。
+	// 门槛同样是端到端 fixture 通过，见
 	// testdata/routes/dashscope.native__dashscope.native/ 与 ADR-0001。
 	if err := m.Add(NewRoute(ProtoDashScopeNative, ProviderDashScopeNative).
 		MarkHomogeneous().
 		Pass(ExpressibleSet(ProtoDashScopeNative)...).
-		MarkImplemented().
+		Redeem(
+			canonical.CapTextGeneration,
+			canonical.CapStreaming,
+			canonical.CapToolCalling,
+			canonical.CapReasoning,
+			canonical.CapWebSearch,
+		).
 		Build()); err != nil {
 		return nil, err
 	}

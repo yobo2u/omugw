@@ -40,7 +40,7 @@ func Build(cfg config.Config, m *degrade.Matrix, metrics *obs.Metrics, log *slog
 	built := &Built{Mux: mux}
 	for _, r := range m.Routes() {
 		built.Registered++
-		if r.Implemented {
+		if r.Implemented() {
 			built.Implemented++
 		}
 	}

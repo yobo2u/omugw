@@ -20,8 +20,10 @@ func (m *Matrix) Markdown() string {
 	b.WriteString("> **本文件由 `internal/degrade` 自动生成，请勿手工编辑。**\n")
 	b.WriteString("> 修改 `internal/degrade/rules_phase1.go` 后运行 `make matrix-update` 重新生成。\n\n")
 
-	b.WriteString("每条转换路径都必须对入站协议**表达得出来**的每一项能力明确表态：\n\n")
-	b.WriteString("| 处置 | 含义 | 计入保留度 |\n|---|---|---|\n")
+	b.WriteString("每条转换路径都必须对入站协议**表达得出来**的每一项能力明确表态。" +
+		"表态说的是**设计处置**——这条路最终该怎么对待这项能力；" +
+		"它当前投放了没有是另一回事，见下文的「当前可用」列：\n\n")
+	b.WriteString("| 处置 | 含义 | 计入设计保留度 |\n|---|---|---|\n")
 	b.WriteString("| `PASSTHROUGH` | 能力完整传递给上游，无语义损失 | 满分 |\n")
 	b.WriteString("| `EMULATE` | 上游不提供，由网关自行实现；客户端拿到的能力是完整的，" +
 		"但带着网关侧的可用性边界 | 满分 |\n")
@@ -106,6 +108,14 @@ func (m *Matrix) writePreservation(b *strings.Builder) {
 		"是选路的唯一依据。尚未实现的路径没有当前可用分数——" +
 		"给一条走不通的路打分，是在请人相信一个还不存在的东西。\n\n")
 
+	b.WriteString("**上表每一格的处置都是设计事实，不是投放承诺。** " +
+		"一条路径转正只说明它开始通车，说明不了它的每个上游端点都通：" +
+		"DashScope Native 一个协议对应文本生成、multimodal、embedding、rerank 多个端点，" +
+		"当前只投放了文本生成那一个。未投放的能力在运行时返回 **501**（等实现），" +
+		"而不是按处置声明放行——放行会让请求打到一个尚不存在的实现上，" +
+		"客户端拿到的是一个语焉不详的 5xx。这与 `REJECT` 的 **422**（改请求）" +
+		"是两件事：前者会变，后者不会。\n\n")
+
 	b.WriteString("| 入站 | 出站 | 状态 | 快通道 | 透传 | 模拟 | 降级 | 拒绝 | N/A | 设计目标 | 当前可用 |\n")
 	b.WriteString("|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|\n")
 
@@ -127,12 +137,20 @@ func (m *Matrix) writePreservation(b *strings.Builder) {
 
 			status := "规划中"
 			available := "—"
-			if r.Implemented {
+			if r.Implemented() {
 				status = "已实现"
 				available = fmt.Sprintf("%.3f", p.AvailableScore())
-				if p.Gated() {
-					// 把前提写进数字本身：默认配置是绝大多数人的实际部署，
-					// 按它计分才诚实；括号让另一种部署也能查到自己的数。
+				// 把前提写进数字本身：默认配置是绝大多数人的实际部署，
+				// 按它计分才诚实；括号让读者查到那个数是怎么来的。
+				//
+				// 两种前提要分开写。「开关没开」运维改配置就能解决，
+				// 「端点还没投放」只能等实现——混成一句，会让人去开一个
+				// 根本解决不了问题的开关。
+				switch {
+				case p.NotRedeemed > 0:
+					available += fmt.Sprintf("（%d 项中 %d 项已投放）",
+						p.denominator()-p.Reject, p.Redeemed())
+				case p.EmulateOff > 0:
 					available += fmt.Sprintf("（开启 %s 后 %.3f）",
 						FeatureConversationStore, p.DesignScore())
 				}
