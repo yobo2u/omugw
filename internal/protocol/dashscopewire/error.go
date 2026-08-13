@@ -43,7 +43,7 @@ func EncodeError(e *canonical.Error) (status int, body []byte, headers map[strin
 	if code == "" {
 		code = wireCode(e.Class)
 	}
-	body, _ = json.Marshal(Envelope{Code: code, Message: e.Message})
+	body, _ = json.Marshal(Envelope{Code: code, Message: e.Message, RequestID: e.UpstreamRequestID})
 	return e.HTTPStatus(), body, e.Headers()
 }
 
@@ -75,9 +75,7 @@ func DecodeError(status int, body []byte, h http.Header, now time.Time) *canonic
 
 	e := build(status, env.Code, env.Message)
 	if env.RequestID != "" {
-		// RequestID 挂在 Param 上是权宜之计，但比丢掉它强——没有它就无法向
-		// 上游追查一次失败调用。M1 引入结构化审计后应当迁到专门的字段。
-		e.Param = "request_id=" + env.RequestID
+		e.UpstreamRequestID = env.RequestID
 	}
 	if h != nil {
 		e.RetryAfter = canonical.ParseRetryAfter(h.Get("Retry-After"), now)

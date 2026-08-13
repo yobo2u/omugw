@@ -53,8 +53,9 @@ type Error struct {
 	Retryable bool
 
 	// 上游原始信息，用于审计与问题定位。
-	UpstreamStatus int
-	UpstreamCode   string
+	UpstreamStatus    int
+	UpstreamCode      string
+	UpstreamRequestID string
 
 	RetryAfter time.Duration
 	RateLimit  *RateLimitInfo

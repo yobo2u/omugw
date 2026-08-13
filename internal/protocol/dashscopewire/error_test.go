@@ -97,8 +97,20 @@ func TestDecodeErrorClassification(t *testing.T) {
 // 没有它就无法向阿里云追查一次失败调用。
 func TestRequestIDIsPreserved(t *testing.T) {
 	e := DecodeError(400, []byte(`{"code":"InvalidParameter","message":"x","request_id":"abc-123"}`), nil, refTime)
-	if e.Param != "request_id=abc-123" {
-		t.Errorf("request_id 丢失: Param = %q", e.Param)
+	if e.UpstreamRequestID != "abc-123" {
+		t.Errorf("request_id 丢失: UpstreamRequestID = %q", e.UpstreamRequestID)
+	}
+	if e.Param != "" {
+		t.Errorf("request_id 不得占用 Param: Param = %q", e.Param)
+	}
+
+	_, body, _ := EncodeError(e)
+	var env Envelope
+	if err := json.Unmarshal(body, &env); err != nil {
+		t.Fatalf("编码错误: %v", err)
+	}
+	if env.RequestID != "abc-123" {
+		t.Errorf("request_id 重编码丢失: RequestID = %q", env.RequestID)
 	}
 }
 
