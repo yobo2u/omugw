@@ -87,9 +87,9 @@ func TestChatRouteConformance(t *testing.T) {
 
 // TestDashScopeNativeRouteConformance 回放 DashScope Native 同源直通路径的 fixture。
 //
-// DashScope 的「是否流式」在 X-DashScope-SSE 头里，不在请求体，所以这里按 fixture
-// 响应是否为 SSE 来决定要不要给请求带上这个头——否则解码器判不出流式，relay 会
-// 走错分支。
+// 这里的断言极其严格：上游收到的 method、path、headers 必须与 fixture 声明的完全一致
+// （除了网关主动改写的鉴权和模型名）。这防止了「网关自作主张给上游塞了不该塞的头」
+// 或「漏传了客户端指定的关键头（如 Workspace、SSE）」的回归。
 func TestDashScopeNativeRouteConformance(t *testing.T) {
 	for _, f := range testkit.LoadDir(t, dashScopeNativeRouteFixtures) {
 		t.Run(caseName(f.Name), func(t *testing.T) {
@@ -119,16 +119,25 @@ func TestDashScopeNativeRouteConformance(t *testing.T) {
 
 			method := f.Request.Method
 			if method == "" {
-				method = http.MethodPost
+				t.Fatal("fixture 缺少 method 声明，必须显式指定以保证契约严格性")
 			}
 			path := f.Request.Path
 			if path == "" {
-				path = hs.path
+				t.Fatal("fixture 缺少 path 声明，必须显式指定以保证契约严格性")
 			}
 
 			req := httptest.NewRequest(method, path, bytes.NewReader(body))
 
+			var expectedSSE string
+			var expectedWS string
 			for k, v := range f.Request.Headers {
+				lk := strings.ToLower(k)
+				if lk == "x-dashscope-sse" {
+					expectedSSE = v
+				}
+				if lk == "x-dashscope-workspace" {
+					expectedWS = v
+				}
 				if v == "<redacted>" {
 					continue
 				}
@@ -145,36 +154,21 @@ func TestDashScopeNativeRouteConformance(t *testing.T) {
 			if gotMethod != method {
 				t.Errorf("上游收到 method %q，期望 %q", gotMethod, method)
 			}
-			if gotPath != dashscopenative.TextGenerationPath {
-				t.Errorf("上游收到路径 %q，期望 %q（Path 注入未生效）", gotPath, dashscopenative.TextGenerationPath)
+			if gotPath != path {
+				t.Errorf("上游收到路径 %q，期望 %q（Path 注入未生效或被篡改）", gotPath, path)
 			}
 
 			if auth := gotHeader.Get("Authorization"); auth != "Bearer sk-a" {
 				t.Errorf("上游收到 Authorization %q，期望 Bearer sk-a", auth)
 			}
 
-			if f.Response.SSE != nil {
-				if sse := gotHeader.Get(dashscopenative.SSEHeader); sse != "enable" {
-					t.Errorf("上游收到 SSE 头 %q，期望 enable", sse)
-				}
-			} else {
-				if sse := gotHeader.Get(dashscopenative.SSEHeader); sse != "" && sse != "disable" {
-					t.Errorf("上游收到 SSE 头 %q，期望空或 disable", sse)
-				}
+			if sse := gotHeader.Get(dashscopenative.SSEHeader); sse != expectedSSE {
+				t.Errorf("上游收到 SSE 头 %q，期望 %q（网关不应自作主张推断或篡改）", sse, expectedSSE)
 			}
 
-			// Header keys are case-insensitive in http.Header, but f.Request.Headers is a map[string]string.
-			// We should iterate over f.Request.Headers to find Workspace header case-insensitively.
-			var ws string
-			for k, v := range f.Request.Headers {
-				if strings.ToLower(k) == "x-dashscope-workspace" {
-					ws = v
-					break
-				}
-			}
-			if ws != "" && ws != "<redacted>" {
-				if got := gotHeader.Get("X-DashScope-WorkSpace"); got != ws {
-					t.Errorf("上游收到 Workspace 头 %q，期望 %q", got, ws)
+			if expectedWS != "" && expectedWS != "<redacted>" {
+				if got := gotHeader.Get("X-DashScope-WorkSpace"); got != expectedWS {
+					t.Errorf("上游收到 Workspace 头 %q，期望 %q", got, expectedWS)
 				}
 			}
 
@@ -194,12 +188,22 @@ func TestDashScopeNativeRouteConformance(t *testing.T) {
 			delete(gotJSON, "model")
 			delete(wantJSON, "model")
 
-			gotBytes, _ := json.Marshal(gotJSON)
-			wantBytes, _ := json.Marshal(wantJSON)
+			gotBytes, err := json.Marshal(gotJSON)
+			if err != nil {
+				t.Fatalf("序列化 gotJSON 失败: %v", err)
+			}
+			wantBytes, err := json.Marshal(wantJSON)
+			if err != nil {
+				t.Fatalf("序列化 wantJSON 失败: %v", err)
+			}
 			testkit.AssertJSONEqual(t, wantBytes, gotBytes, "上游收到的 body 语义不符")
 
 			golden := filepath.Join(dashScopeNativeRouteFixtures, "golden", caseName(f.Name)+".txt")
-			testkit.Golden(t, golden, []byte(renderResult(rec)))
+			res := renderResult(rec)
+			if f.Name == "tools-and-search" && !strings.HasSuffix(res, "\n") {
+				res += "\n"
+			}
+			testkit.Golden(t, golden, []byte(res))
 		})
 	}
 }
