@@ -61,6 +61,8 @@ func wireCode(c canonical.ErrorClass) string {
 		return "DataInspectionFailed"
 	case canonical.ClassBadRequest, canonical.ClassUnsupported:
 		return "InvalidParameter"
+	case canonical.ClassNotImplemented:
+		return "Unsupported"
 	case canonical.ClassUpstreamUnavailable:
 		return "ServiceUnavailable"
 	default:

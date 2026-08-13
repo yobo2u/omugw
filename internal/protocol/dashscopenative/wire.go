@@ -15,6 +15,9 @@ import "encoding/json"
 // 请求体里——值为 "enable" 时上游以 SSE 返回。
 const SSEHeader = "X-DashScope-SSE"
 
+// NamespacePrefix 是 DashScope Native 协议族的公共路径前缀。
+const NamespacePrefix = "/api/v1/"
+
 // TextGenerationPath 是文本生成的上游端点路径。DashScope Native 一个协议族
 // 对应多个端点，本期只接入文本生成这一条。
 const TextGenerationPath = "/api/v1/services/aigc/text-generation/generation"

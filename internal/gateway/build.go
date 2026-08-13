@@ -5,11 +5,13 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/yobo2u/omugw/internal/canonical"
 	"github.com/yobo2u/omugw/internal/config"
 	"github.com/yobo2u/omugw/internal/credential"
 	"github.com/yobo2u/omugw/internal/degrade"
 	"github.com/yobo2u/omugw/internal/obs"
 	"github.com/yobo2u/omugw/internal/protocol/dashscopenative"
+	"github.com/yobo2u/omugw/internal/protocol/dashscopewire"
 	"github.com/yobo2u/omugw/internal/provider"
 	"github.com/yobo2u/omugw/internal/provider/passthrough"
 	"github.com/yobo2u/omugw/internal/router"
@@ -121,6 +123,19 @@ func Build(cfg config.Config, m *degrade.Matrix, metrics *obs.Metrics, log *slog
 	mux.Handle("POST /v1/responses", NewResponsesHandler(deps))
 	mux.Handle("POST /v1/chat/completions", NewChatHandler(deps))
 	mux.Handle("POST "+dashscopenative.TextGenerationPath, NewDashScopeNativeHandler(deps))
+
+	// DashScope Native 命名空间兜底：未投放端点返回协议化 501。
+	// 依赖 net/http.ServeMux 的最长前缀匹配机制，精确注册的 TextGenerationPath 会优先命中。
+	mux.HandleFunc("POST "+dashscopenative.NamespacePrefix, func(w http.ResponseWriter, r *http.Request) {
+		metrics.ObserveNotImplemented(string(degrade.ProviderDashScopeNative), string(degrade.ProviderDashScopeNative))
+		status, body, headers := dashscopewire.EncodeError(canonical.Newf(canonical.ClassNotImplemented, "endpoint not implemented"))
+		for k, v := range headers {
+			w.Header().Set(k, v)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		_, _ = w.Write(body)
+	})
 
 	return built, nil
 }

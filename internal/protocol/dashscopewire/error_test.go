@@ -166,3 +166,14 @@ func TestEncodeErrorShape(t *testing.T) {
 		t.Error("DashScope Native 信封应为平铺结构，不应有 error 嵌套层")
 	}
 }
+
+func TestEncodeErrorClassNotImplemented(t *testing.T) {
+	_, body, _ := EncodeError(canonical.Newf(canonical.ClassNotImplemented, "not implemented"))
+	var env Envelope
+	if err := json.Unmarshal(body, &env); err != nil {
+		t.Fatalf("编码结果不是合法 JSON: %v", err)
+	}
+	if env.Code != "Unsupported" {
+		t.Errorf("code = %q, 期望 Unsupported", env.Code)
+	}
+}
