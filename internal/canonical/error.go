@@ -53,8 +53,10 @@ type Error struct {
 	Retryable bool
 
 	// 上游原始信息，用于审计与问题定位。
-	UpstreamStatus    int
-	UpstreamCode      string
+	UpstreamStatus int
+	UpstreamCode   string
+	// UpstreamRequestID 是上游调用的唯一追踪 ID（如 DashScope request_id），
+	// 用于问题定位与审计，不得与 Param（出错的请求参数名）混淆。
 	UpstreamRequestID string
 
 	RetryAfter time.Duration
