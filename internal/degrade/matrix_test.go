@@ -1,6 +1,7 @@
 package degrade
 
 import (
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -354,7 +355,80 @@ func TestFixtureGateActuallyBites(t *testing.T) {
 	}
 }
 
-// checkRouteFixtures 校验一条已实现路径的 fixture 证据是否齐备。
+// TestFixtureGateReconcilesEndpointPaths 证明门槛在端点粒度上双向咬人：
+// 给未开门写 fixture 不算证据，开了门却没有证据也不放行。
+//
+// 用伪造仓库根，不碰真实 fixture——门槛自身的有效性必须可测，
+// 而不是只能拿真实目录碰运气。checkRouteFixtures 收 repoRoot 参数正是为此。
+func TestFixtureGateReconcilesEndpointPaths(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, FixtureDir(ProtoOpenAIChat, ProviderOpenAICompat))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(name, path string) {
+		t.Helper()
+		body := fmt.Sprintf(
+			`{"name":%q,"request":{"method":"POST","path":%q},"response":{"status":200}}`,
+			name, path)
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	remove := func(name string) {
+		t.Helper()
+		if err := os.Remove(filepath.Join(dir, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// 门必须在 Build 之前挂上：路径 Build 之后封口，事后 Redeem 是空操作，
+	// 那样这些反例根本没测到东西。
+	build := func(doors ...Endpoint) *Route {
+		t.Helper()
+		b := NewRoute(ProtoOpenAIChat, ProviderOpenAICompat).
+			Pass(ExpressibleSet(ProtoOpenAIChat)...)
+		for _, ep := range doors {
+			b = b.Redeem(ep, canonical.CapTextGeneration)
+		}
+		r, err := b.Build()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+
+	// 正向：fixture 指向已开门，且该门有证据。
+	write("ok.json", string(EndpointOpenAIChat))
+	if err := checkRouteFixtures(build(EndpointOpenAIChat), root); err != nil {
+		t.Errorf("正向用例应当通过: %v", err)
+	}
+
+	// 反方向一：fixture 指向未开门——它不构成证据，还会让门槛误以为门已兑现。
+	write("stray.json", "/v1/other")
+	err := checkRouteFixtures(build(EndpointOpenAIChat), root)
+	if err == nil || !strings.Contains(err.Error(), "不是一扇已开门") {
+		t.Errorf("指向未开门的 fixture 应当失败: %v", err)
+	}
+	remove("stray.json")
+
+	// request.path 缺失：既不能当成零值端点放行，也不能报一个看不懂的错。
+	write("blank.json", "")
+	err = checkRouteFixtures(build(EndpointOpenAIChat), root)
+	if err == nil || !strings.Contains(err.Error(), "缺少 request.path") {
+		t.Errorf("没有 request.path 的 fixture 应当失败并点名原因: %v", err)
+	}
+	remove("blank.json")
+
+	// 反方向二：已开门没有任何 request.path 匹配的 fixture。
+	err = checkRouteFixtures(build(EndpointOpenAIChat, Endpoint("/v1/extra")), root)
+	if err == nil || !strings.Contains(err.Error(), "/v1/extra") {
+		t.Errorf("缺少证据的已开门应当失败: %v", err)
+	}
+}
+
+// checkRouteFixtures 校验一条已实现路径的 fixture 证据是否齐备：
+// 目录存在且有用例、有损格子（DEGRADE / EMULATE）有同名举证、
+// 以及端点级双向对账——每扇已开门要有证据，每份证据要指向已开门。
 func checkRouteFixtures(r *Route, repoRoot string) error {
 	dir := filepath.Join(repoRoot, FixtureDir(r.In, r.Out))
 
@@ -390,6 +464,60 @@ func checkRouteFixtures(r *Route, repoRoot string) error {
 	if len(missing) > 0 {
 		sort.Strings(missing)
 		return fmt.Errorf("以下有损能力缺少专门的 fixture: %s", strings.Join(missing, ", "))
+	}
+
+	// 端点级双向对账（ADR-0001 在端点粒度上的延续）：
+	// 1. 每扇已开门至少有一份 fixture 的 request.path 等于该端点；
+	// 2. 每份 fixture 的 request.path 必须是一扇已开门——给未开门写 fixture
+	//    不构成证据，还会让「这条路径有 fixture」看起来像那扇门也兑现了。
+	//
+	// 就地用 encoding/json 取 request.path，不借道 testkit.LoadDir：本函数
+	// 必须返回 error 供调用方按路径归因，手里没有 testing.T 交给 LoadDir，
+	// 而 LoadDir 出错走 t.Fatalf，会把「某条路径证据不全」变成整个测试中止。
+	doors := r.Endpoints()
+	opened := map[Endpoint]bool{}
+	for _, ep := range doors {
+		opened[ep] = true
+	}
+	covered := map[Endpoint]bool{}
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".json") {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			return fmt.Errorf("读取 fixture %s 失败: %w", name, err)
+		}
+		var meta struct {
+			Request struct {
+				Path string `json:"path"`
+			} `json:"request"`
+		}
+		if err := json.Unmarshal(raw, &meta); err != nil {
+			return fmt.Errorf("解析 fixture %s 失败: %w", name, err)
+		}
+		// 空路径不能落进 opened 查表：那等于让零值端点参与对账，
+		// 而零值端点按定义就是「没有这扇门」。
+		if meta.Request.Path == "" {
+			return fmt.Errorf("fixture %s 缺少 request.path，无法指认它敲的是哪扇门", name)
+		}
+		ep := Endpoint(meta.Request.Path)
+		if !opened[ep] {
+			return fmt.Errorf("fixture %s 的 request.path %q 不是一扇已开门（已开门: %v）",
+				name, meta.Request.Path, doors)
+		}
+		covered[ep] = true
+	}
+	var uncovered []string
+	for _, ep := range doors {
+		if !covered[ep] {
+			uncovered = append(uncovered, string(ep))
+		}
+	}
+	if len(uncovered) > 0 {
+		return fmt.Errorf("以下已开门没有 request.path 匹配的 fixture: %s",
+			strings.Join(uncovered, ", "))
 	}
 	return nil
 }

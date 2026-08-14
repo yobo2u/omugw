@@ -196,12 +196,13 @@ func (r *Route) Emulate(feature, note string, caps ...canonical.Capability) *Rou
 // Redeem 登记指定端点已投放的能力，只在 Build 之前有效。
 //
 // 只应在该端点的端到端 fixture 已经存在并通过之后调用。代码守的是两道闸：
-// TestImplementedRoutesHaveFixtures 要求这条路径有 fixture 目录（且每个
-// DEGRADE / EMULATE 格子有同名用例），TestRedeemedCapabilitiesAreExplicit
-// 要求「路径 @ 端点」的兑现集合逐项写进白名单。两道闸都不会把某一项
-// PASSTHROUGH 能力自动对上一份专属 fixture，也还没有按 fixture 的
-// request.path 与门清单对账——「这项能力真的在这扇门上跑通了」是改白名单
-// 那个人担的责，别把它当成代码已经替你验过。
+// TestImplementedRoutesHaveFixtures 要求这条路径有 fixture 目录、每个
+// DEGRADE / EMULATE 格子有同名用例，并按 fixture 的 request.path 与门清单
+// 双向对账（每扇已开门要有证据，每份证据要指向已开门）；
+// TestRedeemedCapabilitiesAreExplicit 要求「路径 @ 端点」的兑现集合逐项
+// 写进白名单。对账只到「这扇门有人敲过」为止，不会把某一项 PASSTHROUGH
+// 能力自动对上一份专属 fixture——「这项能力真的在这扇门上跑通了」仍是改
+// 白名单那个人担的责，别把它当成代码已经替你验过。
 //
 // ep 为零值，或兑现到 REJECT / N/A 格子，都会在 Build 失败。Build 之后调用
 // 是确定性的空操作：投放要么写在 Build 之前并接受校验，要么就不存在——
