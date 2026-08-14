@@ -18,7 +18,7 @@
 testdata/
 ├── fixtures/<provider>/*.json          # 按 provider 归档的上游交互录制
 └── routes/<in>__<out>/                 # 目录名由 degrade.FixtureDir() 决定
-    ├── *.json                          # 路径级端到端用例
+    ├── *.json                          # 路径级端到端用例；有损格子的举证以能力名命名
     └── golden/*.txt                    # 期望输出
 ```
 
@@ -29,8 +29,10 @@ testdata/
 - `SSEBody.Frames` 定义回放时的 **Write 边界**：一次 Write 塞三个事件、或把一个事件
   切成两次 Write，都能暴露缓冲逻辑的 bug。为空则逐事件写出。
 - 回放服务器每帧后必须 flush，才能真实复现上游的分片节奏。
-- 每条被 `MarkImplemented()` 的路径都必须在 `testdata/routes/` 下有覆盖其全部
-  `DEGRADE` 与 `EMULATE` 格子的用例（ADR-0001）。
+- 每条经 `Redeem()` 登记投放的路径都必须在 `testdata/routes/` 下有覆盖其全部
+  `DEGRADE` 与 `EMULATE` 格子的用例——有损格子的文件名即能力名，这就是举证
+  （ADR-0001）。兑现了哪项能力，哪项能力就得有跑得通的 fixture 作证；
+  fixture 是投放证据，不是装饰品。
 
 ## ANTI-PATTERNS
 
