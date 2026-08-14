@@ -265,8 +265,9 @@ func (m *Matrix) rank(in Protocol, candidates []Provider, onlyImplemented bool) 
 // 端点裁决发生在每个候选内部的 Check：首选若恰因这扇门没开而失败，
 // 错误会点名缺哪扇门，而后面开了这扇门的候选仍能接住请求。
 //
-// 全部候选都跑不通时返回最后一次的错误，让调用方能告诉用户到底缺什么，
-// 而不是一句笼统的「无可用 Provider」。
+// 全部候选都跑不通时返回**最确定**的那个错误，让调用方能告诉用户到底缺什么，
+// 而不是一句笼统的「无可用 Provider」。取舍规则见 mostDefinite：
+// 「这条路不支持」压过「那扇门还没开」。
 func (m *Matrix) BestOutbound(in Inbound, candidates []Provider, caps []canonical.Capability) (Provider, Verdict, error) {
 	ranked := m.RankOutbound(in.Protocol, candidates)
 	if len(ranked) == 0 {
@@ -281,13 +282,32 @@ func (m *Matrix) BestOutbound(in Inbound, candidates []Provider, caps []canonica
 			"入站协议 %s 没有任何已注册的出站路径", in.Protocol)
 	}
 
-	var lastErr error
+	var best error
 	for _, p := range ranked {
 		v, err := m.Check(in, p, caps)
 		if err == nil {
 			return p, v, nil
 		}
-		lastErr = err
+		if mostDefinite(best, err) {
+			best = err
+		}
 	}
-	return "", Verdict{}, lastErr
+	return "", Verdict{}, best
+}
+
+// mostDefinite 报告 next 是否比 cur 更该讲给用户听。
+//
+// 501 与 422 对用户是两条相反的指令：前者说「等」，后者说「改请求」。
+// 候选筛选是端点无感的，排在后面的候选很容易恰好没开这扇门，凭空产出 501；
+// 若按「最后一个错误」作答，首选那句确定的「这条路不支持音频」就会被盖掉，
+// 用户被支去等一个永远不会让他成功的实现。
+//
+// 于是只有一条规则：确定的答案（REJECT 的 422、解码器 bug 的 500）压过
+// 「还没建好」（501）。同类之间保留排序最前的那个——它离用户真正想走的路最近。
+func mostDefinite(cur, next error) bool {
+	if cur == nil {
+		return true
+	}
+	return canonical.AsError(cur).Class == canonical.ClassNotImplemented &&
+		canonical.AsError(next).Class != canonical.ClassNotImplemented
 }
