@@ -476,7 +476,7 @@ func TestDashScopeNativeUpstreamErrorRoundtrip(t *testing.T) {
 		w.WriteHeader(http.StatusBadRequest)
 		_, _ = io.WriteString(w, `{"code":"InvalidParameter","message":"x","request_id":"ups-req-77"}`)
 	})
-	// Exactly ONE upstream (no backup)
+	// 只配置一个上游（无备用），防止 400 触发 Provider 级 failover 从而掩盖了错误信封的往返测试。
 	hs := newDashScopeNativeHarness(t, true, ups)
 
 	rec := hs.do(t, `{"model":"logical","input":{"messages":[{"role":"user","content":"hi"}]}}`, true)
@@ -545,12 +545,15 @@ func TestDashScopeNativeStreamAbortFlatEnvelope(t *testing.T) {
 		t.Fatalf("流中断后应发出终止错误事件:\n%s", body)
 	}
 
-	// 找到 event: error 的 data 行
-	lines := strings.Split(body, "\n")
+	events, err := testkit.ParseSSE(strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("解析 SSE 失败: %v", err)
+	}
+
 	var errorData string
-	for i, line := range lines {
-		if strings.HasPrefix(line, "event: error") && i+1 < len(lines) && strings.HasPrefix(lines[i+1], "data: ") {
-			errorData = strings.TrimPrefix(lines[i+1], "data: ")
+	for _, ev := range events {
+		if ev.Event == "error" {
+			errorData = ev.Data
 			break
 		}
 	}
@@ -563,11 +566,11 @@ func TestDashScopeNativeStreamAbortFlatEnvelope(t *testing.T) {
 		t.Fatalf("error data 不是合法 JSON: %v, data: %s", err, errorData)
 	}
 
-	if _, ok := errObj["code"]; !ok {
-		t.Errorf("error data 缺少 code 字段: %s", errorData)
+	if errObj["code"] != "ServiceUnavailable" {
+		t.Errorf("error data 期望 code=ServiceUnavailable, 实际: %v", errObj["code"])
 	}
-	if _, ok := errObj["message"]; !ok {
-		t.Errorf("error data 缺少 message 字段: %s", errorData)
+	if msg, ok := errObj["message"].(string); !ok || msg == "" {
+		t.Errorf("error data 期望非空 message, 实际: %v", errObj["message"])
 	}
 	if _, ok := errObj["error"]; ok {
 		t.Errorf("error data 不应包含嵌套 error 字段: %s", errorData)
