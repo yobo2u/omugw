@@ -441,7 +441,7 @@ func TestDashScopeNativeErrorsUseFlatEnvelope(t *testing.T) {
 	// 缺少 model → bad_request，经 fail() 用 dashscopewire 编码。
 	rec := hs.do(t, `{"input":{"messages":[{"role":"user","content":"x"}]}}`, true)
 	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("状态码 = %d, 期望 400", rec.Code)
+		t.Fatalf("状态码 = %d, 期望 400, body: %s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
 	if !strings.Contains(body, `"code"`) || !strings.Contains(body, `"message"`) {
@@ -467,5 +467,109 @@ func TestUnknownModelIsRejected(t *testing.T) {
 	rec := hs.do(t, `{"model":"nope","input":"hi"}`, true)
 	if rec.Code != 400 {
 		t.Errorf("状态码 = %d, 期望 400", rec.Code)
+	}
+}
+
+func TestDashScopeNativeUpstreamErrorRoundtrip(t *testing.T) {
+	ups := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, `{"code":"InvalidParameter","message":"x","request_id":"ups-req-77"}`)
+	})
+	// Exactly ONE upstream (no backup)
+	hs := newDashScopeNativeHarness(t, true, ups)
+
+	rec := hs.do(t, `{"model":"logical","input":{"messages":[{"role":"user","content":"hi"}]}}`, true)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("状态码 = %d, 期望 400, body: %s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+
+	var errObj map[string]any
+	if err := json.Unmarshal([]byte(body), &errObj); err != nil {
+		t.Fatalf("响应不是合法 JSON: %v, body: %s", err, body)
+	}
+
+	if errObj["code"] != "InvalidParameter" {
+		t.Errorf("期望 code=InvalidParameter, 实际: %v", errObj["code"])
+	}
+	if errObj["message"] != "x" {
+		t.Errorf("期望 message=x, 实际: %v", errObj["message"])
+	}
+	if errObj["request_id"] != "ups-req-77" {
+		t.Errorf("期望 request_id=ups-req-77, 实际: %v", errObj["request_id"])
+	}
+	if _, ok := errObj["error"]; ok {
+		t.Errorf("DashScope 错误不应是 OpenAI 嵌套 error 信封: %s", body)
+	}
+	if n := ups.calls.Load(); n != 1 {
+		t.Errorf("上游应被调用 1 次，实际 %d 次", n)
+	}
+}
+
+func TestDashScopeNativeStreamAbortFlatEnvelope(t *testing.T) {
+	dying := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		f := w.(http.Flusher)
+		_, _ = io.WriteString(w,
+			"event: result\ndata: {\"output\":{\"text\":\"开头\"}}\n\n")
+		f.Flush()
+		// 之后一动不动，触发空闲超时。
+		time.Sleep(2 * time.Second)
+	})
+	backup := jsonUpstream(t, `{"code":"MUST_NOT_APPEAR"}`)
+
+	hs := newDashScopeNativeHarness(t, true, dying, backup)
+
+	req := httptest.NewRequest(http.MethodPost, hs.path, strings.NewReader(`{"model":"logical","input":{"messages":[{"role":"user","content":"hi"}]},"parameters":{"result_format":"text"}}`))
+	req.Header.Set("Authorization", "Bearer "+testKey)
+	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set("X-DashScope-SSE", "enable")
+	rec := httptest.NewRecorder()
+	hs.h.ServeHTTP(rec, req)
+
+	body := rec.Body.String()
+	if !strings.Contains(body, "开头") {
+		t.Error("已发出的内容应当保留")
+	}
+	if n := backup.calls.Load(); n != 0 {
+		t.Errorf("首字节之后仍然 failover 了 %d 次", n)
+	}
+	if strings.Contains(body, "MUST_NOT_APPEAR") {
+		t.Error("备用上游的内容被拼到了同一条流里")
+	}
+
+	// 必须有终止事件收尾，且 data 是扁平信封
+	if !strings.Contains(body, "event: error") {
+		t.Fatalf("流中断后应发出终止错误事件:\n%s", body)
+	}
+
+	// 找到 event: error 的 data 行
+	lines := strings.Split(body, "\n")
+	var errorData string
+	for i, line := range lines {
+		if strings.HasPrefix(line, "event: error") && i+1 < len(lines) && strings.HasPrefix(lines[i+1], "data: ") {
+			errorData = strings.TrimPrefix(lines[i+1], "data: ")
+			break
+		}
+	}
+	if errorData == "" {
+		t.Fatalf("未找到 event: error 对应的 data 行:\n%s", body)
+	}
+
+	var errObj map[string]any
+	if err := json.Unmarshal([]byte(errorData), &errObj); err != nil {
+		t.Fatalf("error data 不是合法 JSON: %v, data: %s", err, errorData)
+	}
+
+	if _, ok := errObj["code"]; !ok {
+		t.Errorf("error data 缺少 code 字段: %s", errorData)
+	}
+	if _, ok := errObj["message"]; !ok {
+		t.Errorf("error data 缺少 message 字段: %s", errorData)
+	}
+	if _, ok := errObj["error"]; ok {
+		t.Errorf("error data 不应包含嵌套 error 字段: %s", errorData)
 	}
 }
