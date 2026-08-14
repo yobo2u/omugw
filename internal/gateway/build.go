@@ -124,6 +124,16 @@ func Build(cfg config.Config, m *degrade.Matrix, metrics *obs.Metrics, log *slog
 	mux.Handle("POST /v1/chat/completions", NewChatHandler(deps))
 	mux.Handle("POST "+dashscopenative.TextGenerationPath, NewDashScopeNativeHandler(deps))
 
+	// 命名空间的方法兜底：不带方法的模式最不具体，只有既没命中精确端点、
+	// 也没命中下面那条 POST 兜底的请求才会落到这里。
+	//
+	// 它防的是「兜底把 404 变成 405」：只注册 POST 兜底时，ServeMux 见到同路径
+	// 的 GET 会答 405，等于告诉客户端「这个端点在，换个方法就能用」——而这些端点
+	// 根本不存在。落回框架 404 才是实话。
+	mux.HandleFunc(dashscopenative.NamespacePrefix, func(w http.ResponseWriter, r *http.Request) {
+		http.NotFound(w, r)
+	})
+
 	// DashScope Native 命名空间兜底：未投放端点返回协议化 501。
 	// 依赖 net/http.ServeMux 的最长前缀匹配机制，精确注册的 TextGenerationPath 会优先命中。
 	mux.HandleFunc("POST "+dashscopenative.NamespacePrefix, func(w http.ResponseWriter, r *http.Request) {

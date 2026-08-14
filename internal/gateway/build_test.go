@@ -104,10 +104,21 @@ func TestBuiltMux_DashScopeNativeFallback_WithUpstream(t *testing.T) {
 			expectUpstream: true,
 		},
 		{
-			name:           "Native 命名空间下的非 POST 请求返回 405",
+			// 兜底只认 POST。非 POST 请求必须落回框架 404，不能因为兜底的存在
+			// 变成 405——405 是在暗示「换个方法就能用」，而这些端点根本不存在。
+			name:           "Native 命名空间下的非 POST 请求返回 404",
 			method:         "GET",
 			path:           "/api/v1/services/aigc/multimodal-generation/generation",
-			expectedStatus: http.StatusMethodNotAllowed,
+			expectedStatus: http.StatusNotFound,
+			expectedCode:   "",
+		},
+		{
+			// 精确注册的文本端点同理：GET 打过去也是 404，而不是 405。
+			// 顺带证明兜底没有把已投放端点的方法约束吃掉。
+			name:           "已投放端点的非 POST 请求同样返回 404",
+			method:         "GET",
+			path:           dashscopenative.TextGenerationPath,
+			expectedStatus: http.StatusNotFound,
 			expectedCode:   "",
 		},
 		{
