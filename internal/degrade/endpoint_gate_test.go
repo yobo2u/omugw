@@ -71,14 +71,12 @@ func TestRedeemUndeliverableAtEndpointFailsBuild(t *testing.T) {
 // 没有独立的门注册机制，也没有「空门」可以声明：
 // 有一格兑现才算开了这扇门，追加兑现不产生重复条目，零兑现路径没有门。
 func TestEndpointsDerivedFromRedemption(t *testing.T) {
-	r, err := NewRoute(ProtoDashScopeNative, ProviderDashScopeNative).
+	// 门的推导发生在 Build 之前——投放是那时候声明的，
+	// 封口之后这条路径就只读了。
+	r := NewRoute(ProtoDashScopeNative, ProviderDashScopeNative).
 		MarkHomogeneous().
 		Pass(ExpressibleSet(ProtoDashScopeNative)...).
-		Redeem(EndpointDashScopeTextGeneration, canonical.CapTextGeneration).
-		Build()
-	if err != nil {
-		t.Fatal(err)
-	}
+		Redeem(EndpointDashScopeTextGeneration, canonical.CapTextGeneration)
 
 	if eps := r.Endpoints(); len(eps) != 1 || eps[0] != EndpointDashScopeTextGeneration {
 		t.Fatalf("应恰有一扇文本门，实际 %v", eps)
@@ -104,6 +102,16 @@ func TestEndpointsDerivedFromRedemption(t *testing.T) {
 	if eps := r.Endpoints(); len(eps) != 2 ||
 		eps[0] != EndpointDashScopeMultimodal || eps[1] != EndpointDashScopeTextGeneration {
 		t.Fatalf("门应按字典序排列: %v", eps)
+	}
+
+	// Build 之后门清单定格：这两扇门是它最终的样子。
+	built, err := r.Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if eps := built.Endpoints(); len(eps) != 2 ||
+		eps[0] != EndpointDashScopeMultimodal || eps[1] != EndpointDashScopeTextGeneration {
+		t.Fatalf("封口后门清单应原样保留: %v", eps)
 	}
 
 	// 零兑现路径没有门。

@@ -81,13 +81,24 @@ func implementedMatrix(t *testing.T, avail Availability) *Matrix {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, r := range m.Routes() {
-		r.Redeem(testEndpoint(r.In), ExpressibleSet(r.In)...)
-	}
 	if avail != nil {
 		m.WithAvailability(avail)
 	}
-	return m
+	// 路径 Build 之后就封口了，测试门必须在 Build 之前挂上——
+	// 与真实投放走同一套校验，而不是绕过它。
+	//
+	// 只兑现可交付的格子：REJECT 按设计就该失败，兑现它是 Build 明令拒绝的。
+	// 早先这里兑现了整个 ExpressibleSet，靠的正是封口前那个「Build 之后还能改」
+	// 的窟窿——校验根本没跑到它头上。
+	return rebuiltMatrix(t, m, func(r *Route) {
+		var deliverable []canonical.Capability
+		for _, c := range ExpressibleSet(r.In) {
+			if rule, ok := r.rules[c]; ok && rule.Disposition != Reject {
+				deliverable = append(deliverable, c)
+			}
+		}
+		r.Redeem(testEndpoint(r.In), deliverable...)
+	})
 }
 
 // testEndpoint 是 implementedMatrix 的测试专用门，与真实门的路径刻意不同——

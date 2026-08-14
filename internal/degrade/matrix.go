@@ -123,6 +123,14 @@ type Route struct {
 	// 门与门的兑现集合互不相通，不做并集。
 	redeemed map[Endpoint]map[canonical.Capability]bool
 
+	// built 记录这条路径是否已经通过 Build 封口。
+	//
+	// Build 返回的是同一个指针，不封口就等于两条 Build 校验形同虚设：
+	// 先 Build 过关，再补一格零值端点或 REJECT 能力，矩阵照单全收。
+	// 封口之后 Redeem 变成确定性的空操作——投放要么写在 Build 之前，
+	// 要么就不存在，运行时的矩阵是只读的。
+	built bool
+
 	errs []string
 }
 
@@ -185,16 +193,23 @@ func (r *Route) Emulate(feature, note string, caps ...canonical.Capability) *Rou
 	return r
 }
 
-// Redeem 登记指定端点已投放的能力。
+// Redeem 登记指定端点已投放的能力，只在 Build 之前有效。
 //
-// 只应在该端点的端到端 fixture 已经存在并通过之后调用。代码守的闸门有三道：
-// checkRouteFixtures 按 request.path 与门清单双向对账（每扇门要有证据，
-// 每个证据要指向已开门），TestRedeemedCapabilitiesAreExplicit 要求
-// 「路径 @ 端点」的兑现集合逐项写进白名单。闸门都不会把某一项 PASSTHROUGH
-// 能力自动对上 fixture——「这项能力真的跑通了」是改白名单那个人担的责。
+// 只应在该端点的端到端 fixture 已经存在并通过之后调用。代码守的是两道闸：
+// TestImplementedRoutesHaveFixtures 要求这条路径有 fixture 目录（且每个
+// DEGRADE / EMULATE 格子有同名用例），TestRedeemedCapabilitiesAreExplicit
+// 要求「路径 @ 端点」的兑现集合逐项写进白名单。两道闸都不会把某一项
+// PASSTHROUGH 能力自动对上一份专属 fixture，也还没有按 fixture 的
+// request.path 与门清单对账——「这项能力真的在这扇门上跑通了」是改白名单
+// 那个人担的责，别把它当成代码已经替你验过。
 //
-// ep 为零值，或兑现到 REJECT / N/A 格子，都会在 Build 失败。
+// ep 为零值，或兑现到 REJECT / N/A 格子，都会在 Build 失败。Build 之后调用
+// 是确定性的空操作：投放要么写在 Build 之前并接受校验，要么就不存在——
+// 否则那两条校验只要事后补一手就能绕开，运行时的矩阵也不再是只读的。
 func (r *Route) Redeem(ep Endpoint, caps ...canonical.Capability) *Route {
+	if r.built {
+		return r
+	}
 	if r.redeemed[ep] == nil {
 		r.redeemed[ep] = map[canonical.Capability]bool{}
 	}
@@ -244,7 +259,17 @@ func (r *Route) ImplementedAt(ep Endpoint) bool { return len(r.redeemed[ep]) > 0
 //
 // 选路与文档用它区分「已实现」和「规划中」；单扇门能不能走，要另问 ImplementedAt；
 // 单项能力能不能走，要另问 Redeems。
-func (r *Route) Implemented() bool { return len(r.Endpoints()) > 0 }
+//
+// 就地扫 map 提前返回，不借道 Endpoints()：那要建切片再排序，
+// 而这里问的只是一个是非题。它在每次 Check 与每次选路排序上都要跑。
+func (r *Route) Implemented() bool {
+	for _, caps := range r.redeemed {
+		if len(caps) > 0 {
+			return true
+		}
+	}
+	return false
+}
 
 // Derive 以另一条已声明的路径为基准创建新路径，用于协议族内部的近似路径
 // （例如 OpenAI Chat 与 OpenAI Responses 面对同一个出站 Provider）。
@@ -379,6 +404,9 @@ func (r *Route) Build() (*Route, error) {
 		sort.Strings(r.errs)
 		return nil, fmt.Errorf("degrade: route %s -> %s: %s", r.In, r.Out, strings.Join(r.errs, "; "))
 	}
+	// 校验全过才封口：失败的路径不进矩阵，封不封都一样；
+	// 成功的这条从此只读，事后再 Redeem 是空操作。
+	r.built = true
 	return r, nil
 }
 

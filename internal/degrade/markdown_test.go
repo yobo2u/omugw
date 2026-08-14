@@ -18,15 +18,20 @@ func twoDoorMatrix(t *testing.T) *Matrix {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mustRoute(t, m, ProtoDashScopeNative, ProviderDashScopeNative).
-		Redeem(EndpointDashScopeMultimodal,
+	// 第二扇门在 Build 之前挂上：路径封口后不可再兑现，
+	// 而这扇门也要跟真实投放一样过完整套 Build 校验。
+	return rebuiltMatrix(t, m, func(r *Route) {
+		if r.In != ProtoDashScopeNative || r.Out != ProviderDashScopeNative {
+			return
+		}
+		r.Redeem(EndpointDashScopeMultimodal,
 			canonical.CapTextGeneration,
 			canonical.CapStreaming,
 			canonical.CapVisionInput,
 			canonical.CapAudioInput,
 			canonical.CapVideoInput,
 		)
-	return m
+	})
 }
 
 // TestMarkdownShowsEndpointBreakdown 固化端点细分小节的呈现：
@@ -92,36 +97,50 @@ func TestMarkdownIsDeterministic(t *testing.T) {
 	}
 }
 
-// TestMarkdownSingleDoorRouteKeepsInlineScore 固化单门路径的主表呈现不变。
+// singleDoorMatrix 造一份只有一条路径、且只开一扇门的矩阵。
+//
+// 刻意不用 Phase1：那份矩阵眼下恰好全是单门，但任务 5 会给 Native 开第二扇门。
+// 拿它当「单门」的样本，等于把一个正要变的事实钉进断言里——测试会在别人做对
+// 事情的时候变红，然后被当成噪音改掉。
+func singleDoorMatrix(t *testing.T) *Matrix {
+	t.Helper()
+	m := NewMatrix()
+	if err := m.Add(NewRoute(ProtoDashScopeNative, ProviderDashScopeNative).
+		MarkHomogeneous().
+		Pass(ExpressibleSet(ProtoDashScopeNative)...).
+		Redeem(EndpointDashScopeTextGeneration,
+			canonical.CapTextGeneration,
+			canonical.CapStreaming,
+			canonical.CapToolCalling,
+			canonical.CapReasoning,
+			canonical.CapWebSearch,
+		).
+		Build()); err != nil {
+		t.Fatal(err)
+	}
+	return m
+}
+
+// TestMarkdownSingleDoorRouteKeepsInlineScore 固化单门路径的主表呈现。
 //
 // 端点细分小节是给多门路径指路用的；单门路径的可用分本来就只有一个来源，
 // 把它也赶进小节，等于让读者为一件本来一眼可见的事多翻一次页。
 func TestMarkdownSingleDoorRouteKeepsInlineScore(t *testing.T) {
-	m, err := Phase1()
-	if err != nil {
-		t.Fatal(err)
-	}
-	doc := m.Markdown()
+	doc := singleDoorMatrix(t).Markdown()
 
 	if strings.Contains(doc, "见端点细分") {
-		t.Error("Phase 1 全部是单门路径，主表不该出现「见端点细分」")
+		t.Error("单门路径的主表不该出现「见端点细分」")
 	}
 	if !strings.Contains(doc, "0.278（18 项中 5 项已投放）") {
 		t.Error("单门路径的主表应直接给出该门的可用分")
 	}
 
-	// 小节仍然要有：三扇已开门各一行，读者不必反推哪条路径开了哪扇门。
+	// 小节仍然要有：读者不必反推哪条路径开了哪扇门。
 	if !strings.Contains(doc, "### 端点细分") {
 		t.Fatal("已有开门的矩阵应包含端点细分小节")
 	}
-	for _, ep := range []string{
-		string(EndpointOpenAIResponses),
-		string(EndpointOpenAIChat),
-		string(EndpointDashScopeTextGeneration),
-	} {
-		if !strings.Contains(doc, "| "+ep+" | ") {
-			t.Errorf("端点细分应列出已开门 %s", ep)
-		}
+	if !strings.Contains(doc, "| "+string(EndpointDashScopeTextGeneration)+" | ") {
+		t.Errorf("端点细分应列出已开门 %s", EndpointDashScopeTextGeneration)
 	}
 }
 
