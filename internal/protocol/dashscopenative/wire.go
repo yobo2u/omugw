@@ -22,6 +22,11 @@ const NamespacePrefix = "/api/v1/"
 // 对应多个端点，本期只接入文本生成这一条。
 const TextGenerationPath = "/api/v1/services/aigc/text-generation/generation"
 
+// MultimodalGenerationPath 是多模态生成的上游端点路径。
+// 与 TextGenerationPath 共用 Qwen 模型 API 的请求信封（model / input.messages /
+// parameters），内容块为 text / image / audio / video 四种单键形态，没有通用 file 块。
+const MultimodalGenerationPath = "/api/v1/services/aigc/multimodal-generation/generation"
+
 // Request 是 DashScope Native 请求的顶层结构：model / input / parameters 三段。
 type Request struct {
 	Model      string     `json:"model"`
