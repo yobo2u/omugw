@@ -122,7 +122,7 @@ func responsesInbound() inbound {
 		},
 		usageJSON:    extractUsage,
 		usageEvent:   parseUsageEvent,
-		upstreamPath: func(*http.Request) string { return "/v1/responses" },
+		upstreamPath: func(*http.Request) string { return string(degrade.EndpointOpenAIResponses) },
 		encodeError:  openaiwire.EncodeError,
 	}
 }
@@ -140,7 +140,7 @@ func chatInbound() inbound {
 		},
 		usageJSON:    extractChatUsage,
 		usageEvent:   parseChatUsageEvent,
-		upstreamPath: func(*http.Request) string { return "/v1/chat/completions" },
+		upstreamPath: func(*http.Request) string { return string(degrade.EndpointOpenAIChat) },
 		encodeError:  openaiwire.EncodeError,
 	}
 }

@@ -256,6 +256,49 @@ func buildTestConfig(upstreamURL string) config.Config {
 	}
 }
 
+// TestEveryOpenDoorReachesAHandler 防的是「对账名单与真实注册各说各话」。
+//
+// 对账表若是手写的第二份清单，它证明的只是「名单与矩阵一致」，而不是
+// 「请求真能走到处理器」：把某个 mux.Handle 删掉、名单照旧，对账依然全绿，
+// 而那扇门的请求已经悄悄落进 501 兜底。所以要问的不是名单，是 Mux 本身。
+func TestEveryOpenDoorReachesAHandler(t *testing.T) {
+	m, err := degrade.Phase1()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"output":{"text":"ok"}}`))
+	}))
+	defer upstream.Close()
+
+	cfg := buildTestConfig(upstream.URL)
+	cfg.Providers[0].Kind = "dashscope.native"
+	built, err := gateway.Build(cfg, m, obs.NewMetrics(prometheus.NewRegistry()),
+		slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("构建失败: %v", err)
+	}
+
+	var doors int
+	for _, r := range m.Routes() {
+		for _, ep := range r.Endpoints() {
+			doors++
+			// 兜底注册的是命名空间前缀；精确注册的门会拿到自己的 pattern。
+			// 命中兜底就说明这扇门根本没注册处理器。
+			_, pattern := built.Mux.Handler(httptest.NewRequest("POST", string(ep), nil))
+			if pattern != "POST "+string(ep) {
+				t.Errorf("已开门 %s 命中的是 %q，不是它自己的精确注册——请求会落进兜底",
+					ep, pattern)
+			}
+		}
+	}
+	if doors == 0 {
+		t.Fatal("矩阵一扇门都没开，这条测试会空转")
+	}
+}
+
 // TestBuildFailsWhenRedeemedEndpointUnregistered 防「兑现过的门忘了注册」：
 // 请求会落进 501 兜底，兑现承诺悄悄落空。
 func TestBuildFailsWhenRedeemedEndpointUnregistered(t *testing.T) {
