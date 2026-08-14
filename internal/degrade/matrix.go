@@ -187,9 +187,12 @@ func (r *Route) Emulate(feature, note string, caps ...canonical.Capability) *Rou
 
 // Redeem 登记若干项能力**当前已经投放**。
 //
-// 只应在这些能力的端到端 fixture 已经存在并通过之后调用；
-// TestImplementedRoutesHaveFixtures 与 TestRedeemedCapabilitiesAreExplicit
-// 会强制这一点。
+// 只应在这些能力的端到端 fixture 已经存在并通过之后调用。代码守的是两道闸：
+// TestImplementedRoutesHaveFixtures 要求这条路径有 fixture 目录（且每个
+// DEGRADE / EMULATE 格子有同名用例），TestRedeemedCapabilitiesAreExplicit
+// 要求兑现集合逐项写进白名单。两道闸都不会把某一项 PASSTHROUGH 能力自动对上
+// 一份专属 fixture——「这项能力真的跑通了」是改白名单那个人担的责，
+// 别把它当成代码已经替你验过。
 func (r *Route) Redeem(caps ...canonical.Capability) *Route {
 	for _, c := range caps {
 		r.redeemed[c] = true

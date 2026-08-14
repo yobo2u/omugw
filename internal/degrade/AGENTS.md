@@ -41,10 +41,11 @@
 ## ANTI-PATTERNS
 
 - **不要**用 `DesignScore()` 做运行时选路——它假装所有能力都在线。
-- **不要**在没有 fixture 的情况下 `Redeem()`；`TestImplementedRoutesHaveFixtures`
-  与 `TestRedeemedCapabilitiesAreExplicit` 会失败，且必须同步改 `matrix_test.go` 的
+- **不要**在没有 fixture 的情况下 `Redeem()`；且必须同步改 `matrix_test.go` 的
   `TestImplementedRoutesAreExplicit`（路径）与 `TestRedeemedCapabilitiesAreExplicit`
-  （能力）两份白名单。
+  （能力）两份白名单。代码守的两道闸只到这个粒度：`TestImplementedRoutesHaveFixtures`
+  查路径有 fixture 目录、有损格子有同名用例，白名单查兑现集合有人点头。
+  **没有**「每兑现一项能力就自动对上一份 fixture」这回事——那一步靠人。
 - **不要**把 `Implemented()` 读成「每项能力都能走」——它只说明至少一项能力已投放；
   单项能力能不能走要另问 `Redeems()`。
 - **不要**为「入站协议表达不出」的能力写路径级 `Reject`——那是可表达性问题，

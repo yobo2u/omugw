@@ -77,7 +77,8 @@ docs/               # principles.md、degradation-matrix.md（生成物）、adr
   能力，前提是端到端 fixture 已通过。仍需三处同改：代码 +
   `testdata/routes/<in>__<out>/` fixture + `matrix_test.go` 的两份名单
   （`TestImplementedRoutesAreExplicit` 管路径、`TestRedeemedCapabilitiesAreExplicit`
-  管能力）。少一处就过不了 CI。
+  管能力）。少一处就过不了 CI。但 CI 只查到路径级：fixture 门槛查目录存在与有损
+  格子举证，白名单查兑现集合有人点头；**逐项能力跑没跑通，靠写白名单的人负责**。
 - **保留度有两列**（ADR-0002）：`DesignScore()` 是设计目标，`AvailableScore()` 是
   当前可用。**运行时选路只许用后者**。
 - **采样参数用指针**（`*float64`），因为 `0` 与「未设置」必须可区分。

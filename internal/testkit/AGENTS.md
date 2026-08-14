@@ -31,8 +31,9 @@ testdata/
 - 回放服务器每帧后必须 flush，才能真实复现上游的分片节奏。
 - 每条经 `Redeem()` 登记投放的路径都必须在 `testdata/routes/` 下有覆盖其全部
   `DEGRADE` 与 `EMULATE` 格子的用例——有损格子的文件名即能力名，这就是举证
-  （ADR-0001）。兑现了哪项能力，哪项能力就得有跑得通的 fixture 作证；
-  fixture 是投放证据，不是装饰品。
+  （ADR-0001）。`PASSTHROUGH` 格子没有这种一一对应：代码只查目录里有用例，
+  「这项能力真的跑通了」由改 `TestRedeemedCapabilitiesAreExplicit` 白名单的人
+  担保。所以兑现一项能力之前，自己去把它的 fixture 写出来跑通。
 
 ## ANTI-PATTERNS
 
