@@ -120,9 +120,10 @@ func Build(cfg config.Config, m *degrade.Matrix, metrics *obs.Metrics, log *slog
 		Pools:     pools,
 		Providers: provs,
 	}
-	mux.Handle("POST /v1/responses", NewResponsesHandler(deps))
-	mux.Handle("POST /v1/chat/completions", NewChatHandler(deps))
-	mux.Handle("POST "+dashscopenative.TextGenerationPath, NewDashScopeNativeHandler(deps))
+	native := NewDashScopeNativeHandler(deps) // handler 无状态，多扇门复用同一实例
+	mux.Handle("POST "+string(degrade.EndpointOpenAIResponses), NewResponsesHandler(deps))
+	mux.Handle("POST "+string(degrade.EndpointOpenAIChat), NewChatHandler(deps))
+	mux.Handle("POST "+dashscopenative.TextGenerationPath, native)
 
 	// 命名空间的方法兜底：不带方法的模式最不具体，只有既没命中精确端点、
 	// 也没命中下面那条 POST 兜底的请求才会落到这里。
@@ -146,6 +147,32 @@ func Build(cfg config.Config, m *degrade.Matrix, metrics *obs.Metrics, log *slog
 		w.WriteHeader(status)
 		_, _ = w.Write(body)
 	})
+
+	// 启动期双向对账：矩阵兑现过的门必须注册了处理器，注册了处理器的门
+	// 必须有路径兑现。防两种漂移：兑现过的门忘了注册，请求落进 501 兜底；
+	// 注册了的门忘了在矩阵兑现，变成一处永远返回 501 的空头承诺。
+	registered := map[degrade.Endpoint]bool{
+		degrade.EndpointOpenAIResponses:         true,
+		degrade.EndpointOpenAIChat:              true,
+		degrade.EndpointDashScopeTextGeneration: true,
+	}
+	opened := map[degrade.Endpoint]bool{}
+	for _, r := range m.Routes() {
+		if !r.Implemented() {
+			continue
+		}
+		for _, ep := range r.Endpoints() {
+			opened[ep] = true
+			if !registered[ep] {
+				return nil, fmt.Errorf("gateway: 端点 %s 已在矩阵兑现，但没有注册处理器", ep)
+			}
+		}
+	}
+	for ep := range registered {
+		if !opened[ep] {
+			return nil, fmt.Errorf("gateway: 端点 %s 注册了处理器，但没有任何路径兑现它", ep)
+		}
+	}
 
 	return built, nil
 }

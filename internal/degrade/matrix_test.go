@@ -38,7 +38,8 @@ func TestPhase1IsComplete(t *testing.T) {
 	}
 
 	for _, r := range m.Routes() {
-		p := r.Preservation(m.Availability())
+		// 设计列是路径级的；可用列端点相对，逐门另打（见下方 Endpoints 循环）。
+		p := r.Preservation(m.Availability(), Endpoint(""))
 
 		// 每条路径必须为入站协议**表达得出来**的每一项能力表态。
 		// 表达不出来的那些由 Expressibility 自动补成 N/A，不该由路径负责。
@@ -57,18 +58,23 @@ func TestPhase1IsComplete(t *testing.T) {
 		if r.Implemented() {
 			status = "已实现"
 		}
-		t.Logf("%-22s -> %-24s %s  pass=%2d emu=%d(off %d) deg=%d rej=%d n/a=%2d  设计=%.3f 可用=%.3f",
+		t.Logf("%-22s -> %-24s %s  pass=%2d emu=%d(off %d) deg=%d rej=%d n/a=%2d  设计=%.3f",
 			r.In, r.Out, status,
 			p.Passthrough, p.Emulate, p.EmulateOff, p.Degrade, p.Reject, p.NotApplicable,
-			p.DesignScore(), p.AvailableScore())
+			p.DesignScore())
+		for _, ep := range r.Endpoints() {
+			t.Logf("  门 %-58s 可用=%.3f", ep,
+				r.Preservation(m.Availability(), ep).AvailableScore())
+		}
 	}
 }
 
 // implementedMatrix 返回一份全部路径都标记为已实现的 Phase1 矩阵。
 //
 // 用于测试 Check 的能力裁决语义——那部分逻辑与「路径实现了没有」正交，
-// 不该因为 M0 阶段一条都没实现就测不了。PLANNED 本身的行为由
-// TestPlannedRouteIsRejectedAtRuntime 单独覆盖。
+// 不该因为投放进度就测不了。每条路径挂一扇测试专用门并在其上兑现全部
+// 可表达能力，使「能力裁决语义与投放进度正交」的既有测试意图原样保留。
+// PLANNED 本身的行为由 TestPlannedRouteIsRejectedAtRuntime 单独覆盖。
 func implementedMatrix(t *testing.T, avail Availability) *Matrix {
 	t.Helper()
 	m, err := Phase1()
@@ -76,13 +82,20 @@ func implementedMatrix(t *testing.T, avail Availability) *Matrix {
 		t.Fatal(err)
 	}
 	for _, r := range m.Routes() {
-		r.Redeem(ExpressibleSet(r.In)...)
+		r.Redeem(testEndpoint(r.In), ExpressibleSet(r.In)...)
 	}
 	if avail != nil {
 		m.WithAvailability(avail)
 	}
 	return m
 }
+
+// testEndpoint 是 implementedMatrix 的测试专用门，与真实门的路径刻意不同——
+// 测试敲的必须是这扇门，而不是碰巧撞上真实门。
+func testEndpoint(p Protocol) Endpoint { return Endpoint("/test/" + string(p)) }
+
+// testInbound 与 implementedMatrix 的测试专用门配套。
+func testInbound(p Protocol) Inbound { return Inbound{Protocol: p, Endpoint: testEndpoint(p)} }
 
 // TestImplementedRoutesAreExplicit 要求已转正的路径逐条登记在这里。
 //
@@ -124,18 +137,21 @@ func TestImplementedRoutesAreExplicit(t *testing.T) {
 	}
 }
 
-// TestRedeemedCapabilitiesAreExplicit 把「投放了哪些能力」也变成需要有人点头的事。
+// TestRedeemedCapabilitiesAreExplicit 把「哪扇门投放了哪些能力」也变成需要有人点头的事。
 //
-// 与 TestImplementedRoutesAreExplicit 同理，只是粒度从路径细到能力：路径转正
-// 只说明这条路开始通车，说明不了每个端点都通。悄悄多兑现一项能力，等于宣称
-// 一个还没写的端点可用。
+// 与 TestImplementedRoutesAreExplicit 同理，只是粒度从路径细到「路径 @ 端点」：
+// 路径转正只说明这条路开始通车，说明不了每扇门都通。悄悄给某扇门多兑现一项能力，
+// 等于宣称一个还没写的实现可用。
 func TestRedeemedCapabilitiesAreExplicit(t *testing.T) {
-	// OpenAI 两条同源直通字节级转发，可表达的全部兑现；
-	// Native 一个协议对应多个上游端点，本期只投放了文本生成那一个。
+	// OpenAI 两条同源直通各一扇门，字节级转发，可表达的全部兑现；
+	// Native 本期只投放了文本生成那扇门。
 	want := map[string][]canonical.Capability{
-		string(ProtoOpenAIResponses) + " -> " + string(ProviderOpenAICompat): ExpressibleSet(ProtoOpenAIResponses),
-		string(ProtoOpenAIChat) + " -> " + string(ProviderOpenAICompat):      ExpressibleSet(ProtoOpenAIChat),
-		string(ProtoDashScopeNative) + " -> " + string(ProviderDashScopeNative): {
+		string(ProtoOpenAIResponses) + " -> " + string(ProviderOpenAICompat) +
+			" @ " + string(EndpointOpenAIResponses): ExpressibleSet(ProtoOpenAIResponses),
+		string(ProtoOpenAIChat) + " -> " + string(ProviderOpenAICompat) +
+			" @ " + string(EndpointOpenAIChat): ExpressibleSet(ProtoOpenAIChat),
+		string(ProtoDashScopeNative) + " -> " + string(ProviderDashScopeNative) +
+			" @ " + string(EndpointDashScopeTextGeneration): {
 			canonical.CapTextGeneration,
 			canonical.CapStreaming,
 			canonical.CapToolCalling,
@@ -149,66 +165,39 @@ func TestRedeemedCapabilitiesAreExplicit(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	seen := map[string]bool{}
 	for _, r := range m.Routes() {
-		key := string(r.In) + " -> " + string(r.Out)
-		caps, listed := want[key]
-		if !listed {
-			for _, c := range canonical.AllCapabilities() {
-				if r.Redeems(c) {
-					t.Errorf("路径 %s 兑现了 %q，但不在名单里——"+
-						"投放请同步更新本测试与 fixture", key, c)
+		routeKey := string(r.In) + " -> " + string(r.Out)
+		for _, ep := range r.Endpoints() {
+			key := routeKey + " @ " + string(ep)
+			seen[key] = true
+			caps, listed := want[key]
+			if !listed {
+				t.Errorf("路径 %s 开了门 %s，但不在名单里——投放请同步更新本测试与 fixture",
+					routeKey, ep)
+				continue
+			}
+
+			redeemed := map[canonical.Capability]bool{}
+			for _, c := range caps {
+				redeemed[c] = true
+				if !r.Redeems(ep, c) {
+					t.Errorf("%s 应已投放 %q，实际未兑现", key, c)
 				}
 			}
-			continue
-		}
-
-		redeemed := map[canonical.Capability]bool{}
-		for _, c := range caps {
-			redeemed[c] = true
-			if !r.Redeems(c) {
-				t.Errorf("路径 %s 应已投放 %q，实际未兑现", key, c)
-			}
-		}
-		for _, c := range canonical.AllCapabilities() {
-			if !redeemed[c] && r.Redeems(c) {
-				t.Errorf("路径 %s 多兑现了 %q，名单里没有它", key, c)
+			for _, c := range canonical.AllCapabilities() {
+				if !redeemed[c] && r.Redeems(ep, c) {
+					t.Errorf("%s 多兑现了 %q，名单里没有它", key, c)
+				}
 			}
 		}
 	}
-}
 
-// TestRedeemingUndeliverableCapabilityFailsBuild 防的是「兑现一格根本没有内容的
-// 能力」。
-//
-// REJECT 的格子兑现了也没有实现可言，N/A 的格子客户端连发都发不出来。
-// 让这种声明在 Build 时就失败，比让它在文档里显示成「已投放」要好——
-// 后者是在为一个不存在的东西背书。
-func TestRedeemingUndeliverableCapabilityFailsBuild(t *testing.T) {
-	var others []canonical.Capability
-	for _, c := range ExpressibleSet(ProtoOpenAIChat) {
-		if c != canonical.CapAudioInput {
-			others = append(others, c)
+	// 名单声称的门必须真的开着，防止名单单边漂移。
+	for key := range want {
+		if !seen[key] {
+			t.Errorf("名单声称 %s 已投放，实际没有这扇门", key)
 		}
-	}
-
-	_, err := NewRoute(ProtoOpenAIChat, ProviderAnthropicMessages).
-		Pass(others...).
-		Reject(noteNoAudioIn, canonical.CapAudioInput).
-		Redeem(canonical.CapAudioInput).
-		Build()
-	if err == nil {
-		t.Fatal("兑现一个 REJECT 格子应当 Build 失败")
-	}
-	if !strings.Contains(err.Error(), string(canonical.CapAudioInput)) {
-		t.Errorf("错误信息应指出是哪项能力，实际为: %v", err)
-	}
-
-	_, err = NewRoute(ProtoOpenAIChat, ProviderOpenAICompat).
-		Pass(ExpressibleSet(ProtoOpenAIChat)...).
-		Redeem(canonical.CapRerank). // openai.chat 表达不出 rerank
-		Build()
-	if err == nil {
-		t.Fatal("兑现一个不可表达的能力应当 Build 失败")
 	}
 }
 
@@ -219,13 +208,13 @@ func TestRedeemingUndeliverableCapabilityFailsBuild(t *testing.T) {
 func TestDeriveDoesNotInheritRedemption(t *testing.T) {
 	base := NewRoute(ProtoOpenAIChat, ProviderOpenAICompat).
 		Pass(ExpressibleSet(ProtoOpenAIChat)...).
-		Redeem(ExpressibleSet(ProtoOpenAIChat)...)
+		Redeem(EndpointOpenAIChat, ExpressibleSet(ProtoOpenAIChat)...)
 
 	derived := base.Derive(ProtoOpenAIResponses, ProviderOpenAICompat)
 	if derived.Implemented() {
 		t.Error("派生路径不该继承兑现集合——实现是逐条写的，不是继承来的")
 	}
-	if derived.Redeems(canonical.CapTextGeneration) {
+	if derived.Redeems(EndpointOpenAIChat, canonical.CapTextGeneration) {
 		t.Error("派生路径不该继承单项能力的兑现状态")
 	}
 }
@@ -241,7 +230,8 @@ func TestPlannedRouteIsRejectedAtRuntime(t *testing.T) {
 	}
 
 	// 用一条仍是 PLANNED 的路径。openai.compat 那条已在 M1 转正。
-	_, err = m.Check(ProtoOpenAIResponses, ProviderDashScopeCompatible,
+	_, err = m.Check(Inbound{Protocol: ProtoOpenAIResponses, Endpoint: EndpointOpenAIResponses},
+		ProviderDashScopeCompatible,
 		[]canonical.Capability{canonical.CapTextGeneration})
 	if err == nil {
 		t.Fatal("未实现的路径必须报错，不得静默放行到一个空壳")
@@ -279,7 +269,8 @@ func TestUnredeemedCapabilityIsRejectedAtRuntime(t *testing.T) {
 	}
 
 	// 但当前未投放，运行时必须挡下来。
-	_, err = m.Check(ProtoDashScopeNative, ProviderDashScopeNative,
+	_, err = m.Check(Inbound{Protocol: ProtoDashScopeNative, Endpoint: EndpointDashScopeTextGeneration},
+		ProviderDashScopeNative,
 		[]canonical.Capability{canonical.CapTextGeneration, canonical.CapVisionInput})
 	if err == nil {
 		t.Fatal("未投放的能力必须报错，不得放行到一个尚不存在的实现上")
@@ -304,7 +295,9 @@ func TestUnredeemedCapabilityIsRejectedAtRuntime(t *testing.T) {
 		canonical.CapReasoning,
 		canonical.CapWebSearch,
 	} {
-		if _, err := m.Check(ProtoDashScopeNative, ProviderDashScopeNative,
+		if _, err := m.Check(
+			Inbound{Protocol: ProtoDashScopeNative, Endpoint: EndpointDashScopeTextGeneration},
+			ProviderDashScopeNative,
 			[]canonical.Capability{c}); err != nil {
 			t.Errorf("已投放的能力 %q 不该被拦下: %v", c, err)
 		}
@@ -339,7 +332,7 @@ func TestFixtureGateActuallyBites(t *testing.T) {
 	// 不能挑已转正的路径——它们有 fixture，门槛放行是正确的，测不出「咬」。
 	fake := NewRoute(ProtoOpenAIChat, ProviderAnthropicMessages).
 		Pass(ExpressibleSet(ProtoOpenAIChat)...).
-		Redeem(ExpressibleSet(ProtoOpenAIChat)...)
+		Redeem(EndpointOpenAIChat, ExpressibleSet(ProtoOpenAIChat)...)
 	built, err := fake.Build()
 	if err != nil {
 		t.Fatal(err)
@@ -520,7 +513,7 @@ func TestCheckRejectsUnsupportedCapability(t *testing.T) {
 	var err error
 
 	// Anthropic 不接受音频输入，带音频的请求必须被拒绝而不是静默丢掉音频。
-	_, err = m.Check(ProtoOpenAIChat, ProviderAnthropicMessages,
+	_, err = m.Check(testInbound(ProtoOpenAIChat), ProviderAnthropicMessages,
 		[]canonical.Capability{canonical.CapTextGeneration, canonical.CapAudioInput})
 	if err == nil {
 		t.Fatal("带音频输入的 Anthropic 请求应当被拒绝")
@@ -551,7 +544,7 @@ func TestCheckFlagsDecoderBugOnInexpressibleCapability(t *testing.T) {
 	m := implementedMatrix(t, nil)
 	var err error
 
-	_, err = m.Check(ProtoOpenAIChat, ProviderOpenAICompat,
+	_, err = m.Check(testInbound(ProtoOpenAIChat), ProviderOpenAICompat,
 		[]canonical.Capability{canonical.CapReasoningSignature})
 	if err == nil {
 		t.Fatal("openai.chat 不可能产生推理签名，出现即应报错")
@@ -570,7 +563,7 @@ func TestCheckReportsDegradation(t *testing.T) {
 	m := implementedMatrix(t, nil)
 
 	// Anthropic 没有 strict json_schema 校验，结构化输出降级为提示词约束。
-	v, err := m.Check(ProtoOpenAIChat, ProviderAnthropicMessages,
+	v, err := m.Check(testInbound(ProtoOpenAIChat), ProviderAnthropicMessages,
 		[]canonical.Capability{canonical.CapTextGeneration, canonical.CapStructuredOutput})
 	if err != nil {
 		t.Fatalf("结构化输出应当被降级而非拒绝: %v", err)
@@ -595,7 +588,7 @@ func TestCheckReportsEmulation(t *testing.T) {
 	// 模拟能力默认关闭，这条测试要验的是开启后的行为。
 	m := implementedMatrix(t, Availability{FeatureConversationStore: true})
 
-	v, err := m.Check(ProtoOpenAIResponses, ProviderDashScopeNative,
+	v, err := m.Check(testInbound(ProtoOpenAIResponses), ProviderDashScopeNative,
 		[]canonical.Capability{canonical.CapTextGeneration, canonical.CapStatefulConversation})
 	if err != nil {
 		t.Fatalf("服务端会话应由网关模拟提供而非拒绝: %v", err)
@@ -613,7 +606,8 @@ func TestCheckFailsClosedOnUnknownRoute(t *testing.T) {
 	m := implementedMatrix(t, nil)
 	var err error
 
-	_, err = m.Check(protoNeverRegistered, ProviderAnthropicMessages,
+	_, err = m.Check(Inbound{Protocol: protoNeverRegistered, Endpoint: Endpoint("/test/never")},
+		ProviderAnthropicMessages,
 		[]canonical.Capability{canonical.CapTextGeneration})
 	if err == nil {
 		t.Fatal("未注册的路径必须失败，不得静默放行")

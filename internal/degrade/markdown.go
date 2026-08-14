@@ -133,26 +133,22 @@ func (m *Matrix) writePreservation(b *strings.Builder) {
 	for _, in := range order {
 		for _, out := range m.RankDesign(in, byInbound[in]) {
 			r, _ := m.Route(in, out)
-			p := r.Preservation(m.avail)
+			// 设计列是路径级的，与敲哪扇门无关；这里只取设计列。
+			// 可用列绝不从这条调用取——零值端点的可用列恒为零（见端点分支）。
+			p := r.Preservation(m.avail, Endpoint(""))
 
 			status := "规划中"
 			available := "—"
 			if r.Implemented() {
 				status = "已实现"
-				available = fmt.Sprintf("%.3f", p.AvailableScore())
-				// 把前提写进数字本身：默认配置是绝大多数人的实际部署，
-				// 按它计分才诚实；括号让读者查到那个数是怎么来的。
-				//
-				// 两种前提要分开写。「开关没开」运维改配置就能解决，
-				// 「端点还没投放」只能等实现——混成一句，会让人去开一个
-				// 根本解决不了问题的开关。
-				switch {
-				case p.NotRedeemed > 0:
-					available += fmt.Sprintf("（%d 项中 %d 项已投放）",
-						p.denominator()-p.Reject, p.Redeemed())
-				case p.EmulateOff > 0:
-					available += fmt.Sprintf("（开启 %s 后 %.3f）",
-						FeatureConversationStore, p.DesignScore())
+				e := r.Endpoints()
+				if len(e) == 1 {
+					// 单门路径：可用列就是那扇门的端点相对分数，显示方式不变。
+					available = formatAvailable(r.Preservation(m.avail, e[0]))
+				} else {
+					// 多门路径：并集分数不对应任何一扇真实的门，
+					// 主表只指路，分数逐门列在端点细分小节。
+					available = "见端点细分"
 				}
 			}
 			fast := ""
@@ -174,6 +170,24 @@ func (m *Matrix) writePreservation(b *strings.Builder) {
 		}
 	}
 	b.WriteString("\n")
+}
+
+// formatAvailable 渲染「当前可用」列：分数本身，外加把前提写进数字本身的括号。
+//
+// 默认配置是绝大多数人的实际部署，按它计分才诚实；括号让读者查到那个数是怎么来的。
+// 两种前提要分开写：「开关没开」运维改配置就能解决，「端点还没投放」只能等实现——
+// 混成一句，会让人去开一个根本解决不了问题的开关。
+func formatAvailable(p Preservation) string {
+	available := fmt.Sprintf("%.3f", p.AvailableScore())
+	switch {
+	case p.NotRedeemed > 0:
+		available += fmt.Sprintf("（%d 项中 %d 项已投放）",
+			p.denominator()-p.Reject, p.Redeemed())
+	case p.EmulateOff > 0:
+		available += fmt.Sprintf("（开启 %s 后 %.3f）",
+			FeatureConversationStore, p.DesignScore())
+	}
+	return available
 }
 
 // docOrder 给出文档中的路径排列顺序。

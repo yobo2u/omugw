@@ -168,8 +168,10 @@ func (p Preservation) Redeemed() int { return p.denominator() - p.Reject - p.Not
 
 // Preservation 报告这条路径保留了多少原生能力，按矩阵当前的可用性配置计算。
 //
-// 设计计数与可用权重分两路累加：前者只看处置声明，后者还要问这项能力投放了没有。
-func (r *Route) Preservation(avail Availability) Preservation {
+// 设计计数与可用权重分两路累加：前者只看处置声明，是路径级的，与 ep 无关；
+// 后者还要问这项能力投放到 ep 了没有——可用列永远端点相对。
+// ep 未开（含零值）时可用列为零：没有门就是没有可用，只会少报，不会多报。
+func (r *Route) Preservation(avail Availability, ep Endpoint) Preservation {
 	var p Preservation
 	for c, rule := range r.rules {
 		var weight float64
@@ -194,7 +196,7 @@ func (r *Route) Preservation(avail Availability) Preservation {
 			// N/A 不进分母，也就谈不上投放，跳过下面的计数。
 			continue
 		}
-		if r.Redeems(c) {
+		if r.Redeems(ep, c) {
 			p.availableWeight += weight
 		} else if rule.Disposition != Reject {
 			// REJECT 的格子按设计就该失败，没有「等它投放」一说，
@@ -259,23 +261,24 @@ func (m *Matrix) rank(in Protocol, candidates []Provider, onlyImplemented bool) 
 
 // BestOutbound 在候选中挑出既有注册路径、又能承载全部所需能力的最优 Provider。
 //
-// 与 RankOutbound 的区别是它会真的去查能力：一条排在前面但会 REJECT 掉本次
-// 请求所需能力的路径，不如排在后面但真能跑通的路径。
+// 候选筛选保持端点无感：只看路径是否通车（至少一门已开），不看本次请求敲哪扇门。
+// 端点裁决发生在每个候选内部的 Check：首选若恰因这扇门没开而失败，
+// 错误会点名缺哪扇门，而后面开了这扇门的候选仍能接住请求。
 //
 // 全部候选都跑不通时返回最后一次的错误，让调用方能告诉用户到底缺什么，
 // 而不是一句笼统的「无可用 Provider」。
-func (m *Matrix) BestOutbound(in Protocol, candidates []Provider, caps []canonical.Capability) (Provider, Verdict, error) {
-	ranked := m.RankOutbound(in, candidates)
+func (m *Matrix) BestOutbound(in Inbound, candidates []Provider, caps []canonical.Capability) (Provider, Verdict, error) {
+	ranked := m.RankOutbound(in.Protocol, candidates)
 	if len(ranked) == 0 {
 		// 区分「没注册」与「注册了但还没实现」：前者要改配置，后者只要等。
 		for _, c := range candidates {
-			if _, ok := m.Route(in, c); ok {
+			if _, ok := m.Route(in.Protocol, c); ok {
 				return "", Verdict{}, canonical.Newf(canonical.ClassNotImplemented,
-					"入站协议 %s 的候选出站路径均已设计但尚未实现", in)
+					"入站协议 %s 的候选出站路径均已设计但尚未实现", in.Protocol)
 			}
 		}
 		return "", Verdict{}, canonical.Newf(canonical.ClassUnsupported,
-			"入站协议 %s 没有任何已注册的出站路径", in)
+			"入站协议 %s 没有任何已注册的出站路径", in.Protocol)
 	}
 
 	var lastErr error

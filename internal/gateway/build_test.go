@@ -7,10 +7,12 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/yobo2u/omugw/internal/canonical"
 	"github.com/yobo2u/omugw/internal/config"
 	"github.com/yobo2u/omugw/internal/degrade"
 	"github.com/yobo2u/omugw/internal/gateway"
@@ -230,5 +232,73 @@ func TestBuiltMux_HealthOnlyMode_NoFallback(t *testing.T) {
 
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("仅健康检查模式期望 404，实际 %d", rec.Code)
+	}
+}
+
+// buildTestConfig 组装一份最小可用的全量配置：对账发生在「模型路由已配置」
+// 之后，空配置会在对账之前提前返回，测不到闸门。
+func buildTestConfig(upstreamURL string) config.Config {
+	return config.Config{
+		Auth: config.Auth{Keys: []config.AuthKey{{ID: "test", Key: "sk-test-1234567890"}}},
+		Credentials: map[string][]config.CredentialSpec{
+			"pool1": {{ID: "1", Secret: "sec1"}},
+		},
+		Providers: []config.ProviderSpec{
+			{Endpoint: "ep1", Kind: "openai.compat", BaseURL: upstreamURL, CredentialPool: "pool1"},
+		},
+		Models: []config.ModelSpec{
+			{Match: "*", Targets: []config.TargetSpec{{Endpoint: "ep1", UpstreamModel: "m"}}},
+		},
+		Timeouts: config.Timeouts{
+			Connect: time.Second, FirstByte: 2 * time.Second, Total: 3 * time.Second, Idle: time.Second,
+		},
+		Limits: config.Limits{MaxRequestBytes: 1024 * 1024, MaxInlineBytes: 1024 * 1024},
+	}
+}
+
+// TestBuildFailsWhenRedeemedEndpointUnregistered 防「兑现过的门忘了注册」：
+// 请求会落进 501 兜底，兑现承诺悄悄落空。
+func TestBuildFailsWhenRedeemedEndpointUnregistered(t *testing.T) {
+	m := degrade.NewMatrix()
+	if err := m.Add(degrade.NewRoute(degrade.ProtoOpenAIChat, degrade.ProviderOpenAICompat).
+		MarkHomogeneous().
+		Pass(degrade.ExpressibleSet(degrade.ProtoOpenAIChat)...).
+		Redeem(degrade.Endpoint("/v1/unregistered"), canonical.CapTextGeneration).
+		Build()); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := gateway.Build(buildTestConfig("http://127.0.0.1:0"), m,
+		obs.NewMetrics(prometheus.NewRegistry()),
+		slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err == nil {
+		t.Fatal("兑现了未注册端点的矩阵应当让启动失败")
+	}
+	if !strings.Contains(err.Error(), "没有注册处理器") {
+		t.Errorf("错误应指出端点未注册处理器: %v", err)
+	}
+}
+
+// TestBuildFailsWhenRegisteredEndpointUnredeemed 防「注册了的门没人兑现」：
+// 那是一处永远返回 501 的空头承诺。
+func TestBuildFailsWhenRegisteredEndpointUnredeemed(t *testing.T) {
+	// 只兑现 chat 门：registered 名单里的 responses 门与 Native 文本门没人兑现。
+	m := degrade.NewMatrix()
+	if err := m.Add(degrade.NewRoute(degrade.ProtoOpenAIChat, degrade.ProviderOpenAICompat).
+		MarkHomogeneous().
+		Pass(degrade.ExpressibleSet(degrade.ProtoOpenAIChat)...).
+		Redeem(degrade.EndpointOpenAIChat, degrade.ExpressibleSet(degrade.ProtoOpenAIChat)...).
+		Build()); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := gateway.Build(buildTestConfig("http://127.0.0.1:0"), m,
+		obs.NewMetrics(prometheus.NewRegistry()),
+		slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err == nil {
+		t.Fatal("注册了处理器却无路径兑现的端点应当让启动失败")
+	}
+	if !strings.Contains(err.Error(), "没有任何路径兑现它") {
+		t.Errorf("错误应指出端点无人兑现: %v", err)
 	}
 }

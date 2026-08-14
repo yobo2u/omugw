@@ -56,7 +56,7 @@ func Phase1() (*Matrix, error) {
 	chatToOpenAI := NewRoute(ProtoOpenAIChat, ProviderOpenAICompat).
 		MarkHomogeneous().
 		Pass(ExpressibleSet(ProtoOpenAIChat)...).
-		Redeem(ExpressibleSet(ProtoOpenAIChat)...)
+		Redeem(EndpointOpenAIChat, ExpressibleSet(ProtoOpenAIChat)...)
 	if err := m.Add(chatToOpenAI.Build()); err != nil {
 		return nil, err
 	}
@@ -150,7 +150,7 @@ func Phase1() (*Matrix, error) {
 	// 让「这条路能用了」成为一个需要有人点头的动作。
 	if err := m.Add(responsesExtras(
 		chatToOpenAI.Derive(ProtoOpenAIResponses, ProviderOpenAICompat), true,
-	).Redeem(ExpressibleSet(ProtoOpenAIResponses)...).Build()); err != nil {
+	).Redeem(EndpointOpenAIResponses, ExpressibleSet(ProtoOpenAIResponses)...).Build()); err != nil {
 		return nil, err
 	}
 	for _, base := range []*Route{chatToAnthropic, chatToDSCompat, chatToDSNative} {
@@ -179,7 +179,9 @@ func Phase1() (*Matrix, error) {
 	if err := m.Add(NewRoute(ProtoDashScopeNative, ProviderDashScopeNative).
 		MarkHomogeneous().
 		Pass(ExpressibleSet(ProtoDashScopeNative)...).
-		Redeem(
+		// 文本门：既有 5 项，原样保留。reasoning 有 fixture 证据
+		//（tools-and-search.json 带 enable_thinking: true），继续持有。
+		Redeem(EndpointDashScopeTextGeneration,
 			canonical.CapTextGeneration,
 			canonical.CapStreaming,
 			canonical.CapToolCalling,

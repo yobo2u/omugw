@@ -219,9 +219,13 @@ func (h *Handler) serve(w *tracked, r *http.Request) (outcome, outbound string, 
 		return "bad_request", outbound, err
 	}
 
-	// 路由给出候选，矩阵按能力与保留度裁决。两者分工，不互相包含。
+	// 路由给出候选，矩阵按入站坐标（协议 + 门）与能力裁决。两者分工，不互相包含。
 	kind, verdict, err := h.deps.Matrix.BestOutbound(
-		h.in.protocol, router.Kinds(targets), decoded.Capabilities())
+		degrade.Inbound{
+			Protocol: h.in.protocol,
+			Endpoint: degrade.Endpoint(h.in.upstreamPath(r)),
+		},
+		router.Kinds(targets), decoded.Capabilities())
 	if err != nil {
 		if canonical.AsError(err).Class == canonical.ClassNotImplemented {
 			h.deps.Metrics.ObserveNotImplemented(string(h.in.protocol), "planned")

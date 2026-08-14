@@ -50,7 +50,10 @@ func run() error {
 	}
 	var implemented int
 	for _, r := range matrix.Routes() {
-		p := r.Preservation(matrix.Availability())
+		// 设计列是路径级的，与端点无关；这里只取 DesignScore。
+		// 可用列没有路径级聚合——并集分数不对应任何一扇真实的门，
+		// 绝不从这条调用取可用列（可用分一律按门另打，见下方循环）。
+		design := r.Preservation(matrix.Availability(), degrade.Endpoint(""))
 		if r.Implemented() {
 			implemented++
 		}
@@ -59,14 +62,19 @@ func run() error {
 			"outbound", string(r.Out),
 			"implemented", r.Implemented(),
 			"fast_path", r.Homogeneous,
-			"design_score", p.DesignScore(),
-		}
-		// 未实现的路径不打印当前可用分数，与矩阵文档里那一列的 "—" 保持一致。
-		// 同一个数字在两处含义不同，正是 ADR-0002 要消灭的毛病。
-		if r.Implemented() {
-			attrs = append(attrs, "available_score", p.AvailableScore())
+			"design_score", design.DesignScore(),
 		}
 		log.Info("已注册转换路径", attrs...)
+
+		// 每扇已开门一条可用分条目：可用列永远端点相对（ADR-0002 的延伸）。
+		for _, ep := range r.Endpoints() {
+			log.Info("已投放端点",
+				"inbound", string(r.In),
+				"outbound", string(r.Out),
+				"endpoint", string(ep),
+				"available_score", r.Preservation(matrix.Availability(), ep).AvailableScore(),
+			)
+		}
 	}
 	if implemented == 0 {
 		// 一个一条路都走不通的网关必须自己说出来，而不是等第一个请求

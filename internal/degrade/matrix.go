@@ -111,17 +111,17 @@ type Route struct {
 
 	rules map[canonical.Capability]Rule
 
-	// redeemed 是这条路径**当前真的投放了**的能力集合。
+	// redeemed 是这条路径**当前真的投放了**的能力，键为 (端点, 能力) 二元组。
 	//
 	// 与 rules 的分工是整个包最容易混淆、也最要紧的一处：rules 是**设计处置**
-	// ——这条路最终该怎么对待每项能力；redeemed 是**当前投放**——此刻哪些能力
-	// 背后真的有实现。
+	// ——这条路最终该怎么对待每项能力；redeemed 是**当前投放**——这扇门此刻
+	// 真的有什么能力。
 	//
-	// 早先这里是一个布尔字段，粒度是整条路径。DashScope Native 撞破了它：
-	// 一个协议对应文本生成、multimodal、embedding、rerank 多个上游端点，
-	// 本期只写了文本生成那一个，而那个布尔一置位，矩阵就替另外三个端点
-	// 也作了保证。默认为空，投放一项登记一项。
-	redeemed map[canonical.Capability]bool
+	// 早先是路径级集合，DashScope Native 投放第二扇门时撞破了它：一个协议对应
+	// 文本生成、多模态、embedding、rerank 多个端点，把新门的能力加进同一个集合，
+	// 文本门的 tool_calling 就会混进多模态门的可用分数，仿佛那扇门也提供这些能力。
+	// 门与门的兑现集合互不相通，不做并集。
+	redeemed map[Endpoint]map[canonical.Capability]bool
 
 	errs []string
 }
@@ -131,7 +131,7 @@ func NewRoute(in Protocol, out Provider) *Route {
 	return &Route{
 		In: in, Out: out,
 		rules:    map[canonical.Capability]Rule{},
-		redeemed: map[canonical.Capability]bool{},
+		redeemed: map[Endpoint]map[canonical.Capability]bool{},
 	}
 }
 
@@ -185,28 +185,66 @@ func (r *Route) Emulate(feature, note string, caps ...canonical.Capability) *Rou
 	return r
 }
 
-// Redeem 登记若干项能力**当前已经投放**。
+// Redeem 登记指定端点已投放的能力。
 //
-// 只应在这些能力的端到端 fixture 已经存在并通过之后调用。代码守的是两道闸：
-// TestImplementedRoutesHaveFixtures 要求这条路径有 fixture 目录（且每个
-// DEGRADE / EMULATE 格子有同名用例），TestRedeemedCapabilitiesAreExplicit
-// 要求兑现集合逐项写进白名单。两道闸都不会把某一项 PASSTHROUGH 能力自动对上
-// 一份专属 fixture——「这项能力真的跑通了」是改白名单那个人担的责，
-// 别把它当成代码已经替你验过。
-func (r *Route) Redeem(caps ...canonical.Capability) *Route {
+// 只应在该端点的端到端 fixture 已经存在并通过之后调用。代码守的闸门有三道：
+// checkRouteFixtures 按 request.path 与门清单双向对账（每扇门要有证据，
+// 每个证据要指向已开门），TestRedeemedCapabilitiesAreExplicit 要求
+// 「路径 @ 端点」的兑现集合逐项写进白名单。闸门都不会把某一项 PASSTHROUGH
+// 能力自动对上 fixture——「这项能力真的跑通了」是改白名单那个人担的责。
+//
+// ep 为零值，或兑现到 REJECT / N/A 格子，都会在 Build 失败。
+func (r *Route) Redeem(ep Endpoint, caps ...canonical.Capability) *Route {
+	if r.redeemed[ep] == nil {
+		r.redeemed[ep] = map[canonical.Capability]bool{}
+	}
 	for _, c := range caps {
-		r.redeemed[c] = true
+		r.redeemed[ep][c] = true
 	}
 	return r
 }
 
-// Implemented 报告这条路径是否至少投放了一项能力，即它是否已经通车。
-//
-// 选路与文档用它区分「已实现」和「规划中」；单项能力能不能走，要另问 Redeems。
-func (r *Route) Implemented() bool { return len(r.redeemed) > 0 }
+// Redeems 报告某项能力是否已投放到指定端点。
+func (r *Route) Redeems(ep Endpoint, c canonical.Capability) bool {
+	return r.redeemed[ep][c]
+}
 
-// Redeems 报告某一项能力当前是否已投放。
-func (r *Route) Redeems(c canonical.Capability) bool { return r.redeemed[c] }
+// RedeemedAt 返回指定端点已投放的能力集合，按 AllCapabilities 顺序，
+// 供白名单对账与文档生成。
+func (r *Route) RedeemedAt(ep Endpoint) []canonical.Capability {
+	set := r.redeemed[ep]
+	out := []canonical.Capability{}
+	for _, c := range canonical.AllCapabilities() {
+		if set[c] {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// Endpoints 返回全部已开门，字典序。
+//
+// 一门当且仅当有至少一格兑现才算开；存在是推导出来的，不是声明出来的。
+// 没有独立的门注册机制——未投放的门本来就是 PLANNED，不需要占位。
+func (r *Route) Endpoints() []Endpoint {
+	out := []Endpoint{}
+	for ep, caps := range r.redeemed {
+		if len(caps) > 0 {
+			out = append(out, ep)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
+}
+
+// ImplementedAt 报告指定端点是否至少投放了一项能力。
+func (r *Route) ImplementedAt(ep Endpoint) bool { return len(r.redeemed[ep]) > 0 }
+
+// Implemented 报告这条路径是否至少一扇门已开，即它是否已经通车。
+//
+// 选路与文档用它区分「已实现」和「规划中」；单扇门能不能走，要另问 ImplementedAt；
+// 单项能力能不能走，要另问 Redeems。
+func (r *Route) Implemented() bool { return len(r.Endpoints()) > 0 }
 
 // Derive 以另一条已声明的路径为基准创建新路径，用于协议族内部的近似路径
 // （例如 OpenAI Chat 与 OpenAI Responses 面对同一个出站 Provider）。
@@ -306,19 +344,25 @@ func (r *Route) Build() (*Route, error) {
 		r.rules[c] = Rule{Disposition: NotApplicable, Note: note}
 	}
 
-	// 兑现一个 REJECT 或 N/A 的格子没有内容可言——前者按设计就该失败，
-	// 后者客户端连发都发不出来。让它在这里失败，好过在文档里显示成「已投放」，
-	// 那是在为一个不存在的东西背书。
-	var undeliverable []string
-	for c := range r.redeemed {
-		rule, ok := r.rules[c]
-		if !ok || rule.Disposition == Reject || rule.Disposition == NotApplicable {
-			undeliverable = append(undeliverable, string(c))
+	// 零值端点 Redeem：零值一旦被当成「整条路径」的通配，
+	// 端点粒度就悄悄退回了路径粒度。
+	for ep := range r.redeemed {
+		if ep == Endpoint("") {
+			r.errs = append(r.errs, "redeem on zero endpoint")
 		}
 	}
-	if len(undeliverable) > 0 {
-		sort.Strings(undeliverable)
-		r.errs = append(r.errs, "redeemed but not deliverable: "+strings.Join(undeliverable, ", "))
+
+	// 兑现一个 REJECT 或 N/A 的格子没有内容可言——前者按设计就该失败，
+	// 后者客户端连发都发不出来。让它在 Build 失败，好过在文档里显示成「已投放」，
+	// 那是在为一个不存在的东西背书。这是既有路径级检查在端点粒度上的延续。
+	for ep, caps := range r.redeemed {
+		for c := range caps {
+			rule, ok := r.rules[c]
+			if !ok || rule.Disposition == Reject || rule.Disposition == NotApplicable {
+				r.errs = append(r.errs,
+					fmt.Sprintf("endpoint %q redeemed but not deliverable: %s", ep, c))
+			}
+		}
 	}
 
 	for c, rule := range r.rules {
@@ -424,23 +468,33 @@ type CapabilityNote struct {
 	Note       string
 }
 
-// Check 用请求实际用到的能力集去查矩阵。
+// Check 用入站坐标（协议 + 端点）与请求实际用到的能力集裁决。
+//
+// 闸门顺序：路径注册 → 路径通车 → 端点通车 → 逐项能力处置
+// （REJECT / N/A 先于投放）→ 端点投放 → EMULATE 开关。
 //
 // 任何一项判定为 Reject，或路径/格子未注册，都返回错误——**绝不静默放行**。
 // 未注册按 Reject 处理是刻意的失败方向：漏配一格的后果是「这个请求被拒绝」，
 // 而不是「这个请求丢了半数字段还返回了 200」。
-func (m *Matrix) Check(in Protocol, out Provider, caps []canonical.Capability) (Verdict, error) {
-	r, ok := m.Route(in, out)
+func (m *Matrix) Check(in Inbound, out Provider, caps []canonical.Capability) (Verdict, error) {
+	r, ok := m.Route(in.Protocol, out)
 	if !ok {
 		return Verdict{}, canonical.Newf(canonical.ClassUnsupported,
-			"未注册的转换路径 %s -> %s", in, out)
+			"未注册的转换路径 %s -> %s", in.Protocol, out)
 	}
 
-	// 已设计但未实现的路径必须明确报错。放行会让请求走进一个空壳，
+	// 闸门 2：已设计但一门未开的路径必须明确报错。放行会让请求走进一个空壳，
 	// 客户端拿到的是一个语焉不详的 5xx，而真相是「这条路还没建」。
 	if !r.Implemented() {
 		return Verdict{}, canonical.Newf(canonical.ClassNotImplemented,
-			"转换路径 %s -> %s 已在降级矩阵中设计，但实现尚未落地", in, out)
+			"转换路径 %s -> %s 已在降级矩阵中设计，但实现尚未落地", in.Protocol, out)
+	}
+
+	// 闸门 3：门必须开着。空能力集不豁免——请求带了什么能力是一回事，
+	// 敲的门开没开是另一回事；后者是入口约束。
+	if !r.ImplementedAt(in.Endpoint) {
+		return Verdict{}, canonical.Newf(canonical.ClassNotImplemented,
+			"转换路径 %s -> %s 尚未投放端点 %s", in.Protocol, out, in.Endpoint)
 	}
 
 	var v Verdict
@@ -448,28 +502,29 @@ func (m *Matrix) Check(in Protocol, out Provider, caps []canonical.Capability) (
 		rule, ok := r.rules[c]
 		if !ok {
 			return Verdict{}, canonical.Newf(canonical.ClassUnsupported,
-				"转换路径 %s -> %s 未对能力 %q 作出声明", in, out, c)
+				"转换路径 %s -> %s 未对能力 %q 作出声明", in.Protocol, out, c)
 		}
 		switch rule.Disposition {
 		case Reject:
 			return Verdict{}, canonical.Newf(canonical.ClassUnsupported,
-				"转换路径 %s -> %s 不支持 %q：%s", in, out, c, rule.Note)
+				"转换路径 %s -> %s 不支持 %q：%s", in.Protocol, out, c, rule.Note)
 		case NotApplicable:
 			// 入站协议表达不出这项能力，却在请求里出现了——说明入站解码器
 			// 把某个字段解成了它不该解成的东西。这是网关自己的 bug，
 			// 不能当成客户端的问题放行。
 			return Verdict{}, canonical.Newf(canonical.ClassInternal,
-				"入站协议 %s 不应产生能力 %q，解码器可能有误：%s", in, c, rule.Note)
+				"入站协议 %s 不应产生能力 %q，解码器可能有误：%s", in.Protocol, c, rule.Note)
 		}
 
-		// 走到这里的处置在设计上都是有效的，于是才轮到问「投放了没有」。
-		// 顺序不能反：REJECT 与 N/A 有各自更确切的错误分类，先问投放会把
-		// 「这条路不支持」说成「这条路还没建」。
+		// 闸门 4d：走到这里的处置在设计上都是有效的，于是才轮到问
+		// 「这扇门投放了没有」。顺序不能反：REJECT 与 N/A 有各自更确切的
+		// 错误分类，先问投放会把「这条路不支持」说成「这条路还没建」。
 		//
 		// 501 而不是 422：未投放的能力该等实现，不该让客户端改请求。
-		if !r.Redeems(c) {
+		if !r.Redeems(in.Endpoint, c) {
 			return Verdict{}, canonical.Newf(canonical.ClassNotImplemented,
-				"转换路径 %s -> %s 已声明能力 %q，但当前尚未投放", in, out, c)
+				"转换路径 %s -> %s 的能力 %q 尚未在端点 %s 上投放",
+				in.Protocol, out, c, in.Endpoint)
 		}
 
 		switch rule.Disposition {
@@ -482,7 +537,7 @@ func (m *Matrix) Check(in Protocol, out Provider, caps []canonical.Capability) (
 			if !m.avail.Enabled(rule.RequiresFeature) {
 				return Verdict{}, canonical.Newf(canonical.ClassUnsupported,
 					"能力 %q 在路径 %s -> %s 上由网关模拟提供，但功能开关 %q 未开启：%s",
-					c, in, out, rule.RequiresFeature, rule.Note)
+					c, in.Protocol, out, rule.RequiresFeature, rule.Note)
 			}
 			v.Emulated = append(v.Emulated, CapabilityNote{Capability: c, Note: rule.Note})
 		}
