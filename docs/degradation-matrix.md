@@ -55,6 +55,16 @@
 | `openai.responses` | `dashscope.native` | 规划中 |  | 6 | 1（1 未开启） | 3 | 4 | 13 | 0.607 | — |
 | `openai.responses` | `anthropic.messages` | 规划中 |  | 6 | 1（1 未开启） | 1 | 6 | 13 | 0.536 | — |
 
+### 端点细分
+
+「当前可用」一律端点相对：**不存在**路径级「当前可用」聚合分。各门兑现集合的并集不对应任何一扇真实存在的门，给不存在的东西记分正是矩阵要防的过度承诺。
+
+| 入站 | 出站 | 端点 | 已投放 | 当前可用 |
+|---|---|---|---|---:|
+| dashscope.native | dashscope.native | /api/v1/services/aigc/text-generation/generation | text_generation, streaming, tool_calling, reasoning, web_search | 0.278（18 项中 5 项已投放） |
+| openai.chat | openai.compat | /v1/chat/completions | text_generation, streaming, tool_calling, parallel_tool_calls, structured_output, reasoning, vision_input, audio_input, file_input, audio_output, web_search | 1.000 |
+| openai.responses | openai.compat | /v1/responses | text_generation, streaming, tool_calling, parallel_tool_calls, structured_output, reasoning, vision_input, audio_input, file_input, audio_output, image_generation, stateful_conversation, web_search, computer_use | 0.929（开启 convstore 后 1.000） |
+
 ## `dashscope.inference` → `dashscope.ws.inference`
 
 **同源快通道。** 该路径可字节级透传，只改写鉴权，不进 Canonical。

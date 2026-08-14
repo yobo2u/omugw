@@ -169,7 +169,45 @@ func (m *Matrix) writePreservation(b *strings.Builder) {
 				p.DesignScore(), available)
 		}
 	}
+	m.writeEndpointBreakdown(b)
 	b.WriteString("\n")
+}
+
+// writeEndpointBreakdown 输出端点细分：可用列永远端点相对。
+//
+// 不存在路径级「当前可用」聚合分——各门兑现集合的并集不对应任何一扇真实
+// 存在的门，给不存在的东西记分正是矩阵要防的过度承诺。多门路径的主表可用列
+// 只写「见端点细分」，这个小节就是那句话的落点：缺了它，主表会指向一处
+// 根本不存在的小节。
+func (m *Matrix) writeEndpointBreakdown(b *strings.Builder) {
+	// 行按 Routes()（已排序）与 Endpoints()（字典序）逐层展开，
+	// 两者都不依赖 map 遍历顺序——否则文档每次生成都不一样，
+	// 同步断言会时绿时红，最后被当成 flaky 关掉。
+	var body strings.Builder
+	for _, r := range m.Routes() {
+		for _, ep := range r.Endpoints() {
+			caps := make([]string, 0, len(canonical.AllCapabilities()))
+			for _, c := range r.RedeemedAt(ep) {
+				caps = append(caps, string(c))
+			}
+			fmt.Fprintf(&body, "| %s | %s | %s | %s | %s |\n",
+				r.In, r.Out, ep, strings.Join(caps, ", "),
+				formatAvailable(r.Preservation(m.avail, ep)))
+		}
+	}
+	// 一门未开时不印表头：一张只有表头的空表会让人以为渲染坏了，
+	// 而真相是「还没有任何东西投放」。
+	if body.Len() == 0 {
+		return
+	}
+
+	b.WriteString("\n### 端点细分\n\n")
+	b.WriteString("「当前可用」一律端点相对：**不存在**路径级「当前可用」聚合分。" +
+		"各门兑现集合的并集不对应任何一扇真实存在的门，" +
+		"给不存在的东西记分正是矩阵要防的过度承诺。\n\n")
+	b.WriteString("| 入站 | 出站 | 端点 | 已投放 | 当前可用 |\n")
+	b.WriteString("|---|---|---|---|---:|\n")
+	b.WriteString(body.String())
 }
 
 // formatAvailable 渲染「当前可用」列：分数本身，外加把前提写进数字本身的括号。
