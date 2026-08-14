@@ -94,20 +94,20 @@ func TestDashScopeNativeRouteConformance(t *testing.T) {
 	for _, f := range testkit.LoadDir(t, dashScopeNativeRouteFixtures) {
 		t.Run(caseName(f.Name), func(t *testing.T) {
 			var (
-				gotMethod string
-				gotPath   string
-				gotHeader http.Header
-				gotBody   []byte
+				gotMethod  string
+				gotPath    string
+				gotHeader  http.Header
+				gotBody    []byte
+				gotBodyErr error
 			)
+			// 读 body 的错误只记录、不在这里终止：这个闭包跑在 httptest 服务器的
+			// goroutine 上，t.Fatal 在非测试 goroutine 里只会结束该 goroutine，
+			// 测试自己会带着半截数据继续跑下去。留到 ServeHTTP 之后在主 goroutine 判。
 			up := newUpstream(t, func(w http.ResponseWriter, r *http.Request) {
 				gotMethod = r.Method
 				gotPath = r.URL.Path
 				gotHeader = r.Header.Clone()
-				var err error
-				gotBody, err = io.ReadAll(r.Body)
-				if err != nil {
-					t.Fatal(err)
-				}
+				gotBody, gotBodyErr = io.ReadAll(r.Body)
 				writeFixtureResponse(t, w, f)
 			})
 			hs := newDashScopeNativeHarness(t, true, up)
@@ -150,6 +150,10 @@ func TestDashScopeNativeRouteConformance(t *testing.T) {
 
 			rec := httptest.NewRecorder()
 			hs.h.ServeHTTP(rec, req)
+
+			if gotBodyErr != nil {
+				t.Fatalf("读取上游收到的 body 失败: %v", gotBodyErr)
+			}
 
 			if gotMethod != method {
 				t.Errorf("上游收到 method %q，期望 %q", gotMethod, method)
@@ -297,7 +301,10 @@ func writeFixtureResponse(t *testing.T, w http.ResponseWriter, f testkit.Fixture
 	for _, n := range frames {
 		var buf strings.Builder
 		if err := testkit.WriteSSE(&buf, events[i:i+n]); err != nil {
-			t.Fatal(err)
+			// 这个函数跑在回放服务器的 goroutine 上，t.Fatal 在那里只会结束
+			// 该 goroutine，测试自己不会停。用 Errorf 记账并收工。
+			t.Errorf("写出 SSE 帧失败: %v", err)
+			return
 		}
 		i += n
 		_, _ = w.Write([]byte(buf.String()))
