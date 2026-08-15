@@ -1,6 +1,7 @@
 package degrade
 
 import (
+	"strings"
 	"sync"
 	"testing"
 
@@ -151,5 +152,97 @@ func BenchmarkImplemented(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		_ = r.Implemented()
+	}
+}
+
+// TestRouteIsImmutableAfterBuild 验证 Build 之后，所有的写方法都变成空操作。
+func TestRouteIsImmutableAfterBuild(t *testing.T) {
+	r, err := NewRoute(ProtoDashScopeNative, ProviderDashScopeNative).
+		Pass(ExpressibleSet(ProtoDashScopeNative)...).
+		Redeem(EndpointDashScopeTextGeneration, canonical.CapTextGeneration).
+		Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 尝试修改
+	r.MarkHomogeneous()
+	if r.Homogeneous {
+		t.Error("Build 之后 MarkHomogeneous 不应生效")
+	}
+
+	r.Pass(canonical.CapStreaming)
+	if rule, ok := r.rules[canonical.CapStreaming]; !ok || rule.Disposition != Passthrough {
+		t.Errorf("Build 之后 Pass 不应生效，实际 disposition: %v", rule.Disposition)
+	}
+
+	r.Degrade("test", canonical.CapStreaming)
+	if rule, ok := r.rules[canonical.CapStreaming]; !ok || rule.Disposition != Passthrough {
+		t.Errorf("Build 之后 Degrade 不应生效，实际 disposition: %v", rule.Disposition)
+	}
+
+	r.Reject("test", canonical.CapStreaming)
+	if rule, ok := r.rules[canonical.CapStreaming]; !ok || rule.Disposition != Passthrough {
+		t.Errorf("Build 之后 Reject 不应生效，实际 disposition: %v", rule.Disposition)
+	}
+
+	r.Emulate("feature", "test", canonical.CapStreaming)
+	if rule, ok := r.rules[canonical.CapStreaming]; !ok || rule.Disposition != Passthrough {
+		t.Errorf("Build 之后 Emulate 不应生效，实际 disposition: %v", rule.Disposition)
+	}
+
+	r.Override(canonical.CapTextGeneration, Reject, "test")
+	if rule, ok := r.rules[canonical.CapTextGeneration]; !ok || rule.Disposition != Passthrough {
+		t.Errorf("Build 之后 Override 不应生效，实际 disposition: %v", rule.Disposition)
+	}
+}
+
+// TestMutatorsAfterBuildIsRaceFree 验证 Build 之后并发调用写方法不会引发数据竞争。
+func TestMutatorsAfterBuildIsRaceFree(t *testing.T) {
+	m, err := Phase1()
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := mustRoute(t, m, ProtoDashScopeNative, ProviderDashScopeNative)
+	in := Inbound{Protocol: ProtoDashScopeNative, Endpoint: EndpointDashScopeTextGeneration}
+
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			r.MarkHomogeneous()
+			r.Pass(canonical.CapVisionInput)
+			r.Degrade("test", canonical.CapVisionInput)
+			r.Reject("test", canonical.CapVisionInput)
+			r.Emulate("feature", "test", canonical.CapVisionInput)
+			r.Override(canonical.CapTextGeneration, Reject, "test")
+		}()
+		go func() {
+			defer wg.Done()
+			_, _ = m.Check(in, ProviderDashScopeNative,
+				[]canonical.Capability{canonical.CapTextGeneration})
+			_ = r.Endpoints()
+			_ = r.Implemented()
+		}()
+	}
+	wg.Wait()
+}
+
+// TestBuildRejectsUnknownDisposition 验证 Build 会拒绝未知的 Disposition。
+func TestBuildRejectsUnknownDisposition(t *testing.T) {
+	r := NewRoute(ProtoDashScopeNative, ProviderDashScopeNative).
+		Pass(ExpressibleSet(ProtoDashScopeNative)...)
+
+	// 强行注入一个未知的 Disposition
+	r.Override(canonical.CapTextGeneration, Disposition("UNKNOWN"), "test")
+
+	_, err := r.Build()
+	if err == nil {
+		t.Fatal("Build 应该拒绝未知的 Disposition，但它放行了")
+	}
+
+	if !strings.Contains(err.Error(), "unknown disposition") || !strings.Contains(err.Error(), "UNKNOWN") {
+		t.Errorf("错误信息应该包含 unknown disposition 和 UNKNOWN，实际: %v", err)
 	}
 }

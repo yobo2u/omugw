@@ -145,11 +145,17 @@ func NewRoute(in Protocol, out Provider) *Route {
 
 // Homogeneous 把这条路径标记为同源快通道。
 func (r *Route) MarkHomogeneous() *Route {
+	if r.built {
+		return r
+	}
 	r.Homogeneous = true
 	return r
 }
 
 func (r *Route) set(c canonical.Capability, rule Rule) {
+	if r.built {
+		return
+	}
 	if _, dup := r.rules[c]; dup {
 		r.errs = append(r.errs, fmt.Sprintf("capability %q declared twice", c))
 		return
@@ -302,6 +308,9 @@ func (r *Route) Derive(in Protocol, out Provider) *Route {
 // 只能覆盖已存在的声明——对一个从未声明过的能力谈「覆盖」没有意义，
 // 那种情况说明基准路径选错了。
 func (r *Route) Override(c canonical.Capability, d Disposition, note string) *Route {
+	if r.built {
+		return r
+	}
 	if _, ok := r.rules[c]; !ok {
 		r.errs = append(r.errs,
 			fmt.Sprintf("capability %q was never declared, nothing to override", c))
@@ -392,6 +401,12 @@ func (r *Route) Build() (*Route, error) {
 	}
 
 	for c, rule := range r.rules {
+		switch rule.Disposition {
+		case Passthrough, Degrade, Reject, Emulate, NotApplicable:
+			// valid
+		default:
+			r.errs = append(r.errs, fmt.Sprintf("capability %q has unknown disposition %q", c, rule.Disposition))
+		}
 		if rule.Disposition != Passthrough && rule.Note == "" {
 			r.errs = append(r.errs, fmt.Sprintf("capability %q is %s but carries no note", c, rule.Disposition))
 		}
