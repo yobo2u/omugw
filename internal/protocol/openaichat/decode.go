@@ -18,6 +18,12 @@ type Decoded struct {
 
 	// InlineBytes 是本次请求内联（base64）多模态负载的总字节数。
 	InlineBytes int64
+
+	// webSearch 与 parallelToolCalls 是 OpenAI 特有开关，Canonical 没有对应字段。
+	// 能力识别必须由解码器完成：异构出站路径读不得 Extensions——
+	// 那是同源快通道专属的原样回填通道。
+	webSearch         bool
+	parallelToolCalls bool
 }
 
 // Decode 把 Chat Completions 请求线格式解成 Canonical。
@@ -83,10 +89,23 @@ func Decode(body []byte) (*Decoded, error) {
 	}
 
 	// parallel_tool_calls 无 Canonical 对应字段——它是 OpenAI 特有的开关。
-	// 存进 Extensions 供同源快通道原样回填；异构路径由降级矩阵处置。
+	// 存进 Extensions 供同源快通道原样回填；能力识别则不依赖它——
+	// 异构出站读不得 Extensions，由解码器直接报告。
 	if w.ParallelToolCalls != nil {
 		raw, _ := json.Marshal(map[string]bool{"parallel_tool_calls": *w.ParallelToolCalls})
 		r.Extensions.Set(canonical.ExtOpenAI, raw)
+		// 只有显式 true 才报告：缺省与显式 false 都不构成并行调用请求。
+		out.parallelToolCalls = *w.ParallelToolCalls
+	}
+
+	// web_search_options：出现且非 null（哪怕是 {}）即开启搜索，缺省或 null 为关闭。
+	// 严格解码先行：这个对象在出站前被整体删除，未建模的子字段必须 400，
+	// 既不许静默吞掉，也不许默认开启搜索。
+	if len(w.WebSearchOptions) > 0 && string(w.WebSearchOptions) != "null" {
+		if _, err := decodeWebSearchOptions(w.WebSearchOptions); err != nil {
+			return nil, err
+		}
+		out.webSearch = true
 	}
 
 	if err := r.Validate(); err != nil {
@@ -98,9 +117,32 @@ func Decode(body []byte) (*Decoded, error) {
 
 // Capabilities 报告这次请求用到了哪些能力，供降级矩阵裁决。
 //
-// Chat 无状态，没有 Responses 那样的会话读写端，直接复用 Canonical 的推导。
+// Chat 无状态，没有 Responses 那样的会话读写端，直接复用 Canonical 的推导，
+// 再补上两项 OpenAI 特有开关：它们没有 Canonical 字段，异构出站又读不得
+// Extensions，能力识别只能在解码阶段完成。结果统一按 AllCapabilities 的顺序
+// 输出——golden 文件依赖这一点稳定。
 func (d *Decoded) Capabilities() []canonical.Capability {
-	return d.Request.UsedCapabilities()
+	caps := d.Request.UsedCapabilities()
+	if !d.webSearch && !d.parallelToolCalls {
+		return caps
+	}
+	seen := make(map[canonical.Capability]bool, len(caps)+2)
+	for _, c := range caps {
+		seen[c] = true
+	}
+	if d.webSearch {
+		seen[canonical.CapWebSearch] = true
+	}
+	if d.parallelToolCalls {
+		seen[canonical.CapParallelToolCalls] = true
+	}
+	out := make([]canonical.Capability, 0, len(seen))
+	for _, c := range canonical.AllCapabilities() {
+		if seen[c] {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 // maxOutputTokens 在新旧两个字段里取非空者；两者都设时以新名为准。
@@ -435,6 +477,40 @@ func decodeReasoning(effort *string) (*canonical.Reasoning, error) {
 		return nil, canonical.Newf(canonical.ClassBadRequest,
 			"不支持的 reasoning_effort %q", *effort)
 	}
+}
+
+// decodeWebSearchOptions 严格解码搜索选项。
+//
+// 另起一个 DisallowUnknownFields 的解码器：外层的严格模式只管顶层字段，
+// RawMessage 子树绕过了它——而这个对象在出站前会被整体删除，
+// 未知子字段必须在入站就拒掉，不能等它悄悄消失。
+func decodeWebSearchOptions(raw json.RawMessage) (*WebSearchOptions, error) {
+	var wso WebSearchOptions
+	dec := json.NewDecoder(strings.NewReader(string(raw)))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&wso); err != nil {
+		return nil, canonical.Wrapf(err, canonical.ClassBadRequest,
+			"web_search_options 无法解析")
+	}
+	if wso.SearchContextSize != "" {
+		switch wso.SearchContextSize {
+		case "low", "medium", "high":
+		default:
+			return nil, canonical.Newf(canonical.ClassBadRequest,
+				"不支持的 search_context_size %q", wso.SearchContextSize)
+		}
+	}
+	if loc := wso.UserLocation; loc != nil {
+		if loc.Type != "approximate" {
+			return nil, canonical.Newf(canonical.ClassBadRequest,
+				"不支持的 user_location.type %q", loc.Type)
+		}
+		if loc.Approximate == nil {
+			return nil, canonical.Newf(canonical.ClassBadRequest,
+				"user_location 缺少 approximate")
+		}
+	}
+	return &wso, nil
 }
 
 // decodeModalities 解码输出模态列表。

@@ -47,6 +47,11 @@ type Request struct {
 	Metadata      map[string]string `json:"metadata,omitempty"`
 	Store         *bool             `json:"store,omitempty"`
 	ServiceTier   string            `json:"service_tier,omitempty"`
+
+	// 内建搜索选项。出现且非 null（哪怕是 {}）即报告 CapWebSearch；
+	// 子字段在 Decode 里严格校验——它在异构出站前被整体删除，
+	// 未建模的子字段必须 400，不能静默丢。
+	WebSearchOptions json.RawMessage `json:"web_search_options,omitempty"`
 }
 
 // Message 是一条对话消息。Content 形态不一：字符串、内容块数组、或 null
@@ -126,4 +131,29 @@ type JSONSchema struct {
 	Name   string          `json:"name"`
 	Schema json.RawMessage `json:"schema"`
 	Strict *bool           `json:"strict,omitempty"`
+}
+
+// WebSearchOptions 是 Chat 的搜索选项。
+//
+// DashScope Compatible 承载它的只有布尔开关 enable_search，但这里仍要解码出
+// 完整结构：该对象在出站前被整体删除，任何未建模的子字段都会随之消失——
+// 宁可 400 拒绝，也不静默吞掉。
+type WebSearchOptions struct {
+	SearchContextSize string        `json:"search_context_size,omitempty"`
+	UserLocation      *UserLocation `json:"user_location,omitempty"`
+}
+
+// UserLocation 是搜索的用户位置。OpenAI 当前只接受 approximate 类型；
+// 具体位置在 approximate 子对象里。
+type UserLocation struct {
+	Type        string               `json:"type"`
+	Approximate *ApproximateLocation `json:"approximate,omitempty"`
+}
+
+// ApproximateLocation 是用户的大致位置。
+type ApproximateLocation struct {
+	Country  string `json:"country,omitempty"`
+	City     string `json:"city,omitempty"`
+	Region   string `json:"region,omitempty"`
+	Timezone string `json:"timezone,omitempty"`
 }
