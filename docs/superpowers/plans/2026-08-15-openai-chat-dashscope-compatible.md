@@ -278,8 +278,9 @@ func TestDecodeReportsWebSearch(t *testing.T) {
 	}{
 		{"空对象即开启", `,"web_search_options":{}`, true},
 		{"带参数即开启", `,"web_search_options":{"search_context_size":"high",` +
-			`"user_location":{"approximate_location":{"type":"approximate",` +
-			`"country":"CN","city":"上海"}}}}`, true},
+			`"user_location":{"type":"approximate","approximate":{` +
+			`"country":"CN","city":"上海","region":"上海市",` +
+			`"timezone":"Asia/Shanghai"}}}}`, true},
 		{"缺省为关闭", ``, false},
 		{"null 为关闭", `,"web_search_options":null`, false},
 	} {
@@ -365,6 +366,9 @@ func TestDecodeRejectsMalformedWebSearchOptions(t *testing.T) {
 	for _, body := range []string{
 		`{"model":"m","messages":[{"role":"user","content":"x"}],"web_search_options":"yes"}`,
 		`{"model":"m","messages":[{"role":"user","content":"x"}],"web_search_options":[1,2]}`,
+		`{"model":"m","messages":[{"role":"user","content":"x"}],"web_search_options":{"search_context_size":"ultra"}}`,
+		`{"model":"m","messages":[{"role":"user","content":"x"}],"web_search_options":{"user_location":{"type":"exact","approximate":{"city":"上海"}}}}`,
+		`{"model":"m","messages":[{"role":"user","content":"x"}],"web_search_options":{"user_location":{"type":"approximate"}}}`,
 	} {
 		if _, err := Decode([]byte(body)); err == nil {
 			t.Errorf("形态非法的 web_search_options 应当被拒绝: %s", body)
@@ -407,17 +411,19 @@ type WebSearchOptions struct {
 	UserLocation      *UserLocation `json:"user_location,omitempty"`
 }
 
-// UserLocation 是搜索的用户位置。
+// UserLocation 是搜索的用户位置。OpenAI 当前只接受 approximate 类型；
+// 具体位置在 approximate 子对象里。
 type UserLocation struct {
-	ApproximateLocation *ApproximateLocation `json:"approximate_location,omitempty"`
+	Type        string               `json:"type"`
+	Approximate *ApproximateLocation `json:"approximate,omitempty"`
 }
 
 // ApproximateLocation 是用户的大致位置。
 type ApproximateLocation struct {
-	Type    string `json:"type,omitempty"`
-	Country string `json:"country,omitempty"`
-	City    string `json:"city,omitempty"`
-	Region  string `json:"region,omitempty"`
+	Country  string `json:"country,omitempty"`
+	City     string `json:"city,omitempty"`
+	Region   string `json:"region,omitempty"`
+	Timezone string `json:"timezone,omitempty"`
 }
 ```
 
@@ -521,6 +527,24 @@ func decodeWebSearchOptions(raw json.RawMessage) (*WebSearchOptions, error) {
 	if err := dec.Decode(&wso); err != nil {
 		return nil, canonical.Wrapf(err, canonical.ClassBadRequest,
 			"web_search_options 无法解析")
+	}
+	if wso.SearchContextSize != "" {
+		switch wso.SearchContextSize {
+		case "low", "medium", "high":
+		default:
+			return nil, canonical.Newf(canonical.ClassBadRequest,
+				"不支持的 search_context_size %q", wso.SearchContextSize)
+		}
+	}
+	if loc := wso.UserLocation; loc != nil {
+		if loc.Type != "approximate" {
+			return nil, canonical.Newf(canonical.ClassBadRequest,
+				"不支持的 user_location.type %q", loc.Type)
+		}
+		if loc.Approximate == nil {
+			return nil, canonical.Newf(canonical.ClassBadRequest,
+				"user_location 缺少 approximate")
+		}
 	}
 	return &wso, nil
 }
@@ -707,8 +731,8 @@ func TestSearchOptionsMappedToEnableSearch(t *testing.T) {
 
 	raw := `{"model":"m","messages":[{"role":"user","content":"新闻"}],` +
 		`"web_search_options":{"search_context_size":"high",` +
-		`"user_location":{"approximate_location":{"type":"approximate",` +
-		`"country":"CN","city":"上海"}}}}`
+		`"user_location":{"type":"approximate","approximate":{` +
+		`"country":"CN","city":"上海","timezone":"Asia/Shanghai"}}}}`
 	if _, err := call(t, srv, raw, "m", false); err != nil {
 		t.Fatal(err)
 	}
@@ -2046,7 +2070,8 @@ GIT_MASTER=1 git commit -m "Chat 到 DashScope Compatible 路径 fixture：并�
       "web_search_options": {
         "search_context_size": "high",
         "user_location": {
-          "approximate_location": { "type": "approximate", "country": "CN", "city": "上海" }
+          "type": "approximate",
+          "approximate": { "country": "CN", "city": "上海", "region": "上海市", "timezone": "Asia/Shanghai" }
         }
       },
       "n": 2,
