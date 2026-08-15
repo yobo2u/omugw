@@ -14,7 +14,8 @@
       "web_search_options": {
         "search_context_size": "high",
         "user_location": {
-          "approximate_location": { "type": "approximate", "country": "CN", "city": "上海" }
+          "type": "approximate",
+          "approximate": { "country": "CN", "city": "上海", "region": "上海市", "timezone": "Asia/Shanghai" }
         }
       },
       "n": 2,

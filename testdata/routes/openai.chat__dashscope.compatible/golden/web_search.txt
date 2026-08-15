@@ -1,0 +1,19 @@
+status: OK
+Content-Type: application/json
+X-Omugw-Degraded: web_search=DashScope Compatible 只有 enable_search 布尔开关：搜索上下文大小 search_context_size 与用户位置 user_location 在此丢失，响应也不返回搜索来源；仅开关本身被映射
+---
+{
+      "id": "chatcmpl-ds09",
+      "object": "chat.completion",
+      "created": 1755216000,
+      "model": "qwen-plus-upstream",
+      "choices": [
+        { "index": 0, "message": { "role": "assistant", "content": "今天上午的要闻：……（示例内容，DashScope Compatible 不返回搜索来源）" }, "finish_reason": "stop" },
+        { "index": 1, "message": { "role": "assistant", "content": "另一条摘要：……（n=2 的第二份）" }, "finish_reason": "stop" }
+      ],
+      "usage": {
+        "prompt_tokens": 41,
+        "completion_tokens": 58,
+        "total_tokens": 99
+      }
+    }

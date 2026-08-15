@@ -1,0 +1,17 @@
+status: OK
+Content-Type: application/json
+---
+{
+      "id": "chatcmpl-ds07",
+      "object": "chat.completion",
+      "created": 1755216000,
+      "model": "qwen-vl-upstream",
+      "choices": [
+        { "index": 0, "message": { "role": "assistant", "content": "第一张是城市天际线，第二张是纯色测试图。" }, "finish_reason": "stop" }
+      ],
+      "usage": {
+        "prompt_tokens": 128,
+        "completion_tokens": 18,
+        "total_tokens": 146
+      }
+    }
