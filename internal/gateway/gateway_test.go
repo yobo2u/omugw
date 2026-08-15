@@ -13,6 +13,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/yobo2u/omugw/internal/canonical"
 	"github.com/yobo2u/omugw/internal/config"
 	"github.com/yobo2u/omugw/internal/credential"
 	"github.com/yobo2u/omugw/internal/degrade"
@@ -64,7 +65,8 @@ func newHarness(t *testing.T, implemented bool, ups ...*upstream) *harness {
 	if !implemented {
 		kind = degrade.ProviderDashScopeCompatible
 	}
-	return newHarnessFor(t, "/v1/responses", "/v1/responses", kind, NewResponsesHandler, ups...)
+	return newHarnessFor(t, "/v1/responses", "/v1/responses", kind, NewResponsesHandler,
+		config.Default().Limits, ups...)
 }
 
 // newChatHarness 是 Chat Completions 入站的 harness。
@@ -79,7 +81,8 @@ func newChatHarness(t *testing.T, implemented bool, ups ...*upstream) *harness {
 	if !implemented {
 		kind = degrade.ProviderDashScopeCompatible
 	}
-	return newHarnessFor(t, "/v1/chat/completions", "/v1/responses", kind, NewChatHandler, ups...)
+	return newHarnessFor(t, "/v1/chat/completions", "/v1/responses", kind, NewChatHandler,
+		config.Default().Limits, ups...)
 }
 
 // newDashScopeNativeHarness 是 DashScope Native 入站的 harness。
@@ -93,10 +96,20 @@ func newDashScopeNativeHarness(t *testing.T, implemented bool, ups ...*upstream)
 		kind = degrade.ProviderDashScopeCompatible
 	}
 	return newHarnessFor(t, dashscopenative.TextGenerationPath, "/v1/responses",
-		kind, NewDashScopeNativeHandler, ups...)
+		kind, NewDashScopeNativeHandler, config.Default().Limits, ups...)
 }
 
-func newHarnessFor(t *testing.T, requestPath, providerDefaultPath string, kind degrade.Provider, mk func(Deps) *Handler, ups ...*upstream) *harness {
+// newDashScopeNativeHarnessWithLimits 与 newDashScopeNativeHarness 相同，
+// 但注入自定义 Limits——内联闸门先于矩阵裁决生效的性质要用一个小到会被
+// 击穿的上限来证明。不走 hs.h.deps.Limits 事后改写：那是绕过构造契约的后门，
+// 而这里要证的恰恰是「按配置构造出来的网关」在闸门顺序上的行为。
+func newDashScopeNativeHarnessWithLimits(t *testing.T, limits config.Limits, ups ...*upstream) *harness {
+	t.Helper()
+	return newHarnessFor(t, dashscopenative.TextGenerationPath, "/v1/responses",
+		degrade.ProviderDashScopeNative, NewDashScopeNativeHandler, limits, ups...)
+}
+
+func newHarnessFor(t *testing.T, requestPath, providerDefaultPath string, kind degrade.Provider, mk func(Deps) *Handler, limits config.Limits, ups ...*upstream) *harness {
 	t.Helper()
 
 	m, err := degrade.Phase1()
@@ -149,7 +162,7 @@ func newHarnessFor(t *testing.T, requestPath, providerDefaultPath string, kind d
 			Matrix:    m,
 			Router:    rt,
 			Auth:      NewAuthenticator([]config.AuthKey{{ID: "tester", Key: testKey}}),
-			Limits:    config.Default().Limits,
+			Limits:    limits,
 			Metrics:   metrics,
 			Log:       slog.New(slog.NewTextHandler(io.Discard, nil)),
 			Pools:     pools,
@@ -166,6 +179,21 @@ func (hs *harness) do(t *testing.T, body string, withAuth bool) *httptest.Respon
 	if withAuth {
 		req.Header.Set("Authorization", "Bearer "+testKey)
 	}
+	rec := httptest.NewRecorder()
+	hs.h.ServeHTTP(rec, req)
+	return rec
+}
+
+// doPath 按指定端点路径直接打 Handler。
+//
+// 走 Handler 而不是 Build 出来的 Mux 是刻意的：Mux 的 /api/v1/ 兜底会把任何
+// 未注册端点一律答成 501，那条 501 出自路由表，与矩阵裁决无关。要证的是矩阵
+// 按 (端点, 能力) 作答，就必须绕开兜底，让请求真的走完 serve 的闸门。
+func doPath(t *testing.T, hs *harness, path, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+testKey)
+	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	hs.h.ServeHTTP(rec, req)
 	return rec
@@ -574,5 +602,99 @@ func TestDashScopeNativeStreamAbortFlatEnvelope(t *testing.T) {
 	}
 	if _, ok := errObj["error"]; ok {
 		t.Errorf("error data 不应包含嵌套 error 字段: %s", errorData)
+	}
+}
+
+// TestTextDoorRejectsVisionInput 固化「设计处置不等于投放承诺」。
+//
+// vision_input 在 dashscope.native 同源直通上的设计处置是 PASSTHROUGH，
+// 但文本门没有它的 fixture 证据，就不该兑现。501 说「等实现」，
+// 而请求必须在矩阵这一关就被挡住，一个字节都不出门。
+func TestTextDoorRejectsVisionInput(t *testing.T) {
+	up := newUpstream(t, func(http.ResponseWriter, *http.Request) {})
+	hs := newDashScopeNativeHarness(t, true, up)
+
+	rec := doPath(t, hs, dashscopenative.TextGenerationPath,
+		`{"model":"m","input":{"messages":[{"role":"user","content":[{"text":"图里有什么？"},{"image":"https://example.com/x.png"}]}]}}`)
+
+	if rec.Code != http.StatusNotImplemented {
+		t.Fatalf("状态码 = %d，期望 501（vision_input 未投放到文本门）: %s", rec.Code, rec.Body.String())
+	}
+	if n := up.calls.Load(); n != 0 {
+		t.Errorf("请求打到了上游 %d 次——应当被矩阵拦下，没有出门", n)
+	}
+	if !strings.Contains(rec.Body.String(), string(canonical.CapVisionInput)) {
+		t.Errorf("错误应点名能力: %s", rec.Body.String())
+	}
+}
+
+// TestMultimodalDoorRejectsFileInput 固化多模态门不承接 file_input。
+//
+// 官方内容块词表是 text / image / audio / video，没有通用 file 块；
+// 两扇门都不兑现它，运行时必须 501 而不是把请求丢给上游试运气。
+func TestMultimodalDoorRejectsFileInput(t *testing.T) {
+	up := newUpstream(t, func(http.ResponseWriter, *http.Request) {})
+	hs := newDashScopeNativeHarness(t, true, up)
+
+	rec := doPath(t, hs, dashscopenative.MultimodalGenerationPath,
+		`{"model":"m","input":{"messages":[{"role":"user","content":[{"text":"处理这个文件"},{"file":"https://example.com/a.pdf"}]}]}}`)
+
+	if rec.Code != http.StatusNotImplemented {
+		t.Fatalf("状态码 = %d，期望 501（file_input 两扇门都不兑现）: %s", rec.Code, rec.Body.String())
+	}
+	if n := up.calls.Load(); n != 0 {
+		t.Errorf("请求打到了上游 %d 次——应当被矩阵拦下，没有出门", n)
+	}
+	if !strings.Contains(rec.Body.String(), string(canonical.CapFileInput)) {
+		t.Errorf("错误应点名能力: %s", rec.Body.String())
+	}
+}
+
+// TestMultimodalDoorRejectsReasoning 是「无证据不兑现」纪律的活体证明。
+//
+// enable_thinking 在文本门有 fixture 证据、已兑现；多模态门没有，
+// 哪怕上游模型多半也支持，矩阵照样拦下——投放跟着证据走，不跟着猜测走。
+func TestMultimodalDoorRejectsReasoning(t *testing.T) {
+	up := newUpstream(t, func(http.ResponseWriter, *http.Request) {})
+	hs := newDashScopeNativeHarness(t, true, up)
+
+	rec := doPath(t, hs, dashscopenative.MultimodalGenerationPath,
+		`{"model":"m","input":{"messages":[{"role":"user","content":[{"text":"想一想再回答"}]}]},"parameters":{"enable_thinking":true}}`)
+
+	if rec.Code != http.StatusNotImplemented {
+		t.Fatalf("状态码 = %d，期望 501（reasoning 未投放到多模态门）: %s", rec.Code, rec.Body.String())
+	}
+	if n := up.calls.Load(); n != 0 {
+		t.Errorf("请求打到了上游 %d 次——应当被矩阵拦下，没有出门", n)
+	}
+	if !strings.Contains(rec.Body.String(), string(canonical.CapReasoning)) {
+		t.Errorf("错误应点名能力: %s", rec.Body.String())
+	}
+}
+
+// TestInlineLimitBeatsMatrixOnMultimodalDoor 固化内联闸门先于矩阵裁决。
+//
+// 顺序反过来的话，一个塞满 base64 视频的请求要先跑完整套矩阵裁决才被拒，
+// 内存早就吃进去了（原则 2.6）。400 说「改请求」，与 501 的「等实现」
+// 是两件事，不能互相顶替。
+func TestInlineLimitBeatsMatrixOnMultimodalDoor(t *testing.T) {
+	up := newUpstream(t, func(http.ResponseWriter, *http.Request) {})
+	limits := config.Default().Limits
+	limits.MaxInlineBytes = 64
+	hs := newDashScopeNativeHarnessWithLimits(t, limits, up)
+
+	// 128 个 'A' 是合法 base64，解码后 96 字节，越过 64 字节上限。
+	inline := strings.Repeat("A", 128)
+	rec := doPath(t, hs, dashscopenative.MultimodalGenerationPath,
+		`{"model":"m","input":{"messages":[{"role":"user","content":[{"text":"x"},{"image":"data:image/png;base64,`+inline+`"}]}]}}`)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("状态码 = %d，期望 400（内联负载超限）: %s", rec.Code, rec.Body.String())
+	}
+	if n := up.calls.Load(); n != 0 {
+		t.Errorf("请求打到了上游 %d 次——内联闸门应先于矩阵拦下请求", n)
+	}
+	if !strings.Contains(rec.Body.String(), "内联") {
+		t.Errorf("错误应说明是内联负载超限: %s", rec.Body.String())
 	}
 }

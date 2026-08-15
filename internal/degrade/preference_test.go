@@ -159,28 +159,34 @@ func TestGatedEmulationSplitsTheTwoColumns(t *testing.T) {
 // TestAvailableScoreCountsOnlyRedeemed 防的是「设计满分被当成可用满分」。
 //
 // DashScope Native 的设计目标仍是 1.000——那条路最终该是零损失的同源直通，
-// 这个结论不因为投放进度而改变。但此刻只投放了 18 项里的 5 项，若可用分数也
-// 报 1.000，选路就会拿一个远超实际的分数去和别的路径比，把请求送进 501。
+// 这个结论不因为投放进度而改变。但两扇门此刻各投放了 18 项里的 5 项，
+// 若可用分数也报 1.000，选路就会拿一个远超实际的分数去和别的路径比，
+// 把请求送进 501。逐门断言而不是取一门代表：并集口径就是在「只看一门」时溜进来的。
 func TestAvailableScoreCountsOnlyRedeemed(t *testing.T) {
 	m, err := Phase1()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	p := mustRoute(t, m, ProtoDashScopeNative, ProviderDashScopeNative).
-		Preservation(m.Availability(), EndpointDashScopeTextGeneration)
+	r := mustRoute(t, m, ProtoDashScopeNative, ProviderDashScopeNative)
 
-	if got := p.DesignScore(); got != 1.0 {
+	// 设计列是路径级的，与敲哪扇门无关；这里只取设计列。
+	if got := r.Preservation(m.Availability(), Endpoint("")).DesignScore(); got != 1.0 {
 		t.Errorf("设计目标应保持 1.000（同源直通零损失），实际 %.3f", got)
 	}
-	if want := len(ExpressibleSet(ProtoDashScopeNative)) - 5; p.NotRedeemed != want {
-		t.Errorf("未投放格子数 = %d，期望 %d", p.NotRedeemed, want)
-	}
-	if want := 5.0 / 18.0; p.AvailableScore() != want {
-		t.Errorf("当前可用应为 %.3f（18 项中 5 项已投放），实际 %.3f", want, p.AvailableScore())
-	}
-	if !p.Gated() {
-		t.Error("存在未投放的格子时两列分数应当不同")
+
+	for _, ep := range []Endpoint{EndpointDashScopeTextGeneration, EndpointDashScopeMultimodal} {
+		p := r.Preservation(m.Availability(), ep)
+		if want := len(ExpressibleSet(ProtoDashScopeNative)) - 5; p.NotRedeemed != want {
+			t.Errorf("门 %s 未投放格子数 = %d，期望 %d", ep, p.NotRedeemed, want)
+		}
+		if want := 5.0 / 18.0; p.AvailableScore() != want {
+			t.Errorf("门 %s 当前可用应为 %.3f（18 项中 5 项已投放），实际 %.3f",
+				ep, want, p.AvailableScore())
+		}
+		if !p.Gated() {
+			t.Errorf("门 %s 存在未投放的格子时两列分数应当不同", ep)
+		}
 	}
 }
 

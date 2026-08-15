@@ -1,0 +1,49 @@
+{
+  "name": "dashscope.native__dashscope.native/multimodal-video-frames",
+  "note": "video 为帧数组：三帧 data URI 数组，证明 video 帧数组逐帧内联累加与 video_input。内联字节按帧累计，内联上限绕不过去。",
+  "request": {
+    "method": "POST",
+    "path": "/api/v1/services/aigc/multimodal-generation/generation",
+    "headers": {
+      "authorization": "<redacted>",
+      "content-type": "application/json"
+    },
+    "body": {
+      "model": "logical-omni",
+      "input": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              { "text": "概括视频内容" },
+              {
+                "video": [
+                  "data:video/mp4;base64,AAAAB3NzaC1lZHR1c2gtZnJhbWUtMQ==",
+                  "data:video/mp4;base64,BBBBAAAAB3NzaC1lZHR1c2gtZnJhbWUtMg==",
+                  "data:video/mp4;base64,CCCCAAAAB3NzaC1lZHR1c2gtZnJhbWUtMw=="
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "parameters": { "result_format": "message" }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": { "content-type": "application/json" },
+    "body": {
+      "output": {
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "message": { "role": "assistant", "content": [{ "text": "视频共三帧：圆形、方形、三角形。" }] }
+          }
+        ]
+      },
+      "usage": { "input_tokens": 66, "output_tokens": 14, "total_tokens": 80 },
+      "request_id": "c4d5e6f7-0a1b-4c2d-9e8f-1a2b3c4d5e6f"
+    }
+  }
+}

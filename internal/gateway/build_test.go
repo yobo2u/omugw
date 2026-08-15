@@ -74,12 +74,15 @@ func TestBuiltMux_DashScopeNativeFallback_WithUpstream(t *testing.T) {
 		expectUpstream bool
 	}{
 		{
-			name:           "未投放的多模态端点返回 501",
+			// 本用例的请求体是纯文本消息，能力集只有 text_generation——
+			// 多模态门已兑现它，请求应当被精确路由接住并打到上游，
+			// 而不是被命名空间兜底改写成 501。
+			name:           "已投放的多模态端点由精确路由处理，打到上游",
 			method:         "POST",
-			path:           "/api/v1/services/aigc/multimodal-generation/generation",
-			expectedStatus: http.StatusNotImplemented,
-			expectedCode:   "Unsupported",
-			expectedMsg:    "DashScope Native 端点 /api/v1/services/aigc/multimodal-generation/generation 尚未实现",
+			path:           dashscopenative.MultimodalGenerationPath,
+			expectedStatus: http.StatusOK,
+			expectedCode:   "",
+			expectUpstream: true,
 		},
 		{
 			name:           "未投放的 embedding 端点返回 501",
@@ -205,8 +208,10 @@ func TestBuiltMux_DashScopeNativeFallback_WithUpstream(t *testing.T) {
 			}
 		}
 	}
-	if notImplementedCount != 3 {
-		t.Errorf("期望 3 次未实现指标，实际 %v", notImplementedCount)
+	// 只剩 embedding 与 rerank 两个用例走兜底：多模态门投放后不再计入，
+	// 这个数字下降本身就是「门真的开了」的旁证。
+	if notImplementedCount != 2 {
+		t.Errorf("期望 2 次未实现指标，实际 %v", notImplementedCount)
 	}
 
 }

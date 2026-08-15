@@ -1,0 +1,12 @@
+status: OK
+Content-Type: text/event-stream
+---
+event: result
+data: {"output":{"choices":[{"message":{"role":"assistant","content":[{"text":"图中"}]},"finish_reason":"null"}]},"usage":{"input_tokens":40,"output_tokens":2,"total_tokens":42},"request_id":"9b7d5c31-2a4f-4e8d-b1c2-5d6e7f8091a2"}
+
+event: result
+data: {"output":{"choices":[{"message":{"role":"assistant","content":[{"text":"是一个"}]},"finish_reason":"null"}]},"usage":{"input_tokens":40,"output_tokens":4,"total_tokens":44},"request_id":"9b7d5c31-2a4f-4e8d-b1c2-5d6e7f8091a2"}
+
+event: result
+data: {"output":{"choices":[{"message":{"role":"assistant","content":[{"text":"红点。"}]},"finish_reason":"stop"}]},"usage":{"input_tokens":40,"output_tokens":6,"total_tokens":46},"request_id":"9b7d5c31-2a4f-4e8d-b1c2-5d6e7f8091a2"}
+

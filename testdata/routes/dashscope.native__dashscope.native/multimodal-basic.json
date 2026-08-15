@@ -1,0 +1,47 @@
+{
+  "name": "dashscope.native__dashscope.native/multimodal-basic",
+  "note": "多模态门同步最小闭环：text + image（URL）+ audio（内联 data URI）+ video（URL 字符串）四种单键纯键式内容块，证明三种媒体能力、URL 与内联两种承载、纯键式解码分支。request 是**客户端发给网关**的内容，response 是被打桩的上游返回。",
+  "request": {
+    "method": "POST",
+    "path": "/api/v1/services/aigc/multimodal-generation/generation",
+    "headers": {
+      "authorization": "<redacted>",
+      "content-type": "application/json"
+    },
+    "body": {
+      "model": "logical-omni",
+      "input": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              { "text": "图里有什么？音频说了什么？视频讲了什么？" },
+              { "image": "https://example.com/cat.png" },
+              { "audio": "data:audio/wav;base64,UklGRgAAQABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=" },
+              { "video": "https://example.com/clip.mp4" }
+            ]
+          }
+        ]
+      },
+      "parameters": { "result_format": "message" }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "output": {
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "message": { "role": "assistant", "content": [{ "text": "图中是一只猫；音频说的是你好；视频是一段街景。" }] }
+          }
+        ]
+      },
+      "usage": { "input_tokens": 52, "output_tokens": 19, "total_tokens": 71 },
+      "request_id": "3f2c1a90-8f4d-4b6a-9d2e-6a7b8c9d0e1f"
+    }
+  }
+}

@@ -156,7 +156,7 @@ func TestImplementedRoutesAreExplicit(t *testing.T) {
 // 等于宣称一个还没写的实现可用。
 func TestRedeemedCapabilitiesAreExplicit(t *testing.T) {
 	// OpenAI 两条同源直通各一扇门，字节级转发，可表达的全部兑现；
-	// Native 本期只投放了文本生成那扇门。
+	// Native 投放了文本生成与多模态生成两扇门，各 5 项，两份名单彼此独立。
 	want := map[string][]canonical.Capability{
 		string(ProtoOpenAIResponses) + " -> " + string(ProviderOpenAICompat) +
 			" @ " + string(EndpointOpenAIResponses): ExpressibleSet(ProtoOpenAIResponses),
@@ -169,6 +169,14 @@ func TestRedeemedCapabilitiesAreExplicit(t *testing.T) {
 			canonical.CapToolCalling,
 			canonical.CapReasoning,
 			canonical.CapWebSearch,
+		},
+		string(ProtoDashScopeNative) + " -> " + string(ProviderDashScopeNative) +
+			" @ " + string(EndpointDashScopeMultimodal): {
+			canonical.CapTextGeneration,
+			canonical.CapStreaming,
+			canonical.CapVisionInput,
+			canonical.CapAudioInput,
+			canonical.CapVideoInput,
 		},
 	}
 
@@ -313,6 +321,15 @@ func TestUnredeemedCapabilityIsRejectedAtRuntime(t *testing.T) {
 			[]canonical.Capability{c}); err != nil {
 			t.Errorf("已投放的能力 %q 不该被拦下: %v", c, err)
 		}
+	}
+
+	// 同一项能力换一扇门就该放行：闸门挡的是「这扇门没投放」，
+	// 不是「这条路径不支持」。两者混为一谈，多模态门开了也走不通。
+	if _, err := m.Check(
+		Inbound{Protocol: ProtoDashScopeNative, Endpoint: EndpointDashScopeMultimodal},
+		ProviderDashScopeNative,
+		[]canonical.Capability{canonical.CapTextGeneration, canonical.CapVisionInput}); err != nil {
+		t.Errorf("vision_input 在多模态门已投放，不该被拦下: %v", err)
 	}
 }
 

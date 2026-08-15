@@ -167,13 +167,17 @@ func Phase1() (*Matrix, error) {
 	// 同源快通道。讲原生协议的客户端本来就不需要任何转换，让它们走兼容层是
 	// 净损失。这条路径的保留度是满分，也应该是满分。
 	//
-	// 转正的第三条路径。DashScope Native 一个协议对应多个上游端点，本期只投放
-	// 了文本生成那一个（/api/v1/services/aigc/text-generation/generation）。
+	// 转正的第三条路径。DashScope Native 一个协议对应多个上游端点，当前投放了
+	// 文本生成与多模态生成两个（/api/v1/services/aigc/{text-generation,
+	// multimodal-generation}/generation）。
 	//
 	// 因此处置与投放在这里第一次分了家：上面的 Pass 是**设计处置**——这条同源
-	// 直通路最终对每项能力都该原样转发；下面的 Redeem 是**当前投放**——只有文本
-	// 端点真的写了。multimodal、embedding、rerank 那几个端点还没动工，
+	// 直通路最终对每项能力都该原样转发；下面的 Redeem 是**当前投放**——只有这两扇
+	// 门真的写了，且各自兑现各自的能力。embedding、rerank 那几个端点还没动工，
 	// 它们的能力在运行时返回 501，而不是被当作可用。
+	//
+	// 两扇门的兑现集合互不相通，也不做并集：并集里的 8 项没有任何一扇真实存在
+	// 的门同时提供，按并集记分就是在为一个不存在的门背书。
 	// 门槛同样是端到端 fixture 通过，见
 	// testdata/routes/dashscope.native__dashscope.native/ 与 ADR-0001。
 	if err := m.Add(NewRoute(ProtoDashScopeNative, ProviderDashScopeNative).
@@ -187,6 +191,18 @@ func Phase1() (*Matrix, error) {
 			canonical.CapToolCalling,
 			canonical.CapReasoning,
 			canonical.CapWebSearch,
+		).
+		// 多模态门：本期投放恰 5 项，证据是 multimodal-basic /
+		// multimodal-streaming / multimodal-video-frames 三份 fixture。
+		// file_input 不兑现：官方内容块词表是 text / image / audio / video，
+		// 没有通用 file 块。tool_calling / reasoning / web_search 在这扇门上
+		// 没有 fixture 证据——无证据不兑现，哪怕上游模型多半也支持。
+		Redeem(EndpointDashScopeMultimodal,
+			canonical.CapTextGeneration,
+			canonical.CapStreaming,
+			canonical.CapVisionInput,
+			canonical.CapAudioInput,
+			canonical.CapVideoInput,
 		).
 		Build()); err != nil {
 		return nil, err

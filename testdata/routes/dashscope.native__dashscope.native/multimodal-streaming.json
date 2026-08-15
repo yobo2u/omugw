@@ -1,0 +1,49 @@
+{
+  "name": "dashscope.native__dashscope.native/multimodal-streaming",
+  "note": "多模态门 SSE 转发：X-DashScope-SSE: enable 声明流式，内容为 text + image（内联 data URI）的带 type 块，证明 streaming、SSE 头转发、带 type 解码分支。frames 复现上游把多帧挤进一次 Write 的节奏；用量逐帧累计，finish_reason=stop 收尾，无 [DONE] 哨兵。",
+  "request": {
+    "method": "POST",
+    "path": "/api/v1/services/aigc/multimodal-generation/generation",
+    "headers": {
+      "authorization": "<redacted>",
+      "content-type": "application/json",
+      "x-dashscope-sse": "enable"
+    },
+    "body": {
+      "model": "logical-omni",
+      "input": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              { "type": "text", "text": "描述这张图" },
+              { "type": "image", "image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABh6FO1AAAAABJRU5ErkJggg==" }
+            ]
+          }
+        ]
+      },
+      "parameters": { "result_format": "message", "incremental_output": true }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": { "content-type": "text/event-stream" },
+    "sse": {
+      "frames": [2, 1],
+      "events": [
+        {
+          "event": "result",
+          "data": "{\"output\":{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":[{\"text\":\"图中\"}]},\"finish_reason\":\"null\"}]},\"usage\":{\"input_tokens\":40,\"output_tokens\":2,\"total_tokens\":42},\"request_id\":\"9b7d5c31-2a4f-4e8d-b1c2-5d6e7f8091a2\"}"
+        },
+        {
+          "event": "result",
+          "data": "{\"output\":{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":[{\"text\":\"是一个\"}]},\"finish_reason\":\"null\"}]},\"usage\":{\"input_tokens\":40,\"output_tokens\":4,\"total_tokens\":44},\"request_id\":\"9b7d5c31-2a4f-4e8d-b1c2-5d6e7f8091a2\"}"
+        },
+        {
+          "event": "result",
+          "data": "{\"output\":{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":[{\"text\":\"红点。\"}]},\"finish_reason\":\"stop\"}]},\"usage\":{\"input_tokens\":40,\"output_tokens\":6,\"total_tokens\":46},\"request_id\":\"9b7d5c31-2a4f-4e8d-b1c2-5d6e7f8091a2\"}"
+        }
+      ]
+    }
+  }
+}

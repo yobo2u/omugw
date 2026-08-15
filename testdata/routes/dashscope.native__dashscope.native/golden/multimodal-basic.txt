@@ -1,0 +1,15 @@
+status: OK
+Content-Type: application/json
+---
+{
+      "output": {
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "message": { "role": "assistant", "content": [{ "text": "图中是一只猫；音频说的是你好；视频是一段街景。" }] }
+          }
+        ]
+      },
+      "usage": { "input_tokens": 52, "output_tokens": 19, "total_tokens": 71 },
+      "request_id": "3f2c1a90-8f4d-4b6a-9d2e-6a7b8c9d0e1f"
+    }

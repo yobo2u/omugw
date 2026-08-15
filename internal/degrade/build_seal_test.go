@@ -62,12 +62,16 @@ func TestRedeemAfterBuildIsRaceFree(t *testing.T) {
 	r := mustRoute(t, m, ProtoDashScopeNative, ProviderDashScopeNative)
 	in := Inbound{Protocol: ProtoDashScopeNative, Endpoint: EndpointDashScopeTextGeneration}
 
+	// 探针必须是一扇真的没投放的门：拿已投放的门当探针，断言会因为
+	// 「本来就开着」而恒真，封口有没有生效反而测不出来。
+	const probe = Endpoint("/api/v1/services/aigc/never-opened/generation")
+
 	var wg sync.WaitGroup
 	for range 8 {
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			r.Redeem(EndpointDashScopeMultimodal, canonical.CapVisionInput)
+			r.Redeem(probe, canonical.CapVisionInput)
 		}()
 		go func() {
 			defer wg.Done()
@@ -79,8 +83,8 @@ func TestRedeemAfterBuildIsRaceFree(t *testing.T) {
 	}
 	wg.Wait()
 
-	if r.ImplementedAt(EndpointDashScopeMultimodal) {
-		t.Error("并发的事后 Redeem 不该开出多模态门")
+	if r.ImplementedAt(probe) {
+		t.Error("并发的事后 Redeem 不该开出新门")
 	}
 }
 

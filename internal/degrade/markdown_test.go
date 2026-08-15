@@ -7,31 +7,22 @@ import (
 	"github.com/yobo2u/omugw/internal/canonical"
 )
 
-// twoDoorMatrix 造一份 Native 路径开了两扇门的矩阵。
+// twoDoorMatrix 取 Phase 1 矩阵，并断言 Native 路径确实开了两扇门。
 //
-// 多门是主表「见端点细分」分支唯一的可达条件，而 Phase 1 当前只有单门路径——
-// 不在测试里造出多门，那条分支与它指向的小节就都没人验证过，
-// 「指向一个不存在的小节」这种错误正是这样溜过去的。
+// 多门是主表「见端点细分」分支唯一的可达条件。真实矩阵已经是多门，就直接用它——
+// 另造一份只会让文档断言验的是一个假矩阵。这道断言是这些用例的前提检查：
+// 哪天多模态门被撤掉，下面的用例会因为「前提没了」而不是「断言不满足」失败，
+// 归因一眼可见。
 func twoDoorMatrix(t *testing.T) *Matrix {
 	t.Helper()
 	m, err := Phase1()
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 第二扇门在 Build 之前挂上：路径封口后不可再兑现，
-	// 而这扇门也要跟真实投放一样过完整套 Build 校验。
-	return rebuiltMatrix(t, m, func(r *Route) {
-		if r.In != ProtoDashScopeNative || r.Out != ProviderDashScopeNative {
-			return
-		}
-		r.Redeem(EndpointDashScopeMultimodal,
-			canonical.CapTextGeneration,
-			canonical.CapStreaming,
-			canonical.CapVisionInput,
-			canonical.CapAudioInput,
-			canonical.CapVideoInput,
-		)
-	})
+	if eps := mustRoute(t, m, ProtoDashScopeNative, ProviderDashScopeNative).Endpoints(); len(eps) != 2 {
+		t.Fatalf("Native 路径应有两扇门，实际 %v——多门分支没有可达条件了", eps)
+	}
+	return m
 }
 
 // TestMarkdownShowsEndpointBreakdown 固化端点细分小节的呈现：
@@ -99,9 +90,9 @@ func TestMarkdownIsDeterministic(t *testing.T) {
 
 // singleDoorMatrix 造一份只有一条路径、且只开一扇门的矩阵。
 //
-// 刻意不用 Phase1：那份矩阵眼下恰好全是单门，但任务 5 会给 Native 开第二扇门。
-// 拿它当「单门」的样本，等于把一个正要变的事实钉进断言里——测试会在别人做对
-// 事情的时候变红，然后被当成噪音改掉。
+// 刻意不用 Phase1：真实矩阵里 Native 已经是两扇门，而单门是另一条呈现分支，
+// 只有自己造样本才测得到。拿真实矩阵当「单门」样本，等于把一个会随投放进度变的
+// 事实钉进断言里——测试会在别人做对事情的时候变红，然后被当成噪音改掉。
 func singleDoorMatrix(t *testing.T) *Matrix {
 	t.Helper()
 	m := NewMatrix()

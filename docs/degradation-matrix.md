@@ -36,12 +36,12 @@
 
 保留度分两列（见 ADR-0002）：**设计目标**假定全部实现、全部开关开启，回答「这条路最终能做到什么」；**当前可用**受实现状态与默认配置影响，是选路的唯一依据。尚未实现的路径没有当前可用分数——给一条走不通的路打分，是在请人相信一个还不存在的东西。
 
-**上表每一格的处置都是设计事实，不是投放承诺。** 一条路径转正只说明它开始通车，说明不了它的每个上游端点都通：DashScope Native 一个协议对应文本生成、multimodal、embedding、rerank 多个端点，当前只投放了文本生成那一个。未投放的能力在运行时返回 **501**（等实现），而不是按处置声明放行——放行会让请求打到一个尚不存在的实现上，客户端拿到的是一个语焉不详的 5xx。这与 `REJECT` 的 **422**（改请求）是两件事：前者会变，后者不会。
+**上表每一格的处置都是设计事实，不是投放承诺。** 一条路径转正只说明它开始通车，说明不了它的每个上游端点都通：DashScope Native 一个协议对应文本生成、多模态生成、embedding、rerank 多个端点，当前投放了文本生成与多模态生成两个端点。未投放的能力在运行时返回 **501**（等实现），而不是按处置声明放行——放行会让请求打到一个尚不存在的实现上，客户端拿到的是一个语焉不详的 5xx。这与 `REJECT` 的 **422**（改请求）是两件事：前者会变，后者不会。
 
 | 入站 | 出站 | 状态 | 快通道 | 透传 | 模拟 | 降级 | 拒绝 | N/A | 设计目标 | 当前可用 |
 |---|---|---|---|---:|---:|---:|---:|---:|---:|---:|
 | `dashscope.inference` | `dashscope.ws.inference` | 规划中 | ✅ | 6 | 0 | 0 | 0 | 21 | 1.000 | — |
-| `dashscope.native` | `dashscope.native` | 已实现 | ✅ | 18 | 0 | 0 | 0 | 9 | 1.000 | 0.278（18 项中 5 项已投放） |
+| `dashscope.native` | `dashscope.native` | 已实现 | ✅ | 18 | 0 | 0 | 0 | 9 | 1.000 | 见端点细分 |
 | `dashscope.realtime` | `dashscope.ws.realtime` | 规划中 | ✅ | 15 | 0 | 0 | 0 | 12 | 1.000 | — |
 | `dashscope.realtime` | `openai.realtime` | 规划中 |  | 10 | 0 | 2 | 3 | 12 | 0.733 | — |
 | `openai.chat` | `openai.compat` | 已实现 | ✅ | 11 | 0 | 0 | 0 | 16 | 1.000 | 1.000 |
@@ -61,6 +61,7 @@
 
 | 入站 | 出站 | 端点 | 已投放 | 当前可用 |
 |---|---|---|---|---:|
+| dashscope.native | dashscope.native | /api/v1/services/aigc/multimodal-generation/generation | text_generation, streaming, vision_input, audio_input, video_input | 0.278（18 项中 5 项已投放） |
 | dashscope.native | dashscope.native | /api/v1/services/aigc/text-generation/generation | text_generation, streaming, tool_calling, reasoning, web_search | 0.278（18 项中 5 项已投放） |
 | openai.chat | openai.compat | /v1/chat/completions | text_generation, streaming, tool_calling, parallel_tool_calls, structured_output, reasoning, vision_input, audio_input, file_input, audio_output, web_search | 1.000 |
 | openai.responses | openai.compat | /v1/responses | text_generation, streaming, tool_calling, parallel_tool_calls, structured_output, reasoning, vision_input, audio_input, file_input, audio_output, image_generation, stateful_conversation, web_search, computer_use | 0.929（开启 convstore 后 1.000） |
