@@ -126,22 +126,23 @@ func Build(cfg config.Config, m *degrade.Matrix, metrics *obs.Metrics, log *slog
 	// 都从它推导。分成两处写就会各说各话——删掉一行 mux.Handle 而对账名单
 	// 照旧，对账依然全绿，那扇门的请求却已经落进 501 兜底。
 	//
-	// 清单登记的是 Inbound 而不是裸路径：handler 是按入站协议造出来的，
-	// 协议就是这行注册的另一半身份。把它显式写出来，对账才问得出
-	// 「这扇门归谁把守」——只按路径对账，同路径的另一个协议会替它顶账。
-	doors := []struct {
-		inbound degrade.Inbound
-		handler http.Handler
-	}{
-		{degrade.Inbound{Protocol: degrade.ProtoOpenAIResponses, Endpoint: degrade.EndpointOpenAIResponses}, NewResponsesHandler(deps)},
-		{degrade.Inbound{Protocol: degrade.ProtoOpenAIChat, Endpoint: degrade.EndpointOpenAIChat}, NewChatHandler(deps)},
-		{degrade.Inbound{Protocol: degrade.ProtoDashScopeNative, Endpoint: degrade.EndpointDashScopeTextGeneration}, native},
-		{degrade.Inbound{Protocol: degrade.ProtoDashScopeNative, Endpoint: degrade.EndpointDashScopeMultimodal}, native},
+	// 清单登记的是 Inbound 而不是裸路径：把守一扇门的是入站协议的解码器，
+	// 协议就是这行注册的另一半身份。有它，对账才问得出「这扇门归谁把守」——
+	// 只按路径对账，同路径的另一个协议会替它顶账。
+	//
+	// 而这一半只写端点、不写协议：协议由 door.inbound() 从 handler 自己身上取。
+	// 并排手写的协议是一枚贴纸，换掉 handler 而贴纸照旧，这行注册报出来的仍是
+	// 原来那个协议，对账两边严丝合缝——请求却已经交给了另一套解码器。
+	doors := []door{
+		{degrade.EndpointOpenAIResponses, NewResponsesHandler(deps)},
+		{degrade.EndpointOpenAIChat, NewChatHandler(deps)},
+		{degrade.EndpointDashScopeTextGeneration, native},
+		{degrade.EndpointDashScopeMultimodal, native},
 	}
 	registered := make([]degrade.Inbound, 0, len(doors))
 	for _, d := range doors {
-		mux.Handle("POST "+string(d.inbound.Endpoint), d.handler)
-		registered = append(registered, d.inbound)
+		mux.Handle("POST "+string(d.endpoint), d.handler)
+		registered = append(registered, d.inbound())
 	}
 
 	// 命名空间的方法兜底：不带方法的模式最不具体，只有既没命中精确端点、
@@ -172,6 +173,21 @@ func Build(cfg config.Config, m *degrade.Matrix, metrics *obs.Metrics, log *slog
 	}
 
 	return built, nil
+}
+
+// door 是一行端点注册：一扇门的路径，加上把守它的处理器。
+//
+// handler 收窄成 *Handler 而不是 http.Handler：协议身份长在 Handler 上，
+// 接口类型取不到它，就只能退回并排手写——那正是这里要删掉的东西。
+type door struct {
+	endpoint degrade.Endpoint
+	handler  *Handler
+}
+
+// inbound 报出这行注册的入站坐标。协议不问端点，只问处理器：端点是门牌号，
+// 门牌号猜不出谁在里面，换了人只有里面的人知道。
+func (d door) inbound() degrade.Inbound {
+	return degrade.Inbound{Protocol: d.handler.in.protocol, Endpoint: d.endpoint}
 }
 
 // reconcileDoors 做启动期双向对账：矩阵兑现过的门必须注册了处理器，注册了

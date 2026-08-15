@@ -435,6 +435,41 @@ func TestReconcileAcceptsMatchingProtocol(t *testing.T) {
 	}
 }
 
+// TestDoorInboundDerivesProtocolFromHandler 防的是「注册清单自报身份」。
+//
+// 协议坐标若与处理器并排手写，它就只是一枚贴纸：换掉处理器而贴纸照旧，
+// 这行注册报出来的仍是原来那个协议，对账两边严丝合缝，请求却已经交给了
+// 另一套解码器。所以坐标的协议这一半只能从处理器自己身上取。
+//
+// 这里故意把 chat 那扇门交给 Responses 处理器：报出来的必须是处理器实际
+// 把守的 openai.responses，而不是端点看上去应该属于的 openai.chat。
+func TestDoorInboundDerivesProtocolFromHandler(t *testing.T) {
+	d := door{endpoint: degrade.EndpointOpenAIChat, handler: NewResponsesHandler(Deps{})}
+
+	if got := d.inbound().Protocol; got != degrade.ProtoOpenAIResponses {
+		t.Errorf("注册报出的协议是 %s，但把守这扇门的是 %s 的处理器——坐标在替处理器说话",
+			got, degrade.ProtoOpenAIResponses)
+	}
+	if got := d.inbound().Endpoint; got != degrade.EndpointOpenAIChat {
+		t.Errorf("注册报出的端点是 %s，应为 %s", got, degrade.EndpointOpenAIChat)
+	}
+
+	// 派生出的坐标还得真能让对账红：矩阵在 openai.chat 下开了这扇门，
+	// 而这行注册报的是 responses，两个方向的漂移都该被咬住。
+	m := degrade.NewMatrix()
+	if err := m.Add(degrade.NewRoute(degrade.ProtoOpenAIChat, degrade.ProviderOpenAICompat).
+		MarkHomogeneous().
+		Pass(degrade.ExpressibleSet(degrade.ProtoOpenAIChat)...).
+		Redeem(degrade.EndpointOpenAIChat, canonical.CapTextGeneration).
+		Build()); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := reconcileDoors(m, []degrade.Inbound{d.inbound()}); err == nil {
+		t.Fatal("端点配错了处理器，对账却判绿")
+	}
+}
+
 // TestBuildReconcilesPhase1Doors 把对账钉在真实启动路径上：Phase1 矩阵配上
 // build.go 里那四行注册，协议坐标必须两两对上。
 //
