@@ -138,7 +138,7 @@ authoritative 加进同一个计数器，得到的数字既不能计费也不能
 | 原则 | 代码位置 | 测试 |
 |---|---|---|
 | 2.1 降级矩阵 | `internal/degrade` | `TestPhase1IsComplete`、`TestIncompleteRouteFailsBuild` |
-| 2.2 同源快通道 | `degrade.Route.Homogeneous` | `TestRealtimeFastPathIsHomogeneous` |
+| 2.2 同源快通道 | `degrade.Route.IsHomogeneous()` | `TestRealtimeFastPathIsHomogeneous` |
 | 2.3 错误映射 | `internal/canonical/error.go`、`internal/protocol/*wire` | 各 wire 包的 `TestDecodeErrorClassification` |
 | 2.4 流式 failover | `canonical.StopInterrupted` | `TestAccumulatorInterruptedStreamReportsUnavailableUsage` |
 | 2.5 用量分级 | `canonical.Fidelity` | `TestUsageFidelityMustBeExplicit`、`TestObserveUsageSeparatesFidelity` |
