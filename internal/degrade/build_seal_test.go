@@ -325,12 +325,12 @@ func TestBuildAfterBuildIsIdempotent(t *testing.T) {
 	assertNotImplemented(t, m, in, canonical.CapStreaming, "重复 Build 之后")
 }
 
-// TestBuildFailureStaysRetryable 是上面那道闸门的对照组。
+// TestBuildFailureDoesNotSealRoute 是上面那道闸门的对照组。
 //
-// 幂等只许对**成功**的 Build 生效。失败的路径从未封口，它得能继续补声明再
-// Build——把「第二次直接返回」写成无条件的，等于让一条校验没过的路径
-// 在第二次调用时假装自己过了。
-func TestBuildFailureStaysRetryable(t *testing.T) {
+// 幂等只许对**成功**的 Build 生效。失败路径不能在第二次调用时直接返回成功；
+// 当前 Build 会保留首次失败留下的错误和 N/A 补格，因此这里不承诺它可原地修复
+// 后重试，只锁住「失败不能被封成成功」这条边界。
+func TestBuildFailureDoesNotSealRoute(t *testing.T) {
 	r := NewRoute(ProtoDashScopeNative, ProviderDashScopeNative)
 
 	if _, err := r.Build(); err == nil {
