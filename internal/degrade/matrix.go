@@ -102,34 +102,22 @@ type Rule struct {
 	RequiresFeature string
 }
 
-// Route 是一条 (入站协议 → 出站 Provider) 转换路径。
+// routeState 是一条路径的构建状态，由这条路径的全部浅拷贝共享。
 //
-// 身份与快通道事实一概私有，对外只经 InProtocol / OutProvider / IsHomogeneous
-// 读取。公开可写的字段会让 Build 封口形同虚设：矩阵的键是按身份算出来的，
-// 事后改 in/out，键与内容就对不上——Check 会拿 A 路径的声明裁决 B 路径的请求；
-// 事后改快通道位，运行时选路会挑一条没人验证过的路。私有化之后包外连编译
-// 都过不去，这比任何运行时闸门都早。
-type Route struct {
-	in  Protocol
-	out Provider
-
+// 它以指针挂在 Route 上，防的是 `copy := *r` 这一手——Route 是导出类型，
+// 包外任何人都写得出，那是 Go 值语义的默认权利，不是滥用。浅拷贝会把 rules
+// 与 redeemed 两张 map 的**同一份底层存储**带走，可这几处状态若各拷一份，
+// 别名手里就攥着一把谁也不认识的锁与一个永远为 false 的封口位：原件 Build 只
+// 封得住自己，别名照样能往那两张共享 map 里追加兑现、翻转快通道、改写处置——
+// 而这些改动会原样出现在已经进了矩阵的那条路径上，还与并发的 Check 抢同一张
+// map。共享一个指针之后，别名和原件用的是同一把锁、认的是同一个封口。
+//
+// 它也是 `go vet` copylocks 的解药：锁挪进指针指向的结构里，拷贝 Route 不再
+// 拷贝锁，vet 也就不必替我们盯着每一处赋值——正确性由共享本身保证。
+type routeState struct {
 	// homogeneous 标记同源快通道（原则 2.2）。同源路径可以字节级透传，
 	// 不进 Canonical——这既保住了 TTFT，也绕开了绝大多数转换 bug。
 	homogeneous bool
-
-	rules map[canonical.Capability]Rule
-
-	// redeemed 是这条路径**当前真的投放了**的能力，键为 (端点, 能力) 二元组。
-	//
-	// 与 rules 的分工是整个包最容易混淆、也最要紧的一处：rules 是**设计处置**
-	// ——这条路最终该怎么对待每项能力；redeemed 是**当前投放**——这扇门此刻
-	// 真的有什么能力。
-	//
-	// 早先是路径级集合，DashScope Native 投放第二扇门时撞破了它：一个协议对应
-	// 文本生成、多模态、embedding、rerank 多个端点，把新门的能力加进同一个集合，
-	// 文本门的 tool_calling 就会混进多模态门的可用分数，仿佛那扇门也提供这些能力。
-	// 门与门的兑现集合互不相通，不做并集。
-	redeemed map[Endpoint]map[canonical.Capability]bool
 
 	// built 记录这条路径是否已经通过 Build 封口。
 	//
@@ -159,10 +147,49 @@ type Route struct {
 	mu sync.Mutex
 }
 
+// Route 是一条 (入站协议 → 出站 Provider) 转换路径。
+//
+// 身份与快通道事实一概私有，对外只经 InProtocol / OutProvider / IsHomogeneous
+// 读取。公开可写的字段会让 Build 封口形同虚设：矩阵的键是按身份算出来的，
+// 事后改 in/out，键与内容就对不上——Check 会拿 A 路径的声明裁决 B 路径的请求；
+// 事后改快通道位，运行时选路会挑一条没人验证过的路。私有化之后包外连编译
+// 都过不去，这比任何运行时闸门都早。
+//
+// 它可以被安全地浅拷贝：`copy := *r` 得到的是同一条路径的另一个包装——共享
+// 同一把锁、同一个封口、同一份快通道事实与错误清单（都在 state 里），也共享
+// rules 与 redeemed 两张 map 的底层存储。于是别名绕不过封口，也绕不过锁。
+// 身份 in/out 是构造期常量，各拷一份与共享没有分别。
+//
+// 零值 Route 不是一条路径：state 为 nil，任何写入口都会当场 panic。
+// 路径只经 NewRoute 与 Derive 产生，这是刻意不设惰性初始化的——补一层懒加载
+// 只会让一个本该在构造点就暴露的错误推迟到运行期，还得再想一遍「谁来初始化」。
+type Route struct {
+	in  Protocol
+	out Provider
+
+	// state 是全部浅拷贝共享的构建状态，见 routeState。
+	state *routeState
+
+	rules map[canonical.Capability]Rule
+
+	// redeemed 是这条路径**当前真的投放了**的能力，键为 (端点, 能力) 二元组。
+	//
+	// 与 rules 的分工是整个包最容易混淆、也最要紧的一处：rules 是**设计处置**
+	// ——这条路最终该怎么对待每项能力；redeemed 是**当前投放**——这扇门此刻
+	// 真的有什么能力。
+	//
+	// 早先是路径级集合，DashScope Native 投放第二扇门时撞破了它：一个协议对应
+	// 文本生成、多模态、embedding、rerank 多个端点，把新门的能力加进同一个集合，
+	// 文本门的 tool_calling 就会混进多模态门的可用分数，仿佛那扇门也提供这些能力。
+	// 门与门的兑现集合互不相通，不做并集。
+	redeemed map[Endpoint]map[canonical.Capability]bool
+}
+
 // NewRoute 开始声明一条路径。必须以 Build 结尾。
 func NewRoute(in Protocol, out Provider) *Route {
 	return &Route{
 		in: in, out: out,
+		state:    &routeState{},
 		rules:    map[canonical.Capability]Rule{},
 		redeemed: map[Endpoint]map[canonical.Capability]bool{},
 	}
@@ -188,31 +215,32 @@ func (r *Route) OutProvider() Provider { return r.out }
 // 而只有已封口的路径进得了 Matrix，封口之后再没有写者。
 //
 // 字段可写会让上面那条封口约束形同虚设——运行时改一个 bool 就能把选路偏好
-// 整个掀翻，让请求走上一条没人验证过的路。
-func (r *Route) IsHomogeneous() bool { return r.homogeneous }
+// 整个掀翻，让请求走上一条没人验证过的路。事实存在共享的 state 里而不是
+// Route 上，浅拷贝出来的别名读的才是同一份既成事实，而不是封口那一刻的快照。
+func (r *Route) IsHomogeneous() bool { return r.state.homogeneous }
 
 // MarkHomogeneous 把这条路径标记为同源快通道。
 func (r *Route) MarkHomogeneous() *Route {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.built {
+	r.state.mu.Lock()
+	defer r.state.mu.Unlock()
+	if r.state.built {
 		return r
 	}
-	r.homogeneous = true
+	r.state.homogeneous = true
 	return r
 }
 
-// set 写一格处置，调用方必须已持有 r.mu。
+// set 写一格处置，调用方必须已持有 r.state.mu。
 //
 // 锁在 Pass/Degrade/Reject/Emulate 那一层取，不在这里：一个公共方法要写多格，
 // 逐格加解锁等于把「这几格一起写进去」拆成几段可被 Build 插队的写入，
 // 校验就可能看到一半的声明。
 func (r *Route) set(c canonical.Capability, rule Rule) {
-	if r.built {
+	if r.state.built {
 		return
 	}
 	if _, dup := r.rules[c]; dup {
-		r.errs = append(r.errs, fmt.Sprintf("capability %q declared twice", c))
+		r.state.errs = append(r.state.errs, fmt.Sprintf("capability %q declared twice", c))
 		return
 	}
 	r.rules[c] = rule
@@ -220,8 +248,8 @@ func (r *Route) set(c canonical.Capability, rule Rule) {
 
 // Pass 声明若干项能力可以无损透传。
 func (r *Route) Pass(caps ...canonical.Capability) *Route {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.state.mu.Lock()
+	defer r.state.mu.Unlock()
 	for _, c := range caps {
 		r.set(c, Rule{Disposition: Passthrough})
 	}
@@ -230,8 +258,8 @@ func (r *Route) Pass(caps ...canonical.Capability) *Route {
 
 // Degrade 声明若干项能力会被降级，note 说明丢失了什么。
 func (r *Route) Degrade(note string, caps ...canonical.Capability) *Route {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.state.mu.Lock()
+	defer r.state.mu.Unlock()
 	for _, c := range caps {
 		r.set(c, Rule{Disposition: Degrade, Note: note})
 	}
@@ -240,8 +268,8 @@ func (r *Route) Degrade(note string, caps ...canonical.Capability) *Route {
 
 // Reject 声明若干项能力不被支持，note 说明原因。
 func (r *Route) Reject(note string, caps ...canonical.Capability) *Route {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.state.mu.Lock()
+	defer r.state.mu.Unlock()
 	for _, c := range caps {
 		r.set(c, Rule{Disposition: Reject, Note: note})
 	}
@@ -254,8 +282,8 @@ func (r *Route) Reject(note string, caps ...canonical.Capability) *Route {
 // 一个没有开关的模拟能力意味着运维无法拒绝它带来的风险，一个没有说明的模拟
 // 能力意味着运维不知道风险是什么。
 func (r *Route) Emulate(feature, note string, caps ...canonical.Capability) *Route {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.state.mu.Lock()
+	defer r.state.mu.Unlock()
 	for _, c := range caps {
 		r.set(c, Rule{Disposition: Emulate, Note: note, RequiresFeature: feature})
 	}
@@ -277,9 +305,9 @@ func (r *Route) Emulate(feature, note string, caps ...canonical.Capability) *Rou
 // 是确定性的空操作：投放要么写在 Build 之前并接受校验，要么就不存在——
 // 否则那两条校验只要事后补一手就能绕开，运行时的矩阵也不再是只读的。
 func (r *Route) Redeem(ep Endpoint, caps ...canonical.Capability) *Route {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.built {
+	r.state.mu.Lock()
+	defer r.state.mu.Unlock()
+	if r.state.built {
 		return r
 	}
 	if r.redeemed[ep] == nil {
@@ -355,11 +383,13 @@ func (r *Route) Implemented() bool {
 func (r *Route) Derive(in Protocol, out Provider) *Route {
 	// 读的是基准路径的构建状态，而基准路径此刻可能正被 Build 补 N/A 格子。
 	// 只锁基准这一把：n 是本地新建的，还没有第二个人拿得到它。
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.state.mu.Lock()
+	defer r.state.mu.Unlock()
 
+	// NewRoute 给 n 配的是一份全新的 state：派生出来的是一条独立的路径，
+	// 与基准共享封口就意味着基准 Build 一封，派生路径连声明都写不进去了。
 	n := NewRoute(in, out)
-	n.homogeneous = r.homogeneous
+	n.state.homogeneous = r.state.homogeneous
 	for c, rule := range r.rules {
 		// 不继承自动补上的 NotApplicable。它反映的是**基准协议**的表达力，
 		// 换一个入站协议就未必成立——Responses 表达得出 computer_use，
@@ -378,13 +408,13 @@ func (r *Route) Derive(in Protocol, out Provider) *Route {
 // 只能覆盖已存在的声明——对一个从未声明过的能力谈「覆盖」没有意义，
 // 那种情况说明基准路径选错了。
 func (r *Route) Override(c canonical.Capability, d Disposition, note string) *Route {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.built {
+	r.state.mu.Lock()
+	defer r.state.mu.Unlock()
+	if r.state.built {
 		return r
 	}
 	if _, ok := r.rules[c]; !ok {
-		r.errs = append(r.errs,
+		r.state.errs = append(r.state.errs,
 			fmt.Sprintf("capability %q was never declared, nothing to override", c))
 		return r
 	}
@@ -403,8 +433,8 @@ func (r *Route) Build() (*Route, error) {
 	// 任何一段，一手并发的 Redeem 就能挤在校验与封口之间——校验那一刻路径还
 	// 是干净的，封口那一刻已经脏了，于是一个 Build 拒绝过的形状盖着「已校验」
 	// 的章进了矩阵。
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.state.mu.Lock()
+	defer r.state.mu.Unlock()
 
 	// Build 顶着「校验」的名字，实际是这个包里写得最狠的一处写入口——它给
 	// 全部能力补齐 N/A 格子。所以它也得服从封口，而且理由比别的写入口更硬：
@@ -413,16 +443,16 @@ func (r *Route) Build() (*Route, error) {
 	// 与并发的 Check 抢同一张 map。封口之后重复调用原样交回同一个指针。
 	//
 	// 只对成功的 Build 生效：失败的路径从未封口，仍要能补完声明再 Build。
-	if r.built {
+	if r.state.built {
 		return r, nil
 	}
 
 	spec, ok := expressible[r.in]
 	if !ok {
-		r.errs = append(r.errs,
+		r.state.errs = append(r.state.errs,
 			fmt.Sprintf("inbound protocol %q has no expressibility declaration", r.in))
-		sort.Strings(r.errs)
-		return nil, fmt.Errorf("degrade: route %s -> %s: %s", r.in, r.out, strings.Join(r.errs, "; "))
+		sort.Strings(r.state.errs)
+		return nil, fmt.Errorf("degrade: route %s -> %s: %s", r.in, r.out, strings.Join(r.state.errs, "; "))
 	}
 
 	// 只有入站协议表达得出来的能力才需要路径声明。其余的由 Expressibility
@@ -448,12 +478,12 @@ func (r *Route) Build() (*Route, error) {
 	sort.Strings(extra)
 
 	if len(missing) > 0 {
-		r.errs = append(r.errs, "undeclared capabilities: "+strings.Join(missing, ", "))
+		r.state.errs = append(r.state.errs, "undeclared capabilities: "+strings.Join(missing, ", "))
 	}
 	if len(extra) > 0 {
 		// 为一个客户端表达不出来的能力写声明，说明作者对协议的理解有偏差。
 		// 与其静默忽略，不如让它失败。
-		r.errs = append(r.errs, "declared but not expressible by "+string(r.in)+": "+
+		r.state.errs = append(r.state.errs, "declared but not expressible by "+string(r.in)+": "+
 			strings.Join(extra, ", "))
 	}
 
@@ -474,7 +504,7 @@ func (r *Route) Build() (*Route, error) {
 	// 端点粒度就悄悄退回了路径粒度。
 	for ep := range r.redeemed {
 		if ep == Endpoint("") {
-			r.errs = append(r.errs, "redeem on zero endpoint")
+			r.state.errs = append(r.state.errs, "redeem on zero endpoint")
 		}
 	}
 
@@ -485,7 +515,7 @@ func (r *Route) Build() (*Route, error) {
 	for ep := range r.redeemed {
 		owner, known := ep.Protocol()
 		if known && owner != r.in {
-			r.errs = append(r.errs, fmt.Sprintf(
+			r.state.errs = append(r.state.errs, fmt.Sprintf(
 				"endpoint %q belongs to inbound protocol %s, not %s", ep, owner, r.in))
 		}
 	}
@@ -497,7 +527,7 @@ func (r *Route) Build() (*Route, error) {
 		for c := range caps {
 			rule, ok := r.rules[c]
 			if !ok || rule.Disposition == Reject || rule.Disposition == NotApplicable {
-				r.errs = append(r.errs,
+				r.state.errs = append(r.state.errs,
 					fmt.Sprintf("endpoint %q redeemed but not deliverable: %s", ep, c))
 			}
 		}
@@ -508,24 +538,24 @@ func (r *Route) Build() (*Route, error) {
 		case Passthrough, Degrade, Reject, Emulate, NotApplicable:
 			// valid
 		default:
-			r.errs = append(r.errs, fmt.Sprintf("capability %q has unknown disposition %q", c, rule.Disposition))
+			r.state.errs = append(r.state.errs, fmt.Sprintf("capability %q has unknown disposition %q", c, rule.Disposition))
 		}
 		if rule.Disposition != Passthrough && rule.Note == "" {
-			r.errs = append(r.errs, fmt.Sprintf("capability %q is %s but carries no note", c, rule.Disposition))
+			r.state.errs = append(r.state.errs, fmt.Sprintf("capability %q is %s but carries no note", c, rule.Disposition))
 		}
 		// 没有开关的模拟能力意味着运维无法拒绝它带来的风险。
 		if rule.Disposition == Emulate && rule.RequiresFeature == "" {
-			r.errs = append(r.errs,
+			r.state.errs = append(r.state.errs,
 				fmt.Sprintf("capability %q is EMULATE but declares no feature gate", c))
 		}
 	}
-	if len(r.errs) > 0 {
-		sort.Strings(r.errs)
-		return nil, fmt.Errorf("degrade: route %s -> %s: %s", r.in, r.out, strings.Join(r.errs, "; "))
+	if len(r.state.errs) > 0 {
+		sort.Strings(r.state.errs)
+		return nil, fmt.Errorf("degrade: route %s -> %s: %s", r.in, r.out, strings.Join(r.state.errs, "; "))
 	}
 	// 校验全过才封口：失败的路径不进矩阵，封不封都一样；
 	// 成功的这条从此只读，事后再 Redeem 是空操作。
-	r.built = true
+	r.state.built = true
 	return r, nil
 }
 
@@ -537,9 +567,9 @@ func (r *Route) Build() (*Route, error) {
 // 这条路径的人都有 happens-before——这正是「进了矩阵的路径都是只读的」这条
 // 免锁前提的来源。
 func (r *Route) sealed() bool {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.built
+	r.state.mu.Lock()
+	defer r.state.mu.Unlock()
+	return r.state.built
 }
 
 // Matrix 是全部路径的集合。
