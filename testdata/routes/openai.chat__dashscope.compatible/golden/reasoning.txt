@@ -1,0 +1,18 @@
+status: OK
+Content-Type: application/json
+---
+{
+      "id": "chatcmpl-ds06",
+      "object": "chat.completion",
+      "created": 1755216000,
+      "model": "qwen-plus-upstream",
+      "choices": [
+        { "index": 0, "message": { "role": "assistant", "content": "剩一根——被吹灭的那根不会继续烧完。" }, "finish_reason": "stop" }
+      ],
+      "usage": {
+        "prompt_tokens": 30,
+        "completion_tokens": 82,
+        "total_tokens": 112,
+        "completion_tokens_details": { "reasoning_tokens": 64 }
+      }
+    }

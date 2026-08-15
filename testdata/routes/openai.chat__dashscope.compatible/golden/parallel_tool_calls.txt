@@ -1,0 +1,28 @@
+status: OK
+Content-Type: application/json
+---
+{
+      "id": "chatcmpl-ds04",
+      "object": "chat.completion",
+      "created": 1755216000,
+      "model": "qwen-plus-upstream",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+              { "id": "call_a", "type": "function", "function": { "name": "get_weather", "arguments": "{\"city\":\"上海\"}" } },
+              { "id": "call_b", "type": "function", "function": { "name": "get_weather", "arguments": "{\"city\":\"北京\"}" } }
+            ]
+          },
+          "finish_reason": "tool_calls"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 45,
+        "completion_tokens": 24,
+        "total_tokens": 69
+      }
+    }

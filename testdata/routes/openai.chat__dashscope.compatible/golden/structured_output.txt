@@ -1,0 +1,25 @@
+status: OK
+Content-Type: application/json
+X-Omugw-Degraded: structured_output=DashScope 兼容模式支持 json_object，但不保证 strict json_schema 校验
+---
+{
+      "id": "chatcmpl-ds05",
+      "object": "chat.completion",
+      "created": 1755216000,
+      "model": "qwen-plus-upstream",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "{\"city\":\"上海\",\"condition\":\"多云转晴\",\"temp_low\":22,\"temp_high\":28}"
+          },
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 63,
+        "completion_tokens": 27,
+        "total_tokens": 90
+      }
+    }
