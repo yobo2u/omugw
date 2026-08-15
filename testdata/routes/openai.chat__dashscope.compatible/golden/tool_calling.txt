@@ -1,0 +1,17 @@
+status: OK
+Content-Type: application/json
+---
+{
+      "id": "chatcmpl-ds03",
+      "object": "chat.completion",
+      "created": 1755216000,
+      "model": "qwen-plus-upstream",
+      "choices": [
+        { "index": 0, "message": { "role": "assistant", "content": "上海今天多云，22 度。" }, "finish_reason": "stop" }
+      ],
+      "usage": {
+        "prompt_tokens": 48,
+        "completion_tokens": 12,
+        "total_tokens": 60
+      }
+    }

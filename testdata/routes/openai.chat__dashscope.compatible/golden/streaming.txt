@@ -1,0 +1,15 @@
+status: OK
+Content-Type: text/event-stream
+---
+data: {"id":"chatcmpl-ds02","object":"chat.completion.chunk","created":1755216000,"model":"qwen-plus-upstream","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-ds02","object":"chat.completion.chunk","created":1755216000,"model":"qwen-plus-upstream","choices":[{"index":0,"delta":{"content":"一"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-ds02","object":"chat.completion.chunk","created":1755216000,"model":"qwen-plus-upstream","choices":[{"index":0,"delta":{"content":"二"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-ds02","object":"chat.completion.chunk","created":1755216000,"model":"qwen-plus-upstream","choices":[{"index":0,"delta":{"content":"三"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-ds02","object":"chat.completion.chunk","created":1755216000,"model":"qwen-plus-upstream","choices":[],"usage":{"prompt_tokens":9,"completion_tokens":3,"total_tokens":12}}
+
+data: [DONE]
+
