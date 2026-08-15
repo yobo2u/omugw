@@ -20,10 +20,10 @@
 | 任务 | 位置 |
 |---|---|
 | 加一条路径 | `rules_phase1.go` 里 `NewRoute(...).Pass/Degrade/Reject/Emulate(...).Build()` |
-| 从已有路径派生 | `Route.Derive()` (`matrix.go:355`) + `Override()` (`:380`) |
-| 路径转正 / 能力投放 | `Route.Redeem(ep, caps...)` (`matrix.go:279`) — 显式列出指定端点已投放的能力，需先有该端点的 fixture 通过 |
-| 查某能力是否已投放 | `Route.Redeems(ep, c)` (`matrix.go:295`)；`ImplementedAt(ep)` (`:328`) 答「这扇门开了没」，`Endpoints()` (`:316`) 列已开门，`Implemented()` (`:337`) 只答「路径通车了没」 |
-| 路径入库 | `Matrix.Add` (`matrix.go:575`) — 只收已 Build 的路径并拒绝 nil，Build 校验无法绕过 |
+| 从已有路径派生 | `Route.Derive()` (`matrix.go:383`) + `Override()` (`:410`) |
+| 路径转正 / 能力投放 | `Route.Redeem(ep, caps...)` (`matrix.go:307`) — 显式列出指定端点已投放的能力，需先有该端点的 fixture 通过 |
+| 查某能力是否已投放 | `Route.Redeems(ep, c)` (`matrix.go:323`)；`ImplementedAt(ep)` (`:356`) 答「这扇门开了没」，`Endpoints()` (`:344`) 列已开门，`Implemented()` (`:365`) 只答「路径通车了没」 |
+| 路径入库 | `Matrix.Add` (`matrix.go:605`) — 只收已 Build 的路径并拒绝 nil，Build 校验无法绕过 |
 | 已知门的协议归属 | `Endpoint.Protocol()` (`endpoint.go:47`) — Build 用它拦错绑；只覆盖已知门，不是准入名单 |
 | 端点级 fixture 证据 | `matrix_test.go` 的 `checkRouteFixtures` (`:449`) — 按 fixture 的 `request.path` 与门清单双向对账 |
 | 选路排序逻辑 | `RankOutbound` (`preference.go:215`) / `BestOutbound(Inbound,…)` (`:271`) |
@@ -47,6 +47,11 @@
 - **Build 成功即封口**：`built` 置位后 `Redeem` / `Pass` / `Degrade` / `Reject` /
   `Emulate` / `Override` / `MarkHomogeneous` 全是确定性空操作——投放与处置只能
   写在 Build 之前，运行时矩阵只读。防的是「先过校验，事后补一手绕开」。
+- **封口与锁在 `routeState` 里，由全部浅拷贝共享**（`matrix.go:105`）。`Route` 是
+  导出类型，包外写得出 `copy := *r`——浅拷贝带走的是 `rules`/`redeemed` 同一份
+  底层存储，状态若各拷一份，别名就能拿着自己那把锁与「未封口」位去写原件正在
+  读的 map。加状态字段时放进 `routeState`，别加回 `Route`。`Derive()` 例外：它
+  配一份全新 state，派生的是独立路径。
 - **`Matrix.Add` 只收已 Build 的路径**：nil 与未封口的路径一律拒绝。`Add(r, nil)`
   是一条平行入口——不挡住它，从未受检的路径就会落进矩阵被 `Check` 当权威依据。
 - **Build 还校验处置合法性与门归属**：处置必须是五种之一，未知值报错；已知门
@@ -82,7 +87,7 @@
   bug），**不是** `ClassUnsupported`（客户端错误）。这个区分是刻意的。
 - `EMULATE` 开关关闭时的错误必须说「开关没开」，而不是「路径不支持」。
 - 新增 `canonical.Capability` 常量会让**所有**已注册路径同时构建失败——这是设计。
-- `Derive()` 不继承兑现集合（见 `matrix.go:353` 注释）：派生路径默认仍是 PLANNED，
+- `Derive()` 不继承兑现集合（见 `matrix.go:381` 注释）：派生路径默认仍是 PLANNED，
   投放必须逐条重新声明，否则一条还没动工的派生路径会宣称自己可用。
 - 已声明但未投放的能力 → `Check()` 返回 501 而非 422：501 说「等实现」，422 说
   「改请求」，方向不能混。
