@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/yobo2u/omugw/internal/canonical"
 )
@@ -133,6 +134,23 @@ type Route struct {
 	built bool
 
 	errs []string
+
+	// mu 串行化**构建期**的全部写入口，它守的是 rules / redeemed / errs /
+	// built / Homogeneous 这五处构建状态。
+	//
+	// 防的是校验与封口之间的那道缝。built 闸门把每个写入口都写成「先看封没封，
+	// 没封才写」，可这两步之间隔着整个 Build：两个 goroutine 同时首次 Build，
+	// 会一起读到 built==false 一起往下走，并发写同一张 rules、并发 append
+	// 同一个 errs；后进来那个还会把先进来那个补的 N/A 当成「声明了表达不出来
+	// 的能力」，给一条声明完整的路径判死。一个变更挤在校验与封口之间，更是能
+	// 让一个 Build 拒绝过的形状盖上「已校验」的章进矩阵——而 Check 拿 built
+	// 当权威依据，它凭的就是「进得来的都受过校验」。
+	//
+	// 加锁的是构建期，不是发布后。Check / Endpoints / Preservation 这些读者
+	// 一概不加锁，因为只有已封口的路径进得了 Matrix，而封口之后再没有写者：
+	// 全部写入口都在锁内确认过 built 才动手。Add 读 built 也走这把锁，
+	// 于是 Build 的全部写入对随后读到这条路径的人都有 happens-before。
+	mu sync.Mutex
 }
 
 // NewRoute 开始声明一条路径。必须以 Build 结尾。
@@ -146,6 +164,8 @@ func NewRoute(in Protocol, out Provider) *Route {
 
 // Homogeneous 把这条路径标记为同源快通道。
 func (r *Route) MarkHomogeneous() *Route {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if r.built {
 		return r
 	}
@@ -153,6 +173,11 @@ func (r *Route) MarkHomogeneous() *Route {
 	return r
 }
 
+// set 写一格处置，调用方必须已持有 r.mu。
+//
+// 锁在 Pass/Degrade/Reject/Emulate 那一层取，不在这里：一个公共方法要写多格，
+// 逐格加解锁等于把「这几格一起写进去」拆成几段可被 Build 插队的写入，
+// 校验就可能看到一半的声明。
 func (r *Route) set(c canonical.Capability, rule Rule) {
 	if r.built {
 		return
@@ -166,6 +191,8 @@ func (r *Route) set(c canonical.Capability, rule Rule) {
 
 // Pass 声明若干项能力可以无损透传。
 func (r *Route) Pass(caps ...canonical.Capability) *Route {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	for _, c := range caps {
 		r.set(c, Rule{Disposition: Passthrough})
 	}
@@ -174,6 +201,8 @@ func (r *Route) Pass(caps ...canonical.Capability) *Route {
 
 // Degrade 声明若干项能力会被降级，note 说明丢失了什么。
 func (r *Route) Degrade(note string, caps ...canonical.Capability) *Route {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	for _, c := range caps {
 		r.set(c, Rule{Disposition: Degrade, Note: note})
 	}
@@ -182,6 +211,8 @@ func (r *Route) Degrade(note string, caps ...canonical.Capability) *Route {
 
 // Reject 声明若干项能力不被支持，note 说明原因。
 func (r *Route) Reject(note string, caps ...canonical.Capability) *Route {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	for _, c := range caps {
 		r.set(c, Rule{Disposition: Reject, Note: note})
 	}
@@ -194,6 +225,8 @@ func (r *Route) Reject(note string, caps ...canonical.Capability) *Route {
 // 一个没有开关的模拟能力意味着运维无法拒绝它带来的风险，一个没有说明的模拟
 // 能力意味着运维不知道风险是什么。
 func (r *Route) Emulate(feature, note string, caps ...canonical.Capability) *Route {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	for _, c := range caps {
 		r.set(c, Rule{Disposition: Emulate, Note: note, RequiresFeature: feature})
 	}
@@ -215,6 +248,8 @@ func (r *Route) Emulate(feature, note string, caps ...canonical.Capability) *Rou
 // 是确定性的空操作：投放要么写在 Build 之前并接受校验，要么就不存在——
 // 否则那两条校验只要事后补一手就能绕开，运行时的矩阵也不再是只读的。
 func (r *Route) Redeem(ep Endpoint, caps ...canonical.Capability) *Route {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if r.built {
 		return r
 	}
@@ -289,6 +324,11 @@ func (r *Route) Implemented() bool {
 // 兑现集合不在继承之列：它说的是「这条路径的实现写好了」，而实现是逐条写的。
 // 继承它会让一条还没动工的派生路径宣称自己可用。
 func (r *Route) Derive(in Protocol, out Provider) *Route {
+	// 读的是基准路径的构建状态，而基准路径此刻可能正被 Build 补 N/A 格子。
+	// 只锁基准这一把：n 是本地新建的，还没有第二个人拿得到它。
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	n := NewRoute(in, out)
 	n.Homogeneous = r.Homogeneous
 	for c, rule := range r.rules {
@@ -309,6 +349,8 @@ func (r *Route) Derive(in Protocol, out Provider) *Route {
 // 只能覆盖已存在的声明——对一个从未声明过的能力谈「覆盖」没有意义，
 // 那种情况说明基准路径选错了。
 func (r *Route) Override(c canonical.Capability, d Disposition, note string) *Route {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if r.built {
 		return r
 	}
@@ -327,6 +369,14 @@ func (r *Route) Override(c canonical.Capability, d Disposition, note string) *Ro
 // 字段被吞了。新增 Capability 常量时，所有已注册路径都会在这里失败——
 // 这是刻意的设计，不是需要绕过的麻烦。
 func (r *Route) Build() (*Route, error) {
+	// 整个校验加封口在同一把锁里完成，这是它的正确性所系：闸门读的 built、
+	// 校验读的 rules/redeemed、封口写的 built 必须是同一个瞬间的状态。松开
+	// 任何一段，一手并发的 Redeem 就能挤在校验与封口之间——校验那一刻路径还
+	// 是干净的，封口那一刻已经脏了，于是一个 Build 拒绝过的形状盖着「已校验」
+	// 的章进了矩阵。
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	// Build 顶着「校验」的名字，实际是这个包里写得最狠的一处写入口——它给
 	// 全部能力补齐 N/A 格子。所以它也得服从封口，而且理由比别的写入口更硬：
 	// 第二次进来会把上一次补进去的 N/A 当成「声明了表达不出来的能力」，
@@ -450,6 +500,19 @@ func (r *Route) Build() (*Route, error) {
 	return r, nil
 }
 
+// sealed 报告这条路径有没有通过 Build 封口。
+//
+// built 只许经由它来读。裸读一个正被 Build 写着的 bool 是数据竞争，而且危险
+// 得不止于此：Add 可能读到 true，却看不见同一次 Build 写进 rules 的 N/A 格子，
+// 一条只有半截内容的路径就此进了矩阵。走这把锁，Build 的全部写入对随后读到
+// 这条路径的人都有 happens-before——这正是「进了矩阵的路径都是只读的」这条
+// 免锁前提的来源。
+func (r *Route) sealed() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.built
+}
+
 // Matrix 是全部路径的集合。
 type Matrix struct {
 	routes map[[2]string]*Route
@@ -487,7 +550,7 @@ func (m *Matrix) Add(r *Route, err error) error {
 	if r == nil {
 		return errors.New("degrade: nil route")
 	}
-	if !r.built {
+	if !r.sealed() {
 		return fmt.Errorf("degrade: route %s -> %s was not built: call Build before Add",
 			r.In, r.Out)
 	}
