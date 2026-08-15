@@ -103,13 +103,19 @@ type Rule struct {
 }
 
 // Route 是一条 (入站协议 → 出站 Provider) 转换路径。
+//
+// 身份与快通道事实一概私有，对外只经 InProtocol / OutProvider / IsHomogeneous
+// 读取。公开可写的字段会让 Build 封口形同虚设：矩阵的键是按身份算出来的，
+// 事后改 in/out，键与内容就对不上——Check 会拿 A 路径的声明裁决 B 路径的请求；
+// 事后改快通道位，运行时选路会挑一条没人验证过的路。私有化之后包外连编译
+// 都过不去，这比任何运行时闸门都早。
 type Route struct {
-	In  Protocol
-	Out Provider
+	in  Protocol
+	out Provider
 
-	// Homogeneous 标记同源快通道（原则 2.2）。同源路径可以字节级透传，
+	// homogeneous 标记同源快通道（原则 2.2）。同源路径可以字节级透传，
 	// 不进 Canonical——这既保住了 TTFT，也绕开了绝大多数转换 bug。
-	Homogeneous bool
+	homogeneous bool
 
 	rules map[canonical.Capability]Rule
 
@@ -136,7 +142,7 @@ type Route struct {
 	errs []string
 
 	// mu 串行化**构建期**的全部写入口，它守的是 rules / redeemed / errs /
-	// built / Homogeneous 这五处构建状态。
+	// built / homogeneous 这五处构建状态。
 	//
 	// 防的是校验与封口之间的那道缝。built 闸门把每个写入口都写成「先看封没封，
 	// 没封才写」，可这两步之间隔着整个 Build：两个 goroutine 同时首次 Build，
@@ -156,7 +162,7 @@ type Route struct {
 // NewRoute 开始声明一条路径。必须以 Build 结尾。
 func NewRoute(in Protocol, out Provider) *Route {
 	return &Route{
-		In: in, Out: out,
+		in: in, out: out,
 		rules:    map[canonical.Capability]Rule{},
 		redeemed: map[Endpoint]map[canonical.Capability]bool{},
 	}
@@ -168,12 +174,12 @@ func NewRoute(in Protocol, out Provider) *Route {
 // 而不是可写字段，防的是「一条已进矩阵的路径中途改姓换名」：Matrix 的键是
 // 按 (入站, 出站) 算出来的，身份一改，键与内容就对不上——Check 会拿 A 路径
 // 的声明去裁决 B 路径的请求，而两条路径的可表达性、处置、兑现门全不一样。
-func (r *Route) InProtocol() Protocol { return r.In }
+func (r *Route) InProtocol() Protocol { return r.in }
 
 // OutProvider 返回这条路径的出站 Provider。
 //
 // 与 InProtocol 同理：身份是构造期常量，对外只读。
-func (r *Route) OutProvider() Provider { return r.Out }
+func (r *Route) OutProvider() Provider { return r.out }
 
 // IsHomogeneous 报告这条路径是不是同源快通道（原则 2.2）。
 //
@@ -183,7 +189,7 @@ func (r *Route) OutProvider() Provider { return r.Out }
 //
 // 字段可写会让上面那条封口约束形同虚设——运行时改一个 bool 就能把选路偏好
 // 整个掀翻，让请求走上一条没人验证过的路。
-func (r *Route) IsHomogeneous() bool { return r.Homogeneous }
+func (r *Route) IsHomogeneous() bool { return r.homogeneous }
 
 // MarkHomogeneous 把这条路径标记为同源快通道。
 func (r *Route) MarkHomogeneous() *Route {
@@ -192,7 +198,7 @@ func (r *Route) MarkHomogeneous() *Route {
 	if r.built {
 		return r
 	}
-	r.Homogeneous = true
+	r.homogeneous = true
 	return r
 }
 
@@ -353,7 +359,7 @@ func (r *Route) Derive(in Protocol, out Provider) *Route {
 	defer r.mu.Unlock()
 
 	n := NewRoute(in, out)
-	n.Homogeneous = r.Homogeneous
+	n.homogeneous = r.homogeneous
 	for c, rule := range r.rules {
 		// 不继承自动补上的 NotApplicable。它反映的是**基准协议**的表达力，
 		// 换一个入站协议就未必成立——Responses 表达得出 computer_use，
@@ -411,19 +417,19 @@ func (r *Route) Build() (*Route, error) {
 		return r, nil
 	}
 
-	spec, ok := expressible[r.In]
+	spec, ok := expressible[r.in]
 	if !ok {
 		r.errs = append(r.errs,
-			fmt.Sprintf("inbound protocol %q has no expressibility declaration", r.In))
+			fmt.Sprintf("inbound protocol %q has no expressibility declaration", r.in))
 		sort.Strings(r.errs)
-		return nil, fmt.Errorf("degrade: route %s -> %s: %s", r.In, r.Out, strings.Join(r.errs, "; "))
+		return nil, fmt.Errorf("degrade: route %s -> %s: %s", r.in, r.out, strings.Join(r.errs, "; "))
 	}
 
 	// 只有入站协议表达得出来的能力才需要路径声明。其余的由 Expressibility
 	// 自动补成 NotApplicable——让每条路径为客户端根本发不出来的字段辩解，
 	// 既是无谓的负担，也会把「不适用」误算成「有损失」。
 	want := map[canonical.Capability]bool{}
-	for _, c := range ExpressibleSet(r.In) {
+	for _, c := range ExpressibleSet(r.in) {
 		want[c] = true
 	}
 
@@ -447,7 +453,7 @@ func (r *Route) Build() (*Route, error) {
 	if len(extra) > 0 {
 		// 为一个客户端表达不出来的能力写声明，说明作者对协议的理解有偏差。
 		// 与其静默忽略，不如让它失败。
-		r.errs = append(r.errs, "declared but not expressible by "+string(r.In)+": "+
+		r.errs = append(r.errs, "declared but not expressible by "+string(r.in)+": "+
 			strings.Join(extra, ", "))
 	}
 
@@ -457,7 +463,7 @@ func (r *Route) Build() (*Route, error) {
 		}
 		note := ""
 		if target, ok := spec.Elsewhere[c]; ok {
-			note = fmt.Sprintf("%s 表达不了该能力，请改用入站协议 %s", r.In, target)
+			note = fmt.Sprintf("%s 表达不了该能力，请改用入站协议 %s", r.in, target)
 		} else if why, ok := spec.Impossible[c]; ok {
 			note = why
 		}
@@ -478,9 +484,9 @@ func (r *Route) Build() (*Route, error) {
 	// 未知门不在此列——归属表只登记已知门，不是准入名单。
 	for ep := range r.redeemed {
 		owner, known := ep.Protocol()
-		if known && owner != r.In {
+		if known && owner != r.in {
 			r.errs = append(r.errs, fmt.Sprintf(
-				"endpoint %q belongs to inbound protocol %s, not %s", ep, owner, r.In))
+				"endpoint %q belongs to inbound protocol %s, not %s", ep, owner, r.in))
 		}
 	}
 
@@ -515,7 +521,7 @@ func (r *Route) Build() (*Route, error) {
 	}
 	if len(r.errs) > 0 {
 		sort.Strings(r.errs)
-		return nil, fmt.Errorf("degrade: route %s -> %s: %s", r.In, r.Out, strings.Join(r.errs, "; "))
+		return nil, fmt.Errorf("degrade: route %s -> %s: %s", r.in, r.out, strings.Join(r.errs, "; "))
 	}
 	// 校验全过才封口：失败的路径不进矩阵，封不封都一样；
 	// 成功的这条从此只读，事后再 Redeem 是空操作。
@@ -575,11 +581,11 @@ func (m *Matrix) Add(r *Route, err error) error {
 	}
 	if !r.sealed() {
 		return fmt.Errorf("degrade: route %s -> %s was not built: call Build before Add",
-			r.In, r.Out)
+			r.in, r.out)
 	}
-	k := [2]string{string(r.In), string(r.Out)}
+	k := [2]string{string(r.in), string(r.out)}
 	if _, dup := m.routes[k]; dup {
-		return fmt.Errorf("degrade: duplicate route %s -> %s", r.In, r.Out)
+		return fmt.Errorf("degrade: duplicate route %s -> %s", r.in, r.out)
 	}
 	m.routes[k] = r
 	return nil
@@ -598,10 +604,10 @@ func (m *Matrix) Routes() []*Route {
 		out = append(out, r)
 	}
 	sort.Slice(out, func(i, j int) bool {
-		if out[i].In != out[j].In {
-			return out[i].In < out[j].In
+		if out[i].in != out[j].in {
+			return out[i].in < out[j].in
 		}
-		return out[i].Out < out[j].Out
+		return out[i].out < out[j].out
 	})
 	return out
 }
