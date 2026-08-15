@@ -279,3 +279,70 @@ func TestLoadRoundTrip(t *testing.T) {
 		t.Error("保存后重新读取的 fixture 与原件不一致")
 	}
 }
+
+func TestFixtureUpstreamExpectationValidation(t *testing.T) {
+	base := Fixture{
+		Name:     "t",
+		Response: Response{Status: 200},
+	}
+
+	t.Run("complete", func(t *testing.T) {
+		f := base
+		f.Upstream = &UpstreamExpectation{
+			Method: "POST",
+			Path:   "/v1/chat/completions",
+			Body:   json.RawMessage(`{"model":"m"}`),
+		}
+		if err := f.Validate(); err != nil {
+			t.Fatalf("完整的 upstream 应校验通过, 实际: %v", err)
+		}
+	})
+
+	t.Run("missing method", func(t *testing.T) {
+		f := base
+		f.Upstream = &UpstreamExpectation{
+			Method: "",
+			Path:   "/v1/chat/completions",
+			Body:   json.RawMessage(`{"model":"m"}`),
+		}
+		err := f.Validate()
+		if err == nil {
+			t.Fatal("缺少 method 应校验失败")
+		}
+		if !strings.Contains(err.Error(), "method") {
+			t.Errorf("错误信息应提及 method，实际: %v", err)
+		}
+	})
+
+	t.Run("missing path", func(t *testing.T) {
+		f := base
+		f.Upstream = &UpstreamExpectation{
+			Method: "POST",
+			Path:   "",
+			Body:   json.RawMessage(`{"model":"m"}`),
+		}
+		err := f.Validate()
+		if err == nil {
+			t.Fatal("缺少 path 应校验失败")
+		}
+		if !strings.Contains(err.Error(), "path") {
+			t.Errorf("错误信息应提及 path，实际: %v", err)
+		}
+	})
+
+	t.Run("missing body", func(t *testing.T) {
+		f := base
+		f.Upstream = &UpstreamExpectation{
+			Method: "POST",
+			Path:   "/v1/chat/completions",
+			Body:   nil,
+		}
+		err := f.Validate()
+		if err == nil {
+			t.Fatal("缺少 body 应校验失败")
+		}
+		if !strings.Contains(err.Error(), "body") {
+			t.Errorf("错误信息应提及 body，实际: %v", err)
+		}
+	})
+}

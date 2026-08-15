@@ -25,9 +25,10 @@ type Fixture struct {
 	Name string `json:"name"`
 	// Note 记录这条 fixture 覆盖的是什么场景，例如「工具参数跨分片切断」。
 	// 没有它，半年后没人知道某个奇怪的 fixture 为什么长这样。
-	Note     string   `json:"note,omitempty"`
-	Request  Request  `json:"request"`
-	Response Response `json:"response"`
+	Note     string               `json:"note,omitempty"`
+	Request  Request              `json:"request"`
+	Response Response             `json:"response"`
+	Upstream *UpstreamExpectation `json:"upstream,omitempty"`
 }
 
 // Request 是发往上游的请求。
@@ -45,6 +46,15 @@ type Response struct {
 	Headers map[string]string `json:"headers,omitempty"`
 	Body    json.RawMessage   `json:"body,omitempty"`
 	SSE     *SSEBody          `json:"sse,omitempty"`
+}
+
+// UpstreamExpectation 声明对发往上游请求的预期。
+// 异构/协议兼容路径的 fixture 必须显式配置，防止转换逻辑发错端点或遗漏关键字段导致测试伪绿。
+// Body 字段供后续在一致性断言中进行语义比对。
+type UpstreamExpectation struct {
+	Method string          `json:"method"`
+	Path   string          `json:"path"`
+	Body   json.RawMessage `json:"body"`
 }
 
 // SSEBody 是录制下来的事件流。
@@ -164,6 +174,17 @@ func (f Fixture) Validate() error {
 	}
 	if f.Response.Body != nil && f.Response.SSE != nil {
 		return fmt.Errorf("fixture %q 同时有 body 和 sse，两者互斥", f.Name)
+	}
+	if f.Upstream != nil {
+		if f.Upstream.Method == "" {
+			return fmt.Errorf("fixture %q 的 upstream 缺少 method", f.Name)
+		}
+		if f.Upstream.Path == "" {
+			return fmt.Errorf("fixture %q 的 upstream 缺少 path", f.Name)
+		}
+		if len(f.Upstream.Body) == 0 {
+			return fmt.Errorf("fixture %q 的 upstream 缺少 body", f.Name)
+		}
 	}
 	// 兜底：即使录制脚本忘了脱敏，这里也要拦下来。
 	for k, v := range f.Request.Headers {

@@ -26,6 +26,7 @@ testdata/
 
 - 每条 fixture 必须写 `Note`，说明它覆盖的是什么场景（如「工具参数跨分片切断」）。
   没有它，半年后没人知道这条奇怪的 fixture 为什么长这样。
+- 异构路径（含协议兼容路径）的 fixture 必须携带 method/path/body 的 `upstream` 预期断言；一致性测试会校验该预期，防止 provider 转换逻辑发错端点或丢字段导致测试伪绿。
 - `SSEBody.Frames` 定义回放时的 **Write 边界**：一次 Write 塞三个事件、或把一个事件
   切成两次 Write，都能暴露缓冲逻辑的 bug。为空则逐事件写出。
 - 回放服务器每帧后必须 flush，才能真实复现上游的分片节奏。
