@@ -20,10 +20,10 @@
 | 任务 | 位置 |
 |---|---|
 | 加一条路径 | `rules_phase1.go` 里 `NewRoute(...).Pass/Degrade/Reject/Emulate(...).Build()` |
-| 从已有路径派生 | `Route.Derive()` (`matrix.go:291`) + `Override()` (`:311`) |
-| 路径转正 / 能力投放 | `Route.Redeem(ep, caps...)` (`matrix.go:217`) — 显式列出指定端点已投放的能力，需先有该端点的 fixture 通过 |
-| 查某能力是否已投放 | `Route.Redeems(ep, c)` (`matrix.go:231`)；`ImplementedAt(ep)` (`:264`) 答「这扇门开了没」，`Endpoints()` (`:252`) 列已开门，`Implemented()` (`:273`) 只答「路径通车了没」 |
-| 路径入库 | `Matrix.Add` (`matrix.go:483`) — 只收已 Build 的路径并拒绝 nil，Build 校验无法绕过 |
+| 从已有路径派生 | `Route.Derive()` (`matrix.go:355`) + `Override()` (`:380`) |
+| 路径转正 / 能力投放 | `Route.Redeem(ep, caps...)` (`matrix.go:279`) — 显式列出指定端点已投放的能力，需先有该端点的 fixture 通过 |
+| 查某能力是否已投放 | `Route.Redeems(ep, c)` (`matrix.go:295`)；`ImplementedAt(ep)` (`:328`) 答「这扇门开了没」，`Endpoints()` (`:316`) 列已开门，`Implemented()` (`:337`) 只答「路径通车了没」 |
+| 路径入库 | `Matrix.Add` (`matrix.go:575`) — 只收已 Build 的路径并拒绝 nil，Build 校验无法绕过 |
 | 已知门的协议归属 | `Endpoint.Protocol()` (`endpoint.go:47`) — Build 用它拦错绑；只覆盖已知门，不是准入名单 |
 | 端点级 fixture 证据 | `matrix_test.go` 的 `checkRouteFixtures` (`:449`) — 按 fixture 的 `request.path` 与门清单双向对账 |
 | 选路排序逻辑 | `RankOutbound` (`preference.go:215`) / `BestOutbound(Inbound,…)` (`:271`) |
@@ -54,7 +54,7 @@
   `openai.responses` 路径兑现，错绑会让 `Check` 按别人的可表达性裁决这扇门的
   请求。归属表（`Endpoint.Protocol()`）只登记四扇已知门，**不是准入名单**：
   未知门、测试合成门照常放行。
-- 同源快通道（`MarkHomogeneous`）在选路时**永远优先于**全局 `OutboundPreference`。
+- 同源快通道（`IsHomogeneous()`）在选路时**永远优先于**全局 `OutboundPreference`。
 
 ## ANTI-PATTERNS
 
@@ -72,7 +72,7 @@
   单扇门能不能走要另问 `ImplementedAt(ep)`，单项能力能不能走要另问 `Redeems(ep, c)`。
 - **不要**为「入站协议表达不出」的能力写路径级 `Reject`——那是可表达性问题，
   写进 `expressibility_phase1.go` 的 `Elsewhere`/`Impossible`。
-- **不要**给未设计好可表达性声明的协议预留 `Protocol` 常量（见 `matrix.go:30` 的
+- **不要**给未设计好可表达性声明的协议预留 `Protocol` 常量（见 `matrix.go:31` 的
   注释）——那会让后来者撞上「缺少可表达性声明」这种在说代码问题的假错误。
 - **不要**在 `RankOutbound` 找不到路径时兜底到某个默认 Provider；返回空列表。
 
@@ -82,7 +82,7 @@
   bug），**不是** `ClassUnsupported`（客户端错误）。这个区分是刻意的。
 - `EMULATE` 开关关闭时的错误必须说「开关没开」，而不是「路径不支持」。
 - 新增 `canonical.Capability` 常量会让**所有**已注册路径同时构建失败——这是设计。
-- `Derive()` 不继承兑现集合（见 `matrix.go:282` 注释）：派生路径默认仍是 PLANNED，
+- `Derive()` 不继承兑现集合（见 `matrix.go:353` 注释）：派生路径默认仍是 PLANNED，
   投放必须逐条重新声明，否则一条还没动工的派生路径会宣称自己可用。
 - 已声明但未投放的能力 → `Check()` 返回 501 而非 422：501 说「等实现」，422 说
   「改请求」，方向不能混。
