@@ -3,11 +3,14 @@
 多协议双向转换的 AI 网关数据面。不把 OpenAI 格式当作内部总线，而是在
 **入站协议**与**出站 Provider** 之间建立可控的转换层。
 
-> **状态：M1 进行中——OpenAI 族两条同源直通路径与 DashScope Native 两个端点已转正，网关可用。**
+> **状态：M1 进行中——OpenAI 族两条同源直通、DashScope Native 两个端点与 Chat → DashScope Compatible 已转正，网关可用。**
 >
-> 降级矩阵登记了 14 条转换路径，**其中 3 条已实现**：
+> 降级矩阵登记了 14 条转换路径，**其中 4 条已实现**：
 > `openai.responses → openai.compat`、`openai.chat → openai.compat` 与
-> `dashscope.native → dashscope.native`（均为同源直通）。
+> `dashscope.native → dashscope.native`（均为同源直通），以及第一条异构路径
+> `openai.chat → dashscope.compatible`（wire-compatible：请求仍是 Chat 线格式，
+> 但语义异构，不是同源快通道；在 `/v1/chat/completions` 门兑现 9 项能力，
+> 设计分与可用分均为 8/11 ≈ 0.727）。
 > 其中 DashScope Native 路径投放了文本生成与多模态生成两个端点，
 > 每扇门各兑现 5 项能力（多模态门为视觉 / 音频 / 视频输入加文本与流式）。
 > 其余仍是 `PLANNED`，

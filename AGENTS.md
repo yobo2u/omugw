@@ -105,6 +105,9 @@ docs/               # principles.md、degradation-matrix.md（生成物）、adr
 - **不要**计算或展示路径级「当前可用」聚合分：各门兑现集合的并集不对应任何
   一扇真实存在的门（两门并集 8/18 已被显式否决）；可用列一律端点相对
   （`Preservation(avail, ep)`），绝不从 `Preservation(avail, Endpoint(""))` 取可用列。
+- **不要**把 wire-compatible 读成同源：`openai.chat → dashscope.compatible` 复用 Chat
+  线格式只是因为不需要重编码，语义是异构的（搜索选项降成开关、strict schema 无全局
+  保证），不得 `MarkHomogeneous`，降级头由矩阵照常生成。
 
 ## COMMANDS
 
@@ -120,15 +123,17 @@ make smoke         # 端到端冒烟，需 OMUGW_SMOKE=1 与真实凭据
 
 ## NOTES
 
-- **当前状态**：14 条路径已登记，3 条已通车（`openai.responses →
+- **当前状态**：14 条路径已登记，4 条已通车（`openai.responses →
   openai.compat`、`openai.chat → openai.compat`、`dashscope.native →
-  dashscope.native`，均为同源直通）。兑现粒度是**端点 × 能力**：OpenAI 两条
-  直通在各自的唯一门上兑现全部可表达能力；DashScope Native 投放了两个端点——
-  文本生成（text_generation / streaming / tool_calling / reasoning / web_search）
-  与多模态生成（text_generation / streaming / vision_input / audio_input /
-  video_input），每门 18 项中 5 项，不存在路径级可用聚合分。其余 Native POST
-  端点由 `POST /api/v1/` 兜底返回 DashScope 协议化 501。其余 11 条路径打过去
-  仍是 501。
+  dashscope.native`，均为同源直通；以及第一条异构路径 `openai.chat →
+  dashscope.compatible`）。兑现粒度是**端点 × 能力**：OpenAI 两条直通在各自的
+  唯一门上兑现全部可表达能力；DashScope Native 投放了两个端点——文本生成与
+  多模态生成，每门 18 项中 5 项；Chat 到 DashScope Compatible 是 wire-compatible
+  而非同源——请求保持 Chat 线格式、只做定点修补（model 改写与
+  web_search_options → enable_search），在 `/v1/chat/completions` 门兑现 9 项
+  可交付能力（7 PASS + 2 DEGRADE），file_input / audio_output 维持 REJECT 422，
+  设计与可用均为 8/11 ≈ 0.727。其余 Native POST 端点由 `POST /api/v1/` 兜底
+  返回 DashScope 协议化 501。其余 10 条路径打过去仍是 501。
 - 配置的 `auth`/`credentials`/`providers`/`models` 四块**要么全配要么全不配**；
   全不配 = 只提供 `/healthz`（合法形态），配一半直接启动失败。
 - `convstore` 是内存态：单副本正确、重启丢失、多副本不共享。因此
