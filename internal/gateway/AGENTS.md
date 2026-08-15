@@ -15,10 +15,10 @@
 
 ## REQUEST PATH
 
-未投放的 DashScope Native 端点不会进入这条链路——它们在 Mux 层就被 `build.go:160`
+未投放的 DashScope Native 端点不会进入这条链路——它们在 Mux 层就被 `build.go:166`
 注册的 `POST /api/v1/` 前缀兜底拦下，直接返回 DashScope 扁平信封的 501
 （精确注册的文本生成与多模态生成端点凭最长前缀匹配优先命中同一 Native Handler）。
-同命名空间下的非 POST 请求由 `build.go:154` 那条不带方法的兜底接住，返回框架 404。
+同命名空间下的非 POST 请求由 `build.go:160` 那条不带方法的兜底接住，返回框架 404。
 
 ```
 ServeHTTP (handler.go:175)  ← tracked 包装 ResponseWriter

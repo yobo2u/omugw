@@ -8,7 +8,7 @@
 | 包 | 范围 |
 |---|---|
 | `openairesponses/` | `openai.responses` 完整编解码：`wire.go` 结构、`decode.go` 入站、`response.go` 非流式出站、`stream.go` 流式状态机 |
-| `openaichat/` | `openai.chat` 入站解码：`wire.go` 结构、`decode.go` 入站。同源直通路径，响应/流字节原样转发，无需出站编码 |
+| `openaichat/` | `openai.chat` 入站解码：`wire.go` 结构、`decode.go` 入站、`capability.go` 能力识别（异构出站读不得 Extensions，网络搜索 / 并行工具调用两项 OpenAI 特有开关由解码器在解码阶段报告）。同时服务同源直通（响应/流字节原样转发，无需出站编码）与 wire-compatible 的异构 DashScope Compatible 适配器 |
 | `dashscopenative/` | `dashscope.native` 入站解码，覆盖文本生成与多模态生成两种端点的内容块（text / image / audio / video 四种单键形态，纯键式与带 type 两种写法，video 帧数组逐帧统计内联字节）。**宽松解码**（不拒未知字段）；流式由 `X-DashScope-SSE` 头声明而非请求体；一个协议族多端点，直通路径随请求走。`wire.go` 声明 `NamespacePrefix`、`TextGenerationPath` 与 `MultimodalGenerationPath`，网关的端点注册与命名空间兜底都依赖它 |
 | `openaiwire/` | OpenAI 族错误信封 `{"error":{message,type,param,code}}` + 限流头 |
 | `dashscopewire/` | DashScope 扁平信封 `{code,message}` + `DecodeWSFailure`（`task-failed` 事件） |

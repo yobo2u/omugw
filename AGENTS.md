@@ -48,8 +48,8 @@ docs/               # principles.md、degradation-matrix.md（生成物）、adr
 | 请求主链路 | `internal/gateway/handler.go:191` (`serve`) → `:263` (`dispatch`) | 鉴权→解码→路由→矩阵→凭据→Provider→回写 |
 | 首字节后不许重试的实现点 | `internal/gateway/handler.go:426` (`fail`)、`relay.go:25` | `tracked.wrote` 是唯一判据 |
 | 出站适配器接口 | `internal/provider/provider.go:47` | 同时拿 `Raw` 与 `Canonical`，适配器自己挑 |
-| 启动装配 | `internal/gateway/build.go:35` | 未实现的协议族在此直接拒绝启动 |
-| DashScope Native 未投放端点兜底 | `internal/gateway/build.go:160` | `POST /api/v1/` 前缀兜底返回协议化 501，先于主链路拦下请求 |
+| 启动装配 | `internal/gateway/build.go:36` | 未实现的协议族在此直接拒绝启动 |
+| DashScope Native 未投放端点兜底 | `internal/gateway/build.go:166` | `POST /api/v1/` 前缀兜底返回协议化 501，先于主链路拦下请求 |
 | 错误分类与响应头 | `internal/canonical/error.go` + `internal/protocol/*wire/` | |
 | 加/改 fixture | `testdata/routes/<in>__<out>/` | 目录名由 `degrade.FixtureDir()` 决定 |
 
