@@ -58,10 +58,10 @@ func run() error {
 			implemented++
 		}
 		attrs := []any{
-			"inbound", string(r.In),
-			"outbound", string(r.Out),
+			"inbound", string(r.InProtocol()),
+			"outbound", string(r.OutProvider()),
 			"implemented", r.Implemented(),
-			"fast_path", r.Homogeneous,
+			"fast_path", r.IsHomogeneous(),
 			"design_score", design.DesignScore(),
 		}
 		log.Info("已注册转换路径", attrs...)
@@ -69,8 +69,8 @@ func run() error {
 		// 每扇已开门一条可用分条目：可用列永远端点相对（ADR-0002 的延伸）。
 		for _, ep := range r.Endpoints() {
 			log.Info("已投放端点",
-				"inbound", string(r.In),
-				"outbound", string(r.Out),
+				"inbound", string(r.InProtocol()),
+				"outbound", string(r.OutProvider()),
 				"endpoint", string(ep),
 				"available_score", r.Preservation(matrix.Availability(), ep).AvailableScore(),
 			)

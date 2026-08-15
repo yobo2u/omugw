@@ -213,11 +213,12 @@ func reconcileDoors(m *degrade.Matrix, registered []degrade.Inbound) error {
 			continue
 		}
 		for _, ep := range r.Endpoints() {
-			in := degrade.Inbound{Protocol: r.In, Endpoint: ep}
+			in := degrade.Inbound{Protocol: r.InProtocol(), Endpoint: ep}
 			opened[in] = true
 			if !registeredSet[in] {
 				return fmt.Errorf(
-					"gateway: 入站协议 %s 的端点 %s 已在矩阵兑现，但没有注册处理器", r.In, ep)
+					"gateway: 入站协议 %s 的端点 %s 已在矩阵兑现，但没有注册处理器",
+					r.InProtocol(), ep)
 			}
 		}
 	}
