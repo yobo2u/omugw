@@ -45,8 +45,8 @@ func (m *Matrix) Markdown() string {
 	m.writePreservation(&b)
 
 	for _, r := range m.Routes() {
-		fmt.Fprintf(&b, "## `%s` → `%s`\n\n", r.In, r.Out)
-		if r.Homogeneous {
+		fmt.Fprintf(&b, "## `%s` → `%s`\n\n", r.InProtocol(), r.OutProvider())
+		if r.IsHomogeneous() {
 			b.WriteString("**同源快通道。** 该路径可字节级透传，只改写鉴权，不进 Canonical。\n\n")
 		}
 		b.WriteString("| 能力 | 处置 | 说明 |\n|---|---|---|\n")
@@ -123,10 +123,10 @@ func (m *Matrix) writePreservation(b *strings.Builder) {
 	byInbound := map[Protocol][]Provider{}
 	var order []Protocol
 	for _, r := range m.Routes() {
-		if _, seen := byInbound[r.In]; !seen {
-			order = append(order, r.In)
+		if _, seen := byInbound[r.InProtocol()]; !seen {
+			order = append(order, r.InProtocol())
 		}
-		byInbound[r.In] = append(byInbound[r.In], r.Out)
+		byInbound[r.InProtocol()] = append(byInbound[r.InProtocol()], r.OutProvider())
 	}
 	sort.Slice(order, func(i, j int) bool { return order[i] < order[j] })
 
@@ -152,7 +152,7 @@ func (m *Matrix) writePreservation(b *strings.Builder) {
 				}
 			}
 			fast := ""
-			if r.Homogeneous {
+			if r.IsHomogeneous() {
 				fast = "✅"
 			}
 
@@ -191,7 +191,7 @@ func (m *Matrix) writeEndpointBreakdown(b *strings.Builder) {
 				caps = append(caps, string(c))
 			}
 			fmt.Fprintf(&body, "| %s | %s | %s | %s | %s |\n",
-				r.In, r.Out, ep, strings.Join(caps, ", "),
+				r.InProtocol(), r.OutProvider(), ep, strings.Join(caps, ", "),
 				formatAvailable(r.Preservation(m.avail, ep)))
 		}
 	}

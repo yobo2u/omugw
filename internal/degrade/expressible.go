@@ -124,7 +124,7 @@ func (e *Expressibility) validate() error {
 func (m *Matrix) checkElsewhereTargets() error {
 	registered := map[Protocol]bool{}
 	for _, r := range m.Routes() {
-		registered[r.In] = true
+		registered[r.InProtocol()] = true
 	}
 
 	var problems []string

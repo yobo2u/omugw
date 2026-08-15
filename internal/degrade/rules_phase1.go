@@ -154,7 +154,7 @@ func Phase1() (*Matrix, error) {
 		return nil, err
 	}
 	for _, base := range []*Route{chatToAnthropic, chatToDSCompat, chatToDSNative} {
-		r := responsesExtras(base.Derive(ProtoOpenAIResponses, base.Out), false)
+		r := responsesExtras(base.Derive(ProtoOpenAIResponses, base.OutProvider()), false)
 		if err := m.Add(r.Build()); err != nil {
 			return nil, err
 		}

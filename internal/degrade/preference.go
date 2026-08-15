@@ -243,7 +243,7 @@ func (m *Matrix) rank(in Protocol, candidates []Provider, onlyImplemented bool) 
 	// 更靠前。不把同源提到最前，选路就会主动挑一条更差的路。
 	homogeneous := func(p Provider) bool {
 		r, ok := m.Route(in, p)
-		return ok && r.Homogeneous
+		return ok && r.IsHomogeneous()
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		hi, hj := homogeneous(out[i]), homogeneous(out[j])
