@@ -63,17 +63,61 @@ func TestMarkdownShowsEndpointBreakdown(t *testing.T) {
 	}
 }
 
-// TestMarkdownNeverShowsRouteAggregateAvailable 固化并集口径已被否决：
-// 多门路径的主表可用列只指路到端点细分，绝不出现 8/18 = 0.444 的并集分。
-func TestMarkdownNeverShowsRouteAggregateAvailable(t *testing.T) {
+// TestNoPathLevelAvailableAggregateInDoc 固化并集口径已被否决：文档里不存在
+// 路径级「当前可用」聚合分。
+//
+// 三条断言咬同一件事的三个面，缺一个就有实现能骗过去：主表 Native 那一行的
+// 可用格必须是「见端点细分」（只验文档某处含这四个字，主表照样可以印一个并集分）；
+// 两条端点行各自报自己的分（只验主表指路，分数可以在小节里变成并集）；
+// 0.444 全文不得出现（前两条都对，脚注里仍可能有人写下这个数）。
+//
+// 与 TestMarkdownShowsEndpointBreakdown 分工：那条管「每扇门列了哪些能力」，
+// 这条管「可用分只属于门，不属于路径」。
+func TestNoPathLevelAvailableAggregateInDoc(t *testing.T) {
 	doc := twoDoorMatrix(t).Markdown()
 
+	// 主表行带反引号，端点细分行不带——用它区分两张表，
+	// 免得断言落在另一张表上还以为自己验过了。
+	mainRow := findRow(t, doc, "| `dashscope.native` | `dashscope.native` |")
+	if got := lastCell(mainRow); got != "见端点细分" {
+		t.Errorf("多门路径主表的可用格 = %q，应为「见端点细分」——"+
+			"任何数字都是一扇不存在的门的分数\n整行: %s", got, mainRow)
+	}
+
+	for _, ep := range []Endpoint{EndpointDashScopeTextGeneration, EndpointDashScopeMultimodal} {
+		row := findRow(t, doc, "| dashscope.native | dashscope.native | "+string(ep)+" |")
+		if got, want := lastCell(row), "0.278（18 项中 5 项已投放）"; got != want {
+			t.Errorf("门 %s 的可用格 = %q，期望 %q\n整行: %s", ep, got, want, row)
+		}
+	}
+
 	if strings.Contains(doc, "0.444") {
-		t.Fatal("文档不得出现并集分 0.444——两门并集不对应任何一扇真实存在的门")
+		t.Error("文档不得出现并集分 0.444——两门并集不对应任何一扇真实存在的门")
 	}
-	if !strings.Contains(doc, "见端点细分") {
-		t.Fatal("多门路径的主表可用列应为「见端点细分」")
+}
+
+// findRow 取出以 prefix 开头的唯一一行。
+//
+// 命中零行或多行都直接判死：前者说明断言的目标行改了形状，后者说明 prefix
+// 分辨不了两张表——两种情况下继续断言都是在验一个自己也说不清是谁的东西。
+func findRow(t *testing.T, doc, prefix string) string {
+	t.Helper()
+	var hits []string
+	for _, line := range strings.Split(doc, "\n") {
+		if strings.HasPrefix(line, prefix) {
+			hits = append(hits, line)
+		}
 	}
+	if len(hits) != 1 {
+		t.Fatalf("以 %q 开头的行应恰有一条，实际 %d 条: %v", prefix, len(hits), hits)
+	}
+	return hits[0]
+}
+
+// lastCell 返回表格行最后一格的内容。可用列永远是最后一列。
+func lastCell(row string) string {
+	cells := strings.Split(strings.TrimSuffix(strings.TrimSpace(row), "|"), "|")
+	return strings.TrimSpace(cells[len(cells)-1])
 }
 
 // TestMarkdownIsDeterministic 防的是「文档每次生成都不一样」。
