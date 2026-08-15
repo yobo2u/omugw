@@ -8,7 +8,7 @@
 | 文件 | 职责 |
 |---|---|
 | `matrix.go` | `Protocol`/`Provider`/`Disposition`/`Rule`/`Route`/`Matrix`/`Verdict` 全部核心类型 + `Check()` |
-| `endpoint.go` | `Endpoint` / `Inbound` 类型与四扇门常量（DashScope 门复用协议包路径常量） |
+| `endpoint.go` | `Endpoint` / `Inbound` 类型、四扇门常量（DashScope 门复用协议包路径常量）与门归属查询 `Protocol()` |
 | `expressible.go` | 可表达性机制：能力落进 `Capabilities` / `Elsewhere` / `Impossible` 三桶之一 |
 | `expressibility_phase1.go` | 六个入站协议的可表达性声明，`init()` 时注册 |
 | `rules_phase1.go` | `Phase1()` 构建全部 14 条路径的处置 |
@@ -20,9 +20,11 @@
 | 任务 | 位置 |
 |---|---|
 | 加一条路径 | `rules_phase1.go` 里 `NewRoute(...).Pass/Degrade/Reject/Emulate(...).Build()` |
-| 从已有路径派生 | `Route.Derive()` (`matrix.go:284`) + `Override()` (`:304`) |
-| 路径转正 / 能力投放 | `Route.Redeem(ep, caps...)` (`matrix.go:210`) — 显式列出指定端点已投放的能力，需先有该端点的 fixture 通过 |
-| 查某能力是否已投放 | `Route.Redeems(ep, c)` (`matrix.go:224`)；`ImplementedAt(ep)` (`:257`) 答「这扇门开了没」，`Endpoints()` (`:245`) 列已开门，`Implemented()` (`:266`) 只答「路径通车了没」 |
+| 从已有路径派生 | `Route.Derive()` (`matrix.go:291`) + `Override()` (`:311`) |
+| 路径转正 / 能力投放 | `Route.Redeem(ep, caps...)` (`matrix.go:217`) — 显式列出指定端点已投放的能力，需先有该端点的 fixture 通过 |
+| 查某能力是否已投放 | `Route.Redeems(ep, c)` (`matrix.go:231`)；`ImplementedAt(ep)` (`:264`) 答「这扇门开了没」，`Endpoints()` (`:252`) 列已开门，`Implemented()` (`:273`) 只答「路径通车了没」 |
+| 路径入库 | `Matrix.Add` (`matrix.go:472`) — 只收已 Build 的路径并拒绝 nil，Build 校验无法绕过 |
+| 已知门的协议归属 | `Endpoint.Protocol()` (`endpoint.go:47`) — Build 用它拦错绑；只覆盖已知门，不是准入名单 |
 | 端点级 fixture 证据 | `matrix_test.go` 的 `checkRouteFixtures` (`:449`) — 按 fixture 的 `request.path` 与门清单双向对账 |
 | 选路排序逻辑 | `RankOutbound` (`preference.go:215`) / `BestOutbound(Inbound,…)` (`:271`) |
 | 保留度算法 | `Preservation.DesignScore` (`preference.go:143`) / `AvailableScore` (`:155`) |
@@ -42,6 +44,16 @@
   门与门的兑现集合互不相通，不做并集。门的存在只从兑现格子推导
   （`Endpoints()`：至少一格兑现才算开），没有独立的门注册机制。
   **不存在**路径级「当前可用」聚合分——可用列永远端点相对。
+- **Build 成功即封口**：`built` 置位后 `Redeem` / `Pass` / `Degrade` / `Reject` /
+  `Emulate` / `Override` / `MarkHomogeneous` 全是确定性空操作——投放与处置只能
+  写在 Build 之前，运行时矩阵只读。防的是「先过校验，事后补一手绕开」。
+- **`Matrix.Add` 只收已 Build 的路径**：nil 与未封口的路径一律拒绝。`Add(r, nil)`
+  是一条平行入口——不挡住它，从未受检的路径就会落进矩阵被 `Check` 当权威依据。
+- **Build 还校验处置合法性与门归属**：处置必须是五种之一，未知值报错；已知门
+  兑现给非其归属的入站协议也报错——门带着线格式，`/v1/responses` 只能由
+  `openai.responses` 路径兑现，错绑会让 `Check` 按别人的可表达性裁决这扇门的
+  请求。归属表（`Endpoint.Protocol()`）只登记四扇已知门，**不是准入名单**：
+  未知门、测试合成门照常放行。
 - 同源快通道（`MarkHomogeneous`）在选路时**永远优先于**全局 `OutboundPreference`。
 
 ## ANTI-PATTERNS
@@ -60,7 +72,7 @@
   单扇门能不能走要另问 `ImplementedAt(ep)`，单项能力能不能走要另问 `Redeems(ep, c)`。
 - **不要**为「入站协议表达不出」的能力写路径级 `Reject`——那是可表达性问题，
   写进 `expressibility_phase1.go` 的 `Elsewhere`/`Impossible`。
-- **不要**给未设计好可表达性声明的协议预留 `Protocol` 常量（见 `matrix.go:29` 的
+- **不要**给未设计好可表达性声明的协议预留 `Protocol` 常量（见 `matrix.go:30` 的
   注释）——那会让后来者撞上「缺少可表达性声明」这种在说代码问题的假错误。
 - **不要**在 `RankOutbound` 找不到路径时兜底到某个默认 Provider；返回空列表。
 

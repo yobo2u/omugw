@@ -49,7 +49,7 @@ docs/               # principles.md、degradation-matrix.md（生成物）、adr
 | 首字节后不许重试的实现点 | `internal/gateway/handler.go:426` (`fail`)、`relay.go:25` | `tracked.wrote` 是唯一判据 |
 | 出站适配器接口 | `internal/provider/provider.go:47` | 同时拿 `Raw` 与 `Canonical`，适配器自己挑 |
 | 启动装配 | `internal/gateway/build.go:35` | 未实现的协议族在此直接拒绝启动 |
-| DashScope Native 未投放端点兜底 | `internal/gateway/build.go:155` | `POST /api/v1/` 前缀兜底返回协议化 501，先于主链路拦下请求 |
+| DashScope Native 未投放端点兜底 | `internal/gateway/build.go:160` | `POST /api/v1/` 前缀兜底返回协议化 501，先于主链路拦下请求 |
 | 错误分类与响应头 | `internal/canonical/error.go` + `internal/protocol/*wire/` | |
 | 加/改 fixture | `testdata/routes/<in>__<out>/` | 目录名由 `degrade.FixtureDir()` 决定 |
 
@@ -57,11 +57,12 @@ docs/               # principles.md、degradation-matrix.md（生成物）、adr
 
 | 符号 | 类型 | 位置 | 角色 |
 |---|---|---|---|
-| `degrade.Matrix.Check` | Method | `internal/degrade/matrix.go:508` | 全部处置裁决的唯一入口；按入站坐标（协议 + 端点）裁决，fail-closed |
+| `degrade.Matrix.Check` | Method | `internal/degrade/matrix.go:549` | 全部处置裁决的唯一入口；按入站坐标（协议 + 端点）裁决，fail-closed |
 | `degrade.Matrix.BestOutbound` | Method | `internal/degrade/preference.go:271` | 候选上游排序 + 能力校验，返回 Verdict |
-| `degrade.Route.Build` | Method | `internal/degrade/matrix.go:319` | 缺一格能力声明就报错 |
-| `degrade.Route.Redeem` | Method | `internal/degrade/matrix.go:210` | 登记指定端点已投放的能力；`Redeems(ep,c)` / `RedeemedAt(ep)` / `ImplementedAt(ep)` 由它派生 |
-| `degrade.Route.Endpoints` | Method | `internal/degrade/matrix.go:245` | 已开门清单，字典序；门的存在只从兑现格子推导 |
+| `degrade.Route.Build` | Method | `internal/degrade/matrix.go:329` | 路径级校验唯一执行点：缺一格能力声明、未知处置、已知门错绑协议都报错；成功后 Route 封口 |
+| `degrade.Matrix.Add` | Method | `internal/degrade/matrix.go:472` | 路径入库唯一入口：只收已 Build 的路径，拒绝 nil——Build 校验绕不过去 |
+| `degrade.Route.Redeem` | Method | `internal/degrade/matrix.go:217` | 登记指定端点已投放的能力；`Redeems(ep,c)` / `RedeemedAt(ep)` / `ImplementedAt(ep)` 由它派生 |
+| `degrade.Route.Endpoints` | Method | `internal/degrade/matrix.go:252` | 已开门清单，字典序；门的存在只从兑现格子推导 |
 | `canonical.Capability` | Type | `internal/canonical/capability.go:8` | 矩阵第三维，27 项 |
 | `canonical.Usage.Fidelity` | Field | `internal/canonical/usage.go` | 零值非法，`Validate()` 拒绝 |
 | `provider.Provider` | Interface | `internal/provider/provider.go:47` | `Kind()` + `Call()`，返回原始 `*httpx.Response` |
