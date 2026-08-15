@@ -51,25 +51,58 @@ func okServer(t *testing.T) (*httptest.Server, *captured) {
 	})
 }
 
-func call(t *testing.T, srv *httptest.Server, raw, upstreamModel string, stream bool) (*httpx.Response, error) {
+// callInput 是一次适配器调用的测试输入，是 provider.Request 在测试侧的投影。
+//
+// 收成一个具名类型而不是继续加形参：调用点写 `call(t, srv, "raw", "m", false)`
+// 时，读的人无从判断末尾那个 false 是 stream 还是别的开关，加第六项时更是要
+// 逐个调用点数位置。零值即缺省——path 留空验证缺省退回，baseURL 留空用测试服务器。
+type callInput struct {
+	raw           string
+	upstreamModel string
+	stream        bool
+
+	path    string
+	baseURL string
+
+	// header 是客户端原始请求头。适配器不得把它们转给上游。
+	header http.Header
+}
+
+// call 发起一次适配器调用，成功时把响应体的关闭登记进 t.Cleanup。
+//
+// 在这里登记而不是让每个调用点自己关：httpx 的 Body 上挂着空闲计时器与整体
+// 超时的 cancel，漏关会把它们一起漏掉；而且 httptest.Server.Close 会等未完成的
+// 连接，漏关能让收尾挂住。t.Cleanup 是 LIFO，serve 先登记 srv.Close，
+// 这里后登记 Body.Close，于是先关体、后关服务器——顺序正是要的那个。
+func call(t *testing.T, srv *httptest.Server, in callInput) (*httpx.Response, error) {
 	t.Helper()
 
 	p := New(httpx.New(config.Default().Timeouts, func() time.Time { return refTime }),
 		func() time.Time { return refTime })
 
-	return p.Call(context.Background(), provider.Request{
+	baseURL := in.baseURL
+	if baseURL == "" {
+		baseURL = srv.URL
+	}
+
+	resp, err := p.Call(context.Background(), provider.Request{
 		Target: router.Target{
 			Kind:           degrade.ProviderDashScopeCompatible,
 			Endpoint:       "test",
-			BaseURL:        srv.URL,
-			UpstreamModel:  upstreamModel,
+			BaseURL:        baseURL,
+			UpstreamModel:  in.upstreamModel,
 			CredentialPool: "test",
 		},
 		Credential: credential.Credential{ID: "k1", Secret: "sk-gateway-own-key"},
-		Raw:        []byte(raw),
-		Stream:     stream,
-		Path:       ChatCompletionsPath,
+		Raw:        []byte(in.raw),
+		Stream:     in.stream,
+		Path:       in.path,
+		Header:     in.header,
 	})
+	if err == nil && resp != nil {
+		t.Cleanup(func() { resp.Body.Close() })
+	}
+	return resp, err
 }
 
 // upstreamFields 把上游实际收到的请求体解成字段表，供语义比对。
@@ -93,10 +126,12 @@ func TestKindIsDashScopeCompatible(t *testing.T) {
 }
 
 // TestRequestShape 钉死上游请求的协议事实：method、path、网关凭据、模型改写、
-// Accept 随流式与否。
+// Accept 随流式与否，以及客户端头一概不转发。
 //
-// 凭据这一项是安全项：转发客户端的 Authorization 等于把客户端的密钥泄给上游，
-// 而上游没有理由知道它；反过来上游也无从用它计费。
+// 头这两项是安全项：客户端发来的 Authorization 转给上游等于泄露客户端密钥，
+// 而上游没有理由知道它；转发任意自定义头则等于给客户端开了一条直通上游的
+// 隧道，能绕过网关去操纵上游的租户、审查、异步等行为。所以这里刻意让客户端
+// 带上一个假凭据与一个自定义头，再断言上游两样都没收到。
 func TestRequestShape(t *testing.T) {
 	for _, tc := range []struct {
 		stream     bool
@@ -107,13 +142,20 @@ func TestRequestShape(t *testing.T) {
 	} {
 		srv, got := okServer(t)
 
-		resp, err := call(t, srv,
-			`{"model":"logical","messages":[{"role":"user","content":"hi"}]}`,
-			"qwen-plus", tc.stream)
-		if err != nil {
+		clientHeader := http.Header{}
+		clientHeader.Set("Authorization", "Bearer sk-client-must-not-leak")
+		clientHeader.Set("X-Client-Custom", "must-not-be-forwarded")
+		clientHeader.Set("X-DashScope-WorkSpace", "ws-must-not-be-forwarded")
+
+		if _, err := call(t, srv, callInput{
+			raw:           `{"model":"logical","messages":[{"role":"user","content":"hi"}]}`,
+			upstreamModel: "qwen-plus",
+			stream:        tc.stream,
+			path:          ChatCompletionsPath,
+			header:        clientHeader,
+		}); err != nil {
 			t.Fatal(err)
 		}
-		resp.Body.Close()
 
 		if got.method != http.MethodPost {
 			t.Errorf("method = %q，期望 POST", got.method)
@@ -122,7 +164,12 @@ func TestRequestShape(t *testing.T) {
 			t.Errorf("path = %q，期望 %q", got.path, ChatCompletionsPath)
 		}
 		if auth := got.header.Get("Authorization"); auth != "Bearer sk-gateway-own-key" {
-			t.Errorf("Authorization = %q，期望网关自己的凭据", auth)
+			t.Errorf("Authorization = %q，期望网关自己的凭据而非客户端的", auth)
+		}
+		for _, name := range []string{"X-Client-Custom", "X-DashScope-WorkSpace"} {
+			if v := got.header.Get(name); v != "" {
+				t.Errorf("客户端头 %s 被转发给上游了: %q", name, v)
+			}
 		}
 		if ct := got.header.Get("Content-Type"); ct != "application/json" {
 			t.Errorf("Content-Type = %q", ct)
@@ -143,23 +190,13 @@ func TestRequestShape(t *testing.T) {
 func TestDefaultPathWhenRequestPathEmpty(t *testing.T) {
 	srv, got := okServer(t)
 
-	p := New(httpx.New(config.Default().Timeouts, func() time.Time { return refTime }),
-		func() time.Time { return refTime })
-	resp, err := p.Call(context.Background(), provider.Request{
-		Target: router.Target{
-			Kind:           degrade.ProviderDashScopeCompatible,
-			Endpoint:       "test",
-			BaseURL:        srv.URL + "/",
-			UpstreamModel:  "m",
-			CredentialPool: "test",
-		},
-		Credential: credential.Credential{ID: "k1", Secret: "sk-gateway-own-key"},
-		Raw:        []byte(`{"model":"m","messages":[]}`),
-	})
-	if err != nil {
+	if _, err := call(t, srv, callInput{
+		raw:           `{"model":"m","messages":[]}`,
+		upstreamModel: "m",
+		baseURL:       srv.URL + "/",
+	}); err != nil {
 		t.Fatal(err)
 	}
-	resp.Body.Close()
 
 	if got.path != ChatCompletionsPath {
 		t.Errorf("path = %q，期望缺省退回 %q", got.path, ChatCompletionsPath)
@@ -175,8 +212,11 @@ func TestUpstreamErrorDecoded(t *testing.T) {
 		_, _ = io.WriteString(w, `{"error":{"type":"rate_limit_error","message":"slow down"}}`)
 	})
 
-	_, err := call(t, srv,
-		`{"model":"m","messages":[{"role":"user","content":"hi"}]}`, "m", false)
+	_, err := call(t, srv, callInput{
+		raw:           `{"model":"m","messages":[{"role":"user","content":"hi"}]}`,
+		upstreamModel: "m",
+		path:          ChatCompletionsPath,
+	})
 	if err == nil {
 		t.Fatal("非 2xx 应当返回错误")
 	}
@@ -203,7 +243,11 @@ func TestUpstreamErrorDecoded(t *testing.T) {
 func TestMissingModelRejected(t *testing.T) {
 	srv, _ := okServer(t)
 
-	_, err := call(t, srv, `{"messages":[{"role":"user","content":"hi"}]}`, "m", false)
+	_, err := call(t, srv, callInput{
+		raw:           `{"messages":[{"role":"user","content":"hi"}]}`,
+		upstreamModel: "m",
+		path:          ChatCompletionsPath,
+	})
 	assertClass(t, err, canonical.ClassBadRequest)
 }
 
@@ -213,7 +257,11 @@ func TestInvalidJSONRejected(t *testing.T) {
 	srv, _ := okServer(t)
 
 	for _, raw := range []string{`not json at all`, `[1,2,3]`, `"a string"`} {
-		_, err := call(t, srv, raw, "m", false)
+		_, err := call(t, srv, callInput{
+			raw:           raw,
+			upstreamModel: "m",
+			path:          ChatCompletionsPath,
+		})
 		assertClass(t, err, canonical.ClassBadRequest)
 	}
 }
@@ -223,7 +271,10 @@ func TestInvalidJSONRejected(t *testing.T) {
 func TestMissingUpstreamModelIsInternal(t *testing.T) {
 	srv, _ := okServer(t)
 
-	_, err := call(t, srv, `{"model":"m","messages":[]}`, "", false)
+	_, err := call(t, srv, callInput{
+		raw:  `{"model":"m","messages":[]}`,
+		path: ChatCompletionsPath,
+	})
 	assertClass(t, err, canonical.ClassInternal)
 }
 

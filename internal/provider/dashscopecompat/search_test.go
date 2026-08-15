@@ -5,6 +5,11 @@ import "testing"
 // 本文件只钉一件事：web_search_options → enable_search 这处语义映射。
 // 它是本适配器与同源直通的唯一实质差别，值得与线格式断言分开看。
 
+// searchInput 固定住与搜索无关的输入，让每个用例的字面量里只剩下区分它的请求体。
+func searchInput(raw string) callInput {
+	return callInput{raw: raw, upstreamModel: "m", path: ChatCompletionsPath}
+}
+
 // TestNoSearchNoEnableSearch：客户端没要搜索时不得替它开启。
 //
 // 替客户端开搜索不是「更好用」，是静默改语义：搜索会改变输出内容、增加计费，
@@ -12,8 +17,8 @@ import "testing"
 func TestNoSearchNoEnableSearch(t *testing.T) {
 	srv, got := okServer(t)
 
-	if _, err := call(t, srv,
-		`{"model":"m","messages":[{"role":"user","content":"hi"}]}`, "m", false); err != nil {
+	if _, err := call(t, srv, searchInput(
+		`{"model":"m","messages":[{"role":"user","content":"hi"}]}`)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -35,7 +40,7 @@ func TestSearchOptionsMappedToEnableSearch(t *testing.T) {
 		`"web_search_options":{"search_context_size":"high",` +
 		`"user_location":{"type":"approximate","approximate":{` +
 		`"country":"CN","city":"上海","timezone":"Asia/Shanghai"}}}}`
-	if _, err := call(t, srv, raw, "m", false); err != nil {
+	if _, err := call(t, srv, searchInput(raw)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -52,9 +57,9 @@ func TestSearchOptionsMappedToEnableSearch(t *testing.T) {
 func TestEmptySearchOptionsStillEnables(t *testing.T) {
 	srv, got := okServer(t)
 
-	if _, err := call(t, srv,
+	if _, err := call(t, srv, searchInput(
 		`{"model":"m","messages":[{"role":"user","content":"hi"}],"web_search_options":{}}`,
-		"m", false); err != nil {
+	)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -71,9 +76,9 @@ func TestEmptySearchOptionsStillEnables(t *testing.T) {
 func TestNullSearchOptionsStayUntouched(t *testing.T) {
 	srv, got := okServer(t)
 
-	if _, err := call(t, srv,
+	if _, err := call(t, srv, searchInput(
 		`{"model":"m","messages":[{"role":"user","content":"hi"}],"web_search_options":null}`,
-		"m", false); err != nil {
+	)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -99,7 +104,9 @@ func TestUnrelatedFieldsPreserved(t *testing.T) {
 		`"response_format":{"type":"json_object"},` +
 		`"web_search_options":{},` +
 		`"brand_new_param":{"nested":[1,2,3]}}`
-	if _, err := call(t, srv, raw, "upstream", false); err != nil {
+	in := searchInput(raw)
+	in.upstreamModel = "upstream"
+	if _, err := call(t, srv, in); err != nil {
 		t.Fatal(err)
 	}
 
@@ -133,9 +140,9 @@ func TestUnrelatedFieldsPreserved(t *testing.T) {
 func TestClientEnableSearchPreservedWithoutOptions(t *testing.T) {
 	srv, got := okServer(t)
 
-	if _, err := call(t, srv,
+	if _, err := call(t, srv, searchInput(
 		`{"model":"m","messages":[{"role":"user","content":"hi"}],"enable_search":false}`,
-		"m", false); err != nil {
+	)); err != nil {
 		t.Fatal(err)
 	}
 
