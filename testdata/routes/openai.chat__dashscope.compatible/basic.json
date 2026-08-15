@@ -1,0 +1,46 @@
+{
+  "name": "openai.chat__dashscope.compatible/basic",
+  "note": "wire-compatible 的最小闭环：Chat 请求经定点修补（改写模型名与鉴权）后交给 DashScope Compatible，上游 Chat 响应原样回给客户端。upstream 声明钉死上游实际收到的形状——只比客户端响应会漏掉「Provider 没做改写」的假绿。",
+  "request": {
+    "method": "POST",
+    "path": "/v1/chat/completions",
+    "headers": {
+      "authorization": "<redacted>",
+      "content-type": "application/json"
+    },
+    "body": {
+      "model": "logical-fast",
+      "messages": [{ "role": "user", "content": "上海天气怎么样？" }]
+    }
+  },
+  "upstream": {
+    "method": "POST",
+    "path": "/v1/chat/completions",
+    "body": {
+      "model": "upstream-model",
+      "messages": [{ "role": "user", "content": "上海天气怎么样？" }]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json",
+      "x-ratelimit-remaining-tokens": "1999918"
+    },
+    "body": {
+      "id": "chatcmpl-ds01",
+      "object": "chat.completion",
+      "created": 1755216000,
+      "model": "qwen-plus-upstream",
+      "choices": [
+        { "index": 0, "message": { "role": "assistant", "content": "今天多云，22 度。" }, "finish_reason": "stop" }
+      ],
+      "usage": {
+        "prompt_tokens": 24,
+        "completion_tokens": 11,
+        "total_tokens": 35,
+        "prompt_tokens_details": { "cached_tokens": 0 }
+      }
+    }
+  }
+}

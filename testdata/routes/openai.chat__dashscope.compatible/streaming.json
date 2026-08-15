@@ -1,0 +1,55 @@
+{
+  "name": "openai.chat__dashscope.compatible/streaming",
+  "note": "流式转发。frames 复现上游把多个 chunk 挤在一次 Write 里的真实行为——缓冲 bug 只在分片边界上才会暴露。最后一个 chunk 的 usage（客户端需带 stream_options.include_usage）会被提取用于计费，其余 chunk 的 data 负载逐字保留。upstream 声明证明 stream 与 stream_options 原样带给上游。",
+  "request": {
+    "method": "POST",
+    "path": "/v1/chat/completions",
+    "headers": {
+      "authorization": "<redacted>",
+      "content-type": "application/json"
+    },
+    "body": {
+      "model": "logical-fast",
+      "messages": [{ "role": "user", "content": "数到三" }],
+      "stream": true,
+      "stream_options": { "include_usage": true }
+    }
+  },
+  "upstream": {
+    "method": "POST",
+    "path": "/v1/chat/completions",
+    "body": {
+      "model": "upstream-model",
+      "messages": [{ "role": "user", "content": "数到三" }],
+      "stream": true,
+      "stream_options": { "include_usage": true }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": { "content-type": "text/event-stream" },
+    "sse": {
+      "frames": [2, 3, 1],
+      "events": [
+        {
+          "data": "{\"id\":\"chatcmpl-ds02\",\"object\":\"chat.completion.chunk\",\"created\":1755216000,\"model\":\"qwen-plus-upstream\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}"
+        },
+        {
+          "data": "{\"id\":\"chatcmpl-ds02\",\"object\":\"chat.completion.chunk\",\"created\":1755216000,\"model\":\"qwen-plus-upstream\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"一\"},\"finish_reason\":null}]}"
+        },
+        {
+          "data": "{\"id\":\"chatcmpl-ds02\",\"object\":\"chat.completion.chunk\",\"created\":1755216000,\"model\":\"qwen-plus-upstream\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"二\"},\"finish_reason\":null}]}"
+        },
+        {
+          "data": "{\"id\":\"chatcmpl-ds02\",\"object\":\"chat.completion.chunk\",\"created\":1755216000,\"model\":\"qwen-plus-upstream\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"三\"},\"finish_reason\":null}]}"
+        },
+        {
+          "data": "{\"id\":\"chatcmpl-ds02\",\"object\":\"chat.completion.chunk\",\"created\":1755216000,\"model\":\"qwen-plus-upstream\",\"choices\":[],\"usage\":{\"prompt_tokens\":9,\"completion_tokens\":3,\"total_tokens\":12}}"
+        },
+        {
+          "data": "[DONE]"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,92 @@
+{
+  "name": "openai.chat__dashscope.compatible/tool_calling",
+  "note": "工具声明、工具结果与工具调用响应：请求带 tools 声明与 assistant tool_calls / tool 结果两段历史，上游收到原样的工具结构，响应是基于工具结果的最终回答。upstream 声明证明 tools / tool_choice / 工具消息全部原样保留。",
+  "request": {
+    "method": "POST",
+    "path": "/v1/chat/completions",
+    "headers": {
+      "authorization": "<redacted>",
+      "content-type": "application/json"
+    },
+    "body": {
+      "model": "logical-fast",
+      "messages": [
+        { "role": "user", "content": "上海天气怎么样？" },
+        {
+          "role": "assistant",
+          "content": "",
+          "tool_calls": [
+            { "id": "call_1", "type": "function", "function": { "name": "get_weather", "arguments": "{\"city\":\"上海\"}" } }
+          ]
+        },
+        { "role": "tool", "tool_call_id": "call_1", "content": "今天多云，22 度。" }
+      ],
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "get_weather",
+            "description": "查询城市天气",
+            "parameters": {
+              "type": "object",
+              "properties": { "city": { "type": "string" } },
+              "required": ["city"]
+            }
+          }
+        }
+      ],
+      "tool_choice": "auto"
+    }
+  },
+  "upstream": {
+    "method": "POST",
+    "path": "/v1/chat/completions",
+    "body": {
+      "model": "upstream-model",
+      "messages": [
+        { "role": "user", "content": "上海天气怎么样？" },
+        {
+          "role": "assistant",
+          "content": "",
+          "tool_calls": [
+            { "id": "call_1", "type": "function", "function": { "name": "get_weather", "arguments": "{\"city\":\"上海\"}" } }
+          ]
+        },
+        { "role": "tool", "tool_call_id": "call_1", "content": "今天多云，22 度。" }
+      ],
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "get_weather",
+            "description": "查询城市天气",
+            "parameters": {
+              "type": "object",
+              "properties": { "city": { "type": "string" } },
+              "required": ["city"]
+            }
+          }
+        }
+      ],
+      "tool_choice": "auto"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": { "content-type": "application/json" },
+    "body": {
+      "id": "chatcmpl-ds03",
+      "object": "chat.completion",
+      "created": 1755216000,
+      "model": "qwen-plus-upstream",
+      "choices": [
+        { "index": 0, "message": { "role": "assistant", "content": "上海今天多云，22 度。" }, "finish_reason": "stop" }
+      ],
+      "usage": {
+        "prompt_tokens": 48,
+        "completion_tokens": 12,
+        "total_tokens": 60
+      }
+    }
+  }
+}
