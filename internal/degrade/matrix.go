@@ -162,7 +162,30 @@ func NewRoute(in Protocol, out Provider) *Route {
 	}
 }
 
-// Homogeneous 把这条路径标记为同源快通道。
+// InProtocol 返回这条路径的入站协议。
+//
+// 身份由 NewRoute 一次定死，此后再没有写者，所以读它不加锁。给出只读访问器
+// 而不是可写字段，防的是「一条已进矩阵的路径中途改姓换名」：Matrix 的键是
+// 按 (入站, 出站) 算出来的，身份一改，键与内容就对不上——Check 会拿 A 路径
+// 的声明去裁决 B 路径的请求，而两条路径的可表达性、处置、兑现门全不一样。
+func (r *Route) InProtocol() Protocol { return r.In }
+
+// OutProvider 返回这条路径的出站 Provider。
+//
+// 与 InProtocol 同理：身份是构造期常量，对外只读。
+func (r *Route) OutProvider() Provider { return r.Out }
+
+// IsHomogeneous 报告这条路径是不是同源快通道（原则 2.2）。
+//
+// 报的是 Build 封口时定下的既成事实，写入口只有 MarkHomogeneous 一处，且只在
+// Build 之前有效。这里不加锁是热路径的要求：选路排序每挑一次候选就要问一遍，
+// 而只有已封口的路径进得了 Matrix，封口之后再没有写者。
+//
+// 字段可写会让上面那条封口约束形同虚设——运行时改一个 bool 就能把选路偏好
+// 整个掀翻，让请求走上一条没人验证过的路。
+func (r *Route) IsHomogeneous() bool { return r.Homogeneous }
+
+// MarkHomogeneous 把这条路径标记为同源快通道。
 func (r *Route) MarkHomogeneous() *Route {
 	r.mu.Lock()
 	defer r.mu.Unlock()
