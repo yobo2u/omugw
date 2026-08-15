@@ -387,6 +387,18 @@ func (r *Route) Build() (*Route, error) {
 		}
 	}
 
+	// 已知门错绑入站协议：门带着线格式，/v1/responses 收的是 Responses 请求。
+	// 让 openai.chat 路径兑现它，矩阵就替一扇由别人解码器把守的门背书，
+	// 而 Check 会按 chat 的可表达性裁决一个 Responses 请求。
+	// 未知门不在此列——归属表只登记已知门，不是准入名单。
+	for ep := range r.redeemed {
+		owner, known := ep.Protocol()
+		if known && owner != r.In {
+			r.errs = append(r.errs, fmt.Sprintf(
+				"endpoint %q belongs to inbound protocol %s, not %s", ep, owner, r.In))
+		}
+	}
+
 	// 兑现一个 REJECT 或 N/A 的格子没有内容可言——前者按设计就该失败，
 	// 后者客户端连发都发不出来。让它在 Build 失败，好过在文档里显示成「已投放」，
 	// 那是在为一个不存在的东西背书。这是既有路径级检查在端点粒度上的延续。

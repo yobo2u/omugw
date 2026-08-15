@@ -66,6 +66,83 @@ func TestRedeemUndeliverableAtEndpointFailsBuild(t *testing.T) {
 	}
 }
 
+// TestRedeemForeignEndpointFailsBuild 防的是「把别人协议的门开在自己路径上」。
+//
+// 门带着线格式：/v1/responses 收的是 Responses 请求。让 openai.chat 路径兑现它，
+// 矩阵就会替一扇由 Responses 解码器把守的门背书，Check 也会按 chat 的可表达性
+// 裁决一个 Responses 请求。这种错绑在运行时只表现为语焉不详的字段丢失，
+// 必须在 Build 就拦死。
+func TestRedeemForeignEndpointFailsBuild(t *testing.T) {
+	_, err := NewRoute(ProtoOpenAIChat, ProviderOpenAICompat).
+		Pass(ExpressibleSet(ProtoOpenAIChat)...).
+		Redeem(EndpointOpenAIResponses, canonical.CapTextGeneration).
+		Build()
+	if err == nil {
+		t.Fatal("兑现别的协议的门应当 Build 失败")
+	}
+	// 三样都要点名：错绑的人手里只有这三个事实才知道该改哪一边。
+	for _, want := range []string{
+		string(EndpointOpenAIResponses),
+		string(ProtoOpenAIChat),
+		string(ProtoOpenAIResponses),
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("错误信息应包含 %q，实际为: %v", want, err)
+		}
+	}
+
+	// 反方向同样不许：Responses 路径也不能开 Chat 的门。
+	_, err = NewRoute(ProtoOpenAIResponses, ProviderOpenAICompat).
+		Pass(ExpressibleSet(ProtoOpenAIResponses)...).
+		Redeem(EndpointOpenAIChat, canonical.CapTextGeneration).
+		Build()
+	if err == nil {
+		t.Fatal("反方向错绑同样应当 Build 失败")
+	}
+
+	// 跨协议族：DashScope 的门不属于任何 OpenAI 入站协议。
+	_, err = NewRoute(ProtoOpenAIChat, ProviderDashScopeNative).
+		Pass(ExpressibleSet(ProtoOpenAIChat)...).
+		Redeem(EndpointDashScopeTextGeneration, canonical.CapTextGeneration).
+		Build()
+	if err == nil {
+		t.Fatal("跨协议族错绑同样应当 Build 失败")
+	}
+}
+
+// TestRedeemUnknownEndpointStillBuilds 保住未知门这条活路。
+//
+// 归属表只登记已知门，它不是准入名单。测试用的合成门、以及还没提成常量的
+// 新端点都必须能照常兑现——否则每加一扇门都要先改归属表，闸门就从
+// 「防错绑」变成了「防投放」。可交付性那道校验照旧生效。
+func TestRedeemUnknownEndpointStillBuilds(t *testing.T) {
+	r, err := NewRoute(ProtoOpenAIChat, ProviderOpenAICompat).
+		Pass(ExpressibleSet(ProtoOpenAIChat)...).
+		Redeem(Endpoint("/v1/synthetic-door"), canonical.CapTextGeneration).
+		Build()
+	if err != nil {
+		t.Fatalf("未知门应当照常兑现: %v", err)
+	}
+	if !r.ImplementedAt(Endpoint("/v1/synthetic-door")) {
+		t.Error("未知门兑现后应当算开门")
+	}
+
+	// 未知门不豁免可交付性：REJECT 格子照样在 Build 失败。
+	var others []canonical.Capability
+	for _, c := range ExpressibleSet(ProtoOpenAIChat) {
+		if c != canonical.CapAudioInput {
+			others = append(others, c)
+		}
+	}
+	if _, err := NewRoute(ProtoOpenAIChat, ProviderAnthropicMessages).
+		Pass(others...).
+		Reject(noteNoAudioIn, canonical.CapAudioInput).
+		Redeem(Endpoint("/v1/synthetic-door"), canonical.CapAudioInput).
+		Build(); err == nil {
+		t.Fatal("未知门兑现 REJECT 格子仍应 Build 失败")
+	}
+}
+
 // TestEndpointsDerivedFromRedemption 固化「门的存在只从兑现格子推导」。
 //
 // 没有独立的门注册机制，也没有「空门」可以声明：

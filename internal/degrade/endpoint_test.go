@@ -33,3 +33,46 @@ func TestOpenAIEndpointConstants(t *testing.T) {
 		t.Errorf("EndpointOpenAIResponses = %q", EndpointOpenAIResponses)
 	}
 }
+
+// TestKnownEndpointsBelongToOwningProtocol 钉死四扇已知门各自的归属协议。
+//
+// 门不是一段自由字符串：/v1/responses 讲的是 Responses 线格式，
+// 拿 openai.chat 的解码器去接它，解出来的东西与门后的实现对不上。
+// 归属一旦漂了，Build 那道错绑闸门就会放错人进来——归属表本身必须先被咬住。
+func TestKnownEndpointsBelongToOwningProtocol(t *testing.T) {
+	for _, tc := range []struct {
+		ep    Endpoint
+		owner Protocol
+	}{
+		{EndpointOpenAIChat, ProtoOpenAIChat},
+		{EndpointOpenAIResponses, ProtoOpenAIResponses},
+		{EndpointDashScopeTextGeneration, ProtoDashScopeNative},
+		{EndpointDashScopeMultimodal, ProtoDashScopeNative},
+	} {
+		owner, known := tc.ep.Protocol()
+		if !known {
+			t.Errorf("门 %s 应当是已知门", tc.ep)
+			continue
+		}
+		if owner != tc.owner {
+			t.Errorf("门 %s 归属 %q，应为 %q", tc.ep, owner, tc.owner)
+		}
+	}
+}
+
+// TestUnknownEndpointHasNoOwner 固化「归属表只覆盖已知门」。
+//
+// 未知门必须报「不知道」而不是猜一个协议：猜错会把一扇还没设计的门
+// 焊死在某个协议上，而未来投放它的多半是另一个协议。零值同理——
+// 它按定义就是「没有这扇门」，更不该有归属。
+func TestUnknownEndpointHasNoOwner(t *testing.T) {
+	for _, ep := range []Endpoint{
+		Endpoint(""),
+		Endpoint("/v1/embeddings"),
+		Endpoint("/api/v1/services/embeddings/text-embedding/text-embedding"),
+	} {
+		if owner, known := ep.Protocol(); known {
+			t.Errorf("未知门 %q 不该有归属，实际报 %q", ep, owner)
+		}
+	}
+}
