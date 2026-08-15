@@ -1,4 +1,4 @@
-package gateway_test
+package gateway
 
 import (
 	"bytes"
@@ -15,7 +15,6 @@ import (
 	"github.com/yobo2u/omugw/internal/canonical"
 	"github.com/yobo2u/omugw/internal/config"
 	"github.com/yobo2u/omugw/internal/degrade"
-	"github.com/yobo2u/omugw/internal/gateway"
 	"github.com/yobo2u/omugw/internal/obs"
 	"github.com/yobo2u/omugw/internal/protocol/dashscopenative"
 )
@@ -59,7 +58,7 @@ func TestBuiltMux_DashScopeNativeFallback_WithUpstream(t *testing.T) {
 		},
 	}
 
-	built, err := gateway.Build(cfg, m, metrics, log)
+	built, err := Build(cfg, m, metrics, log)
 	if err != nil {
 		t.Fatalf("构建失败: %v", err)
 	}
@@ -225,7 +224,7 @@ func TestBuiltMux_HealthOnlyMode_NoFallback(t *testing.T) {
 	// 空配置 = 仅健康检查模式
 	cfg := config.Config{}
 
-	built, err := gateway.Build(cfg, m, metrics, log)
+	built, err := Build(cfg, m, metrics, log)
 	if err != nil {
 		t.Fatalf("构建失败: %v", err)
 	}
@@ -280,7 +279,7 @@ func TestEveryOpenDoorReachesAHandler(t *testing.T) {
 
 	cfg := buildTestConfig(upstream.URL)
 	cfg.Providers[0].Kind = "dashscope.native"
-	built, err := gateway.Build(cfg, m, obs.NewMetrics(prometheus.NewRegistry()),
+	built, err := Build(cfg, m, obs.NewMetrics(prometheus.NewRegistry()),
 		slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatalf("构建失败: %v", err)
@@ -316,7 +315,7 @@ func TestBuildFailsWhenRedeemedEndpointUnregistered(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := gateway.Build(buildTestConfig("http://127.0.0.1:0"), m,
+	_, err := Build(buildTestConfig("http://127.0.0.1:0"), m,
 		obs.NewMetrics(prometheus.NewRegistry()),
 		slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err == nil {
@@ -340,7 +339,7 @@ func TestBuildFailsWhenRegisteredEndpointUnredeemed(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := gateway.Build(buildTestConfig("http://127.0.0.1:0"), m,
+	_, err := Build(buildTestConfig("http://127.0.0.1:0"), m,
 		obs.NewMetrics(prometheus.NewRegistry()),
 		slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err == nil {
@@ -348,5 +347,130 @@ func TestBuildFailsWhenRegisteredEndpointUnredeemed(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "没有任何路径兑现它") {
 		t.Errorf("错误应指出端点无人兑现: %v", err)
+	}
+}
+
+// sharedSyntheticDoor 是一段两个协议都可能挂上去的路径。
+//
+// 用未知合成门而不是 /v1/chat/completions：已知门的归属在 degrade.Build
+// 阶段就会被拦下，构造不出「同路径跨协议」的矩阵，那条闸门证明的也是另一件事。
+// 未知门按设计放行，正好把对账自己的坐标是否够用单独暴露出来。
+const sharedSyntheticDoor = degrade.Endpoint("/v1/shared-synthetic")
+
+// openSyntheticDoorOn 造一条在合成门上兑现了一项能力的路径。
+func openSyntheticDoorOn(t *testing.T, in degrade.Protocol) *degrade.Matrix {
+	t.Helper()
+	m := degrade.NewMatrix()
+	if err := m.Add(degrade.NewRoute(in, degrade.ProviderOpenAICompat).
+		MarkHomogeneous().
+		Pass(degrade.ExpressibleSet(in)...).
+		Redeem(sharedSyntheticDoor, canonical.CapTextGeneration).
+		Build()); err != nil {
+		t.Fatal(err)
+	}
+	return m
+}
+
+// TestReconcileRejectsDoorOpenedUnderAnotherProtocol 防「同路径顶账」的第一个方向：
+// 矩阵在 openai.chat 下开了这扇门，注册的却是 responses 的处理器。
+//
+// 只按路径对账，两份名单看上去严丝合缝，启动全绿；而请求进来时 chat 兑现的
+// 那格能力，由一套 Responses 解码器把守——错配在运行时只表现为字段丢失。
+func TestReconcileRejectsDoorOpenedUnderAnotherProtocol(t *testing.T) {
+	m := openSyntheticDoorOn(t, degrade.ProtoOpenAIChat)
+
+	err := reconcileDoors(m, []degrade.Inbound{
+		{Protocol: degrade.ProtoOpenAIResponses, Endpoint: sharedSyntheticDoor},
+	})
+	if err == nil {
+		t.Fatal("openai.chat 兑现的门被 openai.responses 的注册顶了账，对账却判绿")
+	}
+	if !strings.Contains(err.Error(), "没有注册处理器") {
+		t.Errorf("错误应指出兑现的门没有处理器: %v", err)
+	}
+	if !strings.Contains(err.Error(), string(degrade.ProtoOpenAIChat)) {
+		t.Errorf("错误应点名兑现方的协议 %s，否则读者不知道是哪一半错了: %v",
+			degrade.ProtoOpenAIChat, err)
+	}
+	if !strings.Contains(err.Error(), string(sharedSyntheticDoor)) {
+		t.Errorf("错误应点名端点 %s: %v", sharedSyntheticDoor, err)
+	}
+}
+
+// TestReconcileRejectsHandlerRegisteredUnderAnotherProtocol 防第二个方向：
+// 这扇门在 openai.chat 下确实开着，却多注册了一个 responses 的处理器。
+//
+// 按路径对账时，chat 那格兑现会把 responses 那行注册一并算成「有人兑现」，
+// 于是一处永远返回 501 的空头承诺被判成绿。
+func TestReconcileRejectsHandlerRegisteredUnderAnotherProtocol(t *testing.T) {
+	m := openSyntheticDoorOn(t, degrade.ProtoOpenAIChat)
+
+	err := reconcileDoors(m, []degrade.Inbound{
+		{Protocol: degrade.ProtoOpenAIChat, Endpoint: sharedSyntheticDoor},
+		{Protocol: degrade.ProtoOpenAIResponses, Endpoint: sharedSyntheticDoor},
+	})
+	if err == nil {
+		t.Fatal("openai.responses 的注册借 openai.chat 的兑现顶了账，对账却判绿")
+	}
+	if !strings.Contains(err.Error(), "没有任何路径兑现它") {
+		t.Errorf("错误应指出注册的门无人兑现: %v", err)
+	}
+	if !strings.Contains(err.Error(), string(degrade.ProtoOpenAIResponses)) {
+		t.Errorf("错误应点名注册方的协议 %s: %v", degrade.ProtoOpenAIResponses, err)
+	}
+	if !strings.Contains(err.Error(), string(sharedSyntheticDoor)) {
+		t.Errorf("错误应点名端点 %s: %v", sharedSyntheticDoor, err)
+	}
+}
+
+// TestReconcileAcceptsMatchingProtocol 是上面两条的对照组：坐标两半都对上，
+// 同一份矩阵与同一扇门必须放行。否则那两条测试只证明了「对账永远报错」。
+func TestReconcileAcceptsMatchingProtocol(t *testing.T) {
+	m := openSyntheticDoorOn(t, degrade.ProtoOpenAIChat)
+
+	if err := reconcileDoors(m, []degrade.Inbound{
+		{Protocol: degrade.ProtoOpenAIChat, Endpoint: sharedSyntheticDoor},
+	}); err != nil {
+		t.Fatalf("协议与端点都对上的注册不该被拒: %v", err)
+	}
+}
+
+// TestBuildReconcilesPhase1Doors 把对账钉在真实启动路径上：Phase1 矩阵配上
+// build.go 里那四行注册，协议坐标必须两两对上。
+//
+// 它咬的是注册清单本身——某一行漏写或写错入站协议，这里就红。
+func TestBuildReconcilesPhase1Doors(t *testing.T) {
+	m, err := degrade.Phase1()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"output":{"text":"ok"}}`))
+	}))
+	defer upstream.Close()
+
+	cfg := buildTestConfig(upstream.URL)
+	cfg.Providers[0].Kind = "dashscope.native"
+	if _, err := Build(cfg, m, obs.NewMetrics(prometheus.NewRegistry()),
+		slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
+		t.Fatalf("Phase1 的四扇门与四行注册应当对得上: %v", err)
+	}
+}
+
+// TestHealthOnlyModeSkipsDoorReconciliation 锁住仅健康检查形态：没配 models
+// 就没有任何注册，此时拿一份开着四扇门的矩阵去对账只会凭空拒绝启动。
+//
+// 空矩阵测不出这件事——它两边都是空的，怎么排都绿。
+func TestHealthOnlyModeSkipsDoorReconciliation(t *testing.T) {
+	m, err := degrade.Phase1()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Build(config.Config{}, m, obs.NewMetrics(prometheus.NewRegistry()),
+		slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
+		t.Fatalf("仅健康检查形态不该因为矩阵开着门而启动失败: %v", err)
 	}
 }

@@ -125,19 +125,23 @@ func Build(cfg config.Config, m *degrade.Matrix, metrics *obs.Metrics, log *slog
 	// 注册清单是端点与处理器的唯一事实来源：mux.Handle 与下面的启动期对账
 	// 都从它推导。分成两处写就会各说各话——删掉一行 mux.Handle 而对账名单
 	// 照旧，对账依然全绿，那扇门的请求却已经落进 501 兜底。
+	//
+	// 清单登记的是 Inbound 而不是裸路径：handler 是按入站协议造出来的，
+	// 协议就是这行注册的另一半身份。把它显式写出来，对账才问得出
+	// 「这扇门归谁把守」——只按路径对账，同路径的另一个协议会替它顶账。
 	doors := []struct {
-		endpoint degrade.Endpoint
-		handler  http.Handler
+		inbound degrade.Inbound
+		handler http.Handler
 	}{
-		{degrade.EndpointOpenAIResponses, NewResponsesHandler(deps)},
-		{degrade.EndpointOpenAIChat, NewChatHandler(deps)},
-		{degrade.EndpointDashScopeTextGeneration, native},
-		{degrade.EndpointDashScopeMultimodal, native},
+		{degrade.Inbound{Protocol: degrade.ProtoOpenAIResponses, Endpoint: degrade.EndpointOpenAIResponses}, NewResponsesHandler(deps)},
+		{degrade.Inbound{Protocol: degrade.ProtoOpenAIChat, Endpoint: degrade.EndpointOpenAIChat}, NewChatHandler(deps)},
+		{degrade.Inbound{Protocol: degrade.ProtoDashScopeNative, Endpoint: degrade.EndpointDashScopeTextGeneration}, native},
+		{degrade.Inbound{Protocol: degrade.ProtoDashScopeNative, Endpoint: degrade.EndpointDashScopeMultimodal}, native},
 	}
-	registered := make(map[degrade.Endpoint]bool, len(doors))
+	registered := make([]degrade.Inbound, 0, len(doors))
 	for _, d := range doors {
-		mux.Handle("POST "+string(d.endpoint), d.handler)
-		registered[d.endpoint] = true
+		mux.Handle("POST "+string(d.inbound.Endpoint), d.handler)
+		registered = append(registered, d.inbound)
 	}
 
 	// 命名空间的方法兜底：不带方法的模式最不具体，只有既没命中精确端点、
@@ -163,28 +167,50 @@ func Build(cfg config.Config, m *degrade.Matrix, metrics *obs.Metrics, log *slog
 		_, _ = w.Write(body)
 	})
 
-	// 启动期双向对账：矩阵兑现过的门必须注册了处理器，注册了处理器的门
-	// 必须有路径兑现。防两种漂移：兑现过的门忘了注册，请求落进 501 兜底；
-	// 注册了的门忘了在矩阵兑现，变成一处永远返回 501 的空头承诺。
-	//
-	// registered 直接来自上面那份注册清单，不另写第二份名单。
-	opened := map[degrade.Endpoint]bool{}
+	if err := reconcileDoors(m, registered); err != nil {
+		return nil, err
+	}
+
+	return built, nil
+}
+
+// reconcileDoors 做启动期双向对账：矩阵兑现过的门必须注册了处理器，注册了
+// 处理器的门必须有路径兑现。防两种漂移：兑现过的门忘了注册，请求落进 501
+// 兜底；注册了的门忘了在矩阵兑现，变成一处永远返回 501 的空头承诺。
+//
+// 两边都按 Inbound 对账，不按裸路径。路径只是门牌号，把守它的是入站协议的
+// 解码器：同一段字符串在 openai.chat 与 openai.responses 下是两扇不同的门。
+// 只比路径，openai.chat 兑现的一扇门就能替 responses 注册的处理器顶账，
+// 两个方向的漂移一起被判成绿——而请求进来时用的仍是错的那套解码器。
+//
+// registered 传切片而不是集合：错误信息按登记顺序产出，与 m.Routes() /
+// r.Endpoints() 已有的字典序一样确定，同一份错配每次给同一条错误。
+func reconcileDoors(m *degrade.Matrix, registered []degrade.Inbound) error {
+	registeredSet := make(map[degrade.Inbound]bool, len(registered))
+	for _, in := range registered {
+		registeredSet[in] = true
+	}
+
+	opened := map[degrade.Inbound]bool{}
 	for _, r := range m.Routes() {
 		if !r.Implemented() {
 			continue
 		}
 		for _, ep := range r.Endpoints() {
-			opened[ep] = true
-			if !registered[ep] {
-				return nil, fmt.Errorf("gateway: 端点 %s 已在矩阵兑现，但没有注册处理器", ep)
+			in := degrade.Inbound{Protocol: r.In, Endpoint: ep}
+			opened[in] = true
+			if !registeredSet[in] {
+				return fmt.Errorf(
+					"gateway: 入站协议 %s 的端点 %s 已在矩阵兑现，但没有注册处理器", r.In, ep)
 			}
 		}
 	}
-	for ep := range registered {
-		if !opened[ep] {
-			return nil, fmt.Errorf("gateway: 端点 %s 注册了处理器，但没有任何路径兑现它", ep)
+	for _, in := range registered {
+		if !opened[in] {
+			return fmt.Errorf(
+				"gateway: 入站协议 %s 的端点 %s 注册了处理器，但没有任何路径兑现它",
+				in.Protocol, in.Endpoint)
 		}
 	}
-
-	return built, nil
+	return nil
 }
