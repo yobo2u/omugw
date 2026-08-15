@@ -139,7 +139,9 @@ type JSONSchema struct {
 // 完整结构：该对象在出站前被整体删除，任何未建模的子字段都会随之消失——
 // 宁可 400 拒绝，也不静默吞掉。
 type WebSearchOptions struct {
-	SearchContextSize string        `json:"search_context_size,omitempty"`
+	// 用指针区分「缺省」与「显式空串」：后者是客户端写错了档位，
+	// 若并成同一种情况，非法值会被当成没设置放过。
+	SearchContextSize *string       `json:"search_context_size,omitempty"`
 	UserLocation      *UserLocation `json:"user_location,omitempty"`
 }
 
