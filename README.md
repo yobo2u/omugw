@@ -3,16 +3,20 @@
 多协议双向转换的 AI 网关数据面。不把 OpenAI 格式当作内部总线，而是在
 **入站协议**与**出站 Provider** 之间建立可控的转换层。
 
-> **状态：M1 进行中——OpenAI 族两条同源直通路径已转正，网关可用。**
+> **状态：M1 进行中——OpenAI 族两条同源直通路径与 DashScope Native 两个端点已转正，网关可用。**
 >
-> 降级矩阵登记了 14 条转换路径，**其中 2 条已实现**：
-> `openai.responses → openai.compat` 与 `openai.chat → openai.compat`
-> （均为同源直通）。其余仍是 `PLANNED`，
+> 降级矩阵登记了 14 条转换路径，**其中 3 条已实现**：
+> `openai.responses → openai.compat`、`openai.chat → openai.compat` 与
+> `dashscope.native → dashscope.native`（均为同源直通）。
+> 其中 DashScope Native 路径投放了文本生成与多模态生成两个端点，
+> 每扇门各兑现 5 项能力（多模态门为视觉 / 音频 / 视频输入加文本与流式）。
+> 其余仍是 `PLANNED`，
 > 打过去会得到 `501`——那是「还没建好」，不是「不支持」。
 >
 > 转正的门槛不是「有人认为写完了」，而是端到端 fixture 通过，
 > 见 [ADR-0001](docs/adr/0001-declarations-must-be-redeemed-by-fixtures.md)。
 > 已实现路径的清单登记在 `TestImplementedRoutesAreExplicit` 里，
+> 门 × 能力的兑现清单登记在 `TestRedeemedCapabilitiesAreExplicit` 里，
 > 每次转正都得同时改代码、写 fixture、改名单——三处都动过一遍，就很难是无意的。
 
 ## 这个项目和别人不一样的地方
