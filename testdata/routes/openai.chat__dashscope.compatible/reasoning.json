@@ -1,0 +1,45 @@
+{
+  "name": "openai.chat__dashscope.compatible/reasoning",
+  "note": "reasoning_effort 原样保留：解码器识别 CapReasoning，适配器不动该字段，上游响应携带推理 token 明细。",
+  "request": {
+    "method": "POST",
+    "path": "/v1/chat/completions",
+    "headers": {
+      "authorization": "<redacted>",
+      "content-type": "application/json"
+    },
+    "body": {
+      "model": "logical-thinking",
+      "messages": [{ "role": "user", "content": "一个房间里有三根蜡烛，吹灭一根，最后还剩几根？" }],
+      "reasoning_effort": "high"
+    }
+  },
+  "upstream": {
+    "method": "POST",
+    "path": "/v1/chat/completions",
+    "body": {
+      "model": "upstream-model",
+      "messages": [{ "role": "user", "content": "一个房间里有三根蜡烛，吹灭一根，最后还剩几根？" }],
+      "reasoning_effort": "high"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": { "content-type": "application/json" },
+    "body": {
+      "id": "chatcmpl-ds06",
+      "object": "chat.completion",
+      "created": 1755216000,
+      "model": "qwen-plus-upstream",
+      "choices": [
+        { "index": 0, "message": { "role": "assistant", "content": "剩一根——被吹灭的那根不会继续烧完。" }, "finish_reason": "stop" }
+      ],
+      "usage": {
+        "prompt_tokens": 30,
+        "completion_tokens": 82,
+        "total_tokens": 112,
+        "completion_tokens_details": { "reasoning_tokens": 64 }
+      }
+    }
+  }
+}

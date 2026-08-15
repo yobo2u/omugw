@@ -1,0 +1,83 @@
+{
+  "name": "openai.chat__dashscope.compatible/parallel_tool_calls",
+  "note": "显式 parallel_tool_calls: true 的能力识别与 raw 保留：解码器据此报告 CapParallelToolCalls，适配器原样保留该字段，上游在一次响应里并行发起两个工具调用。",
+  "request": {
+    "method": "POST",
+    "path": "/v1/chat/completions",
+    "headers": {
+      "authorization": "<redacted>",
+      "content-type": "application/json"
+    },
+    "body": {
+      "model": "logical-fast",
+      "messages": [{ "role": "user", "content": "同时查上海和北京的天气" }],
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "get_weather",
+            "description": "查询城市天气",
+            "parameters": {
+              "type": "object",
+              "properties": { "city": { "type": "string" } },
+              "required": ["city"]
+            }
+          }
+        }
+      ],
+      "parallel_tool_calls": true
+    }
+  },
+  "upstream": {
+    "method": "POST",
+    "path": "/v1/chat/completions",
+    "body": {
+      "model": "upstream-model",
+      "messages": [{ "role": "user", "content": "同时查上海和北京的天气" }],
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "get_weather",
+            "description": "查询城市天气",
+            "parameters": {
+              "type": "object",
+              "properties": { "city": { "type": "string" } },
+              "required": ["city"]
+            }
+          }
+        }
+      ],
+      "parallel_tool_calls": true
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": { "content-type": "application/json" },
+    "body": {
+      "id": "chatcmpl-ds04",
+      "object": "chat.completion",
+      "created": 1755216000,
+      "model": "qwen-plus-upstream",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+              { "id": "call_a", "type": "function", "function": { "name": "get_weather", "arguments": "{\"city\":\"上海\"}" } },
+              { "id": "call_b", "type": "function", "function": { "name": "get_weather", "arguments": "{\"city\":\"北京\"}" } }
+            ]
+          },
+          "finish_reason": "tool_calls"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 45,
+        "completion_tokens": 24,
+        "total_tokens": 69
+      }
+    }
+  }
+}

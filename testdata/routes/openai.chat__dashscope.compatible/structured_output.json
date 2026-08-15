@@ -1,0 +1,85 @@
+{
+  "name": "openai.chat__dashscope.compatible/structured_output",
+  "note": "DEGRADE 举证（文件名即能力名，ADR-0001）：response_format 的 json_schema 原样转发，不降成提示词、不改写 schema；DashScope Compatible 不保证全局 strict 校验，降级头必须可见。upstream 声明证明 schema 一字未动。",
+  "request": {
+    "method": "POST",
+    "path": "/v1/chat/completions",
+    "headers": {
+      "authorization": "<redacted>",
+      "content-type": "application/json"
+    },
+    "body": {
+      "model": "logical-fast",
+      "messages": [{ "role": "user", "content": "把「明天上海多云转晴 22 到 28 度」抽成结构化数据" }],
+      "response_format": {
+        "type": "json_schema",
+        "json_schema": {
+          "name": "weather_report",
+          "strict": true,
+          "schema": {
+            "type": "object",
+            "properties": {
+              "city": { "type": "string" },
+              "condition": { "type": "string" },
+              "temp_low": { "type": "integer" },
+              "temp_high": { "type": "integer" }
+            },
+            "required": ["city", "condition", "temp_low", "temp_high"],
+            "additionalProperties": false
+          }
+        }
+      }
+    }
+  },
+  "upstream": {
+    "method": "POST",
+    "path": "/v1/chat/completions",
+    "body": {
+      "model": "upstream-model",
+      "messages": [{ "role": "user", "content": "把「明天上海多云转晴 22 到 28 度」抽成结构化数据" }],
+      "response_format": {
+        "type": "json_schema",
+        "json_schema": {
+          "name": "weather_report",
+          "strict": true,
+          "schema": {
+            "type": "object",
+            "properties": {
+              "city": { "type": "string" },
+              "condition": { "type": "string" },
+              "temp_low": { "type": "integer" },
+              "temp_high": { "type": "integer" }
+            },
+            "required": ["city", "condition", "temp_low", "temp_high"],
+            "additionalProperties": false
+          }
+        }
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": { "content-type": "application/json" },
+    "body": {
+      "id": "chatcmpl-ds05",
+      "object": "chat.completion",
+      "created": 1755216000,
+      "model": "qwen-plus-upstream",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "{\"city\":\"上海\",\"condition\":\"多云转晴\",\"temp_low\":22,\"temp_high\":28}"
+          },
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 63,
+        "completion_tokens": 27,
+        "total_tokens": 90
+      }
+    }
+  }
+}
