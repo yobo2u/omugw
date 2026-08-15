@@ -606,8 +606,8 @@ func (m *Matrix) Add(r *Route, err error) error {
 	if err != nil {
 		return err
 	}
-	if r == nil {
-		return errors.New("degrade: nil route")
+	if r == nil || r.state == nil {
+		return errors.New("degrade: invalid or nil route")
 	}
 	if !r.sealed() {
 		return fmt.Errorf("degrade: route %s -> %s was not built: call Build before Add",

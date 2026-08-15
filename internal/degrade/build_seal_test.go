@@ -341,30 +341,40 @@ func TestBuildFailureDoesNotSealRoute(t *testing.T) {
 	}
 }
 
-// TestAddRejectsNilRoute 防的是 Add 对着 nil 解引用。
+// TestAddRejectsNilRoute 防的是 Add 对着 nil 或零值 Route 解引用。
 //
 // Add 的签名收的是 (r, err) 一对，调用点几乎都写成 m.Add(x.Build())——
 // Build 失败时返回的正是 (nil, err)。err 非空的那条分支先返回，nil 路径
-// 走不到解引用；但任何一个手写 m.Add(r, nil) 的调用点只要 r 是 nil，
-// 就会在读它的身份时崩掉整个进程。矩阵是启动期装配的东西，它该报错，不该 panic。
+// 走不到解引用；但任何一个手写 m.Add(r, nil) 的调用点只要 r 是 nil 或零值 Route，
+// 就会在读它的状态/身份时崩掉整个进程。矩阵是启动期装配的东西，它该报错，不该 panic。
 func TestAddRejectsNilRoute(t *testing.T) {
 	m := NewMatrix()
 
-	defer func() {
-		if p := recover(); p != nil {
-			t.Fatalf("Add(nil, nil) 不该 panic，实际 %v", p)
-		}
-	}()
+	for _, tc := range []struct {
+		name string
+		r    *Route
+	}{
+		{"nil 指针", nil},
+		{"零值 Route", &Route{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			defer func() {
+				if p := recover(); p != nil {
+					t.Fatalf("Add(%s, nil) 不该 panic，实际 %v", tc.name, p)
+				}
+			}()
 
-	err := m.Add(nil, nil)
-	if err == nil {
-		t.Fatal("Add(nil, nil) 应当报错，实际放行")
-	}
-	if !strings.Contains(err.Error(), "nil route") {
-		t.Errorf("错误信息应当点名 nil route，实际: %v", err)
-	}
-	if len(m.Routes()) != 0 {
-		t.Errorf("被拒的 nil 路径不该留在矩阵里，实际 %d 条", len(m.Routes()))
+			err := m.Add(tc.r, nil)
+			if err == nil {
+				t.Fatalf("Add(%s, nil) 应当报错，实际放行", tc.name)
+			}
+			if !strings.Contains(err.Error(), "route") {
+				t.Errorf("错误信息应当包含 route，实际: %v", err)
+			}
+			if len(m.Routes()) != 0 {
+				t.Errorf("被拒的路径不该留在矩阵里，实际 %d 条", len(m.Routes()))
+			}
+		})
 	}
 }
 
