@@ -19,8 +19,12 @@ func rebuiltMatrix(t *testing.T, src *Matrix, mutate func(r *Route)) *Matrix {
 
 	out := NewMatrix().WithAvailability(src.Availability())
 	for _, r := range src.Routes() {
-		n := NewRoute(r.In, r.Out)
-		n.Homogeneous = r.Homogeneous
+		n := NewRoute(r.InProtocol(), r.OutProvider())
+		// 走 MarkHomogeneous 而不是赋值：快通道事实只有这一个写入口，
+		// 助手若另开一条，它重建出来的路径就不再受同一套封口约束。
+		if r.IsHomogeneous() {
+			n.MarkHomogeneous()
+		}
 		for c, rule := range r.rules {
 			// N/A 由 Build 依可表达性自动补；显式声明反而会被判成
 			// 「声明了表达不出来的能力」。
@@ -36,7 +40,7 @@ func rebuiltMatrix(t *testing.T, src *Matrix, mutate func(r *Route)) *Matrix {
 			mutate(n)
 		}
 		if err := out.Add(n.Build()); err != nil {
-			t.Fatalf("重建路径 %s -> %s 失败: %v", r.In, r.Out, err)
+			t.Fatalf("重建路径 %s -> %s 失败: %v", r.InProtocol(), r.OutProvider(), err)
 		}
 	}
 	return out
@@ -57,26 +61,27 @@ func TestRebuiltMatrixPreservesDeclarations(t *testing.T) {
 		t.Fatalf("重建后路径数 %d，原为 %d", len(got.Routes()), len(src.Routes()))
 	}
 	for _, want := range src.Routes() {
-		have := mustRoute(t, got, want.In, want.Out)
-		if have.Homogeneous != want.Homogeneous {
-			t.Errorf("%s -> %s 的快通道标记丢失", want.In, want.Out)
+		in, out := want.InProtocol(), want.OutProvider()
+		have := mustRoute(t, got, in, out)
+		if have.IsHomogeneous() != want.IsHomogeneous() {
+			t.Errorf("%s -> %s 的快通道标记丢失", in, out)
 		}
 		for _, c := range canonical.AllCapabilities() {
 			if have.rules[c] != want.rules[c] {
 				t.Errorf("%s -> %s 的 %q 声明不一致: %+v vs %+v",
-					want.In, want.Out, c, have.rules[c], want.rules[c])
+					in, out, c, have.rules[c], want.rules[c])
 			}
 		}
 		wantEps, haveEps := want.Endpoints(), have.Endpoints()
 		if len(wantEps) != len(haveEps) {
-			t.Fatalf("%s -> %s 门数 %d，原为 %d", want.In, want.Out, len(haveEps), len(wantEps))
+			t.Fatalf("%s -> %s 门数 %d，原为 %d", in, out, len(haveEps), len(wantEps))
 		}
 		for i, ep := range wantEps {
 			if haveEps[i] != ep {
-				t.Errorf("%s -> %s 第 %d 扇门 %s，原为 %s", want.In, want.Out, i, haveEps[i], ep)
+				t.Errorf("%s -> %s 第 %d 扇门 %s，原为 %s", in, out, i, haveEps[i], ep)
 			}
 			if len(have.RedeemedAt(ep)) != len(want.RedeemedAt(ep)) {
-				t.Errorf("%s -> %s 门 %s 的兑现集合不一致", want.In, want.Out, ep)
+				t.Errorf("%s -> %s 门 %s 的兑现集合不一致", in, out, ep)
 			}
 		}
 	}
@@ -93,7 +98,7 @@ func TestRebuiltMatrixStillEnforcesBuildChecks(t *testing.T) {
 
 	// 借一条真实路径的声明，试着兑现一格 REJECT 能力。
 	r := mustRoute(t, src, ProtoOpenAIChat, ProviderAnthropicMessages)
-	n := NewRoute(r.In, r.Out)
+	n := NewRoute(r.InProtocol(), r.OutProvider())
 	for c, rule := range r.rules {
 		if rule.Disposition == NotApplicable {
 			continue

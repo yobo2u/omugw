@@ -45,14 +45,14 @@ func TestPhase1IsComplete(t *testing.T) {
 		// 每条路径必须为入站协议**表达得出来**的每一项能力表态。
 		// 表达不出来的那些由 Expressibility 自动补成 N/A，不该由路径负责。
 		declared := p.Passthrough + p.Emulate + p.EmulateOff + p.Degrade + p.Reject
-		if want := len(ExpressibleSet(r.In)); declared != want {
+		if want := len(ExpressibleSet(r.InProtocol())); declared != want {
 			t.Errorf("路径 %s -> %s 为 %d 项可表达能力表态，应为 %d 项",
-				r.In, r.Out, declared, want)
+				r.InProtocol(), r.OutProvider(), declared, want)
 		}
 		// N/A 与已表态的加起来必须是全集，否则有格子凭空消失。
 		if total := declared + p.NotApplicable; total != len(canonical.AllCapabilities()) {
 			t.Errorf("路径 %s -> %s 的格子总数 %d，应为 %d",
-				r.In, r.Out, total, len(canonical.AllCapabilities()))
+				r.InProtocol(), r.OutProvider(), total, len(canonical.AllCapabilities()))
 		}
 
 		status := "规划中"
@@ -60,7 +60,7 @@ func TestPhase1IsComplete(t *testing.T) {
 			status = "已实现"
 		}
 		t.Logf("%-22s -> %-24s %s  pass=%2d emu=%d(off %d) deg=%d rej=%d n/a=%2d  设计=%.3f",
-			r.In, r.Out, status,
+			r.InProtocol(), r.OutProvider(), status,
 			p.Passthrough, p.Emulate, p.EmulateOff, p.Degrade, p.Reject, p.NotApplicable,
 			p.DesignScore())
 		for _, ep := range r.Endpoints() {
@@ -93,12 +93,12 @@ func implementedMatrix(t *testing.T, avail Availability) *Matrix {
 	// 的窟窿——校验根本没跑到它头上。
 	return rebuiltMatrix(t, m, func(r *Route) {
 		var deliverable []canonical.Capability
-		for _, c := range ExpressibleSet(r.In) {
+		for _, c := range ExpressibleSet(r.InProtocol()) {
 			if rule, ok := r.rules[c]; ok && rule.Disposition != Reject {
 				deliverable = append(deliverable, c)
 			}
 		}
-		r.Redeem(testEndpoint(r.In), deliverable...)
+		r.Redeem(testEndpoint(r.InProtocol()), deliverable...)
 	})
 }
 
@@ -132,7 +132,7 @@ func TestImplementedRoutesAreExplicit(t *testing.T) {
 	got := map[string]bool{}
 	for _, r := range m.Routes() {
 		if r.Implemented() {
-			got[string(r.In)+" -> "+string(r.Out)] = true
+			got[string(r.InProtocol())+" -> "+string(r.OutProvider())] = true
 		}
 	}
 
@@ -187,7 +187,7 @@ func TestRedeemedCapabilitiesAreExplicit(t *testing.T) {
 
 	seen := map[string]bool{}
 	for _, r := range m.Routes() {
-		routeKey := string(r.In) + " -> " + string(r.Out)
+		routeKey := string(r.InProtocol()) + " -> " + string(r.OutProvider())
 		for _, ep := range r.Endpoints() {
 			key := routeKey + " @ " + string(ep)
 			seen[key] = true
@@ -347,7 +347,7 @@ func TestImplementedRoutesHaveFixtures(t *testing.T) {
 			continue
 		}
 		if err := checkRouteFixtures(r, "../.."); err != nil {
-			t.Errorf("路径 %s -> %s 已转正但缺少证据: %v", r.In, r.Out, err)
+			t.Errorf("路径 %s -> %s 已转正但缺少证据: %v", r.InProtocol(), r.OutProvider(), err)
 		}
 	}
 }
@@ -447,11 +447,11 @@ func TestFixtureGateReconcilesEndpointPaths(t *testing.T) {
 // 目录存在且有用例、有损格子（DEGRADE / EMULATE）有同名举证、
 // 以及端点级双向对账——每扇已开门要有证据，每份证据要指向已开门。
 func checkRouteFixtures(r *Route, repoRoot string) error {
-	dir := filepath.Join(repoRoot, FixtureDir(r.In, r.Out))
+	dir := filepath.Join(repoRoot, FixtureDir(r.InProtocol(), r.OutProvider()))
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return fmt.Errorf("缺少 fixture 目录 %s", FixtureDir(r.In, r.Out))
+		return fmt.Errorf("缺少 fixture 目录 %s", FixtureDir(r.InProtocol(), r.OutProvider()))
 	}
 
 	present := map[string]bool{}
@@ -465,7 +465,7 @@ func checkRouteFixtures(r *Route, repoRoot string) error {
 		present[strings.TrimSuffix(name, ".json")] = true
 	}
 	if count == 0 {
-		return fmt.Errorf("fixture 目录 %s 中没有任何用例", FixtureDir(r.In, r.Out))
+		return fmt.Errorf("fixture 目录 %s 中没有任何用例", FixtureDir(r.InProtocol(), r.OutProvider()))
 	}
 
 	// 有损格子要单独举证。文件名即能力名，例如 structured_output.json。
@@ -578,7 +578,7 @@ func TestSpeechHasAnInboundPath(t *testing.T) {
 
 	var found bool
 	for _, r := range m.Routes() {
-		if r.Out == ProviderDashScopeWSInference {
+		if r.OutProvider() == ProviderDashScopeWSInference {
 			found = true
 		}
 	}
@@ -785,7 +785,7 @@ func TestRealtimeFastPathIsHomogeneous(t *testing.T) {
 	if !ok {
 		t.Fatal("OpenAI Realtime -> DashScope Realtime 路径未注册")
 	}
-	if !r.Homogeneous {
+	if !r.IsHomogeneous() {
 		t.Error("该路径应标记为同源快通道：两者事件模型基本一致")
 	}
 

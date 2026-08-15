@@ -23,7 +23,7 @@ func TestPreferenceMatchesPreservation(t *testing.T) {
 
 	byInbound := map[Protocol][]Provider{}
 	for _, r := range m.Routes() {
-		byInbound[r.In] = append(byInbound[r.In], r.Out)
+		byInbound[r.InProtocol()] = append(byInbound[r.InProtocol()], r.OutProvider())
 	}
 
 	// 用 RankDesign 而不是 RankOutbound：这条测试验的是**偏好序的设计**是否
@@ -71,7 +71,7 @@ func TestRuntimeRankingUsesAvailableScore(t *testing.T) {
 			s := r.Preservation(m.Availability(), ep).AvailableScore()
 			if s <= 0 || s > design {
 				t.Errorf("路径 %s -> %s 门 %s 的可用分 %.3f 应在 (0, 设计 %.3f] 区间",
-					r.In, r.Out, ep, s, design)
+					r.InProtocol(), r.OutProvider(), ep, s, design)
 			}
 		}
 	}
@@ -82,10 +82,10 @@ func TestRuntimeRankingUsesAvailableScore(t *testing.T) {
 	byInboundDoor := map[Protocol]map[Endpoint][]Provider{}
 	for _, r := range m.Routes() {
 		for _, ep := range r.Endpoints() {
-			if byInboundDoor[r.In] == nil {
-				byInboundDoor[r.In] = map[Endpoint][]Provider{}
+			if byInboundDoor[r.InProtocol()] == nil {
+				byInboundDoor[r.InProtocol()] = map[Endpoint][]Provider{}
 			}
-			byInboundDoor[r.In][ep] = append(byInboundDoor[r.In][ep], r.Out)
+			byInboundDoor[r.InProtocol()][ep] = append(byInboundDoor[r.InProtocol()][ep], r.OutProvider())
 		}
 	}
 	for in, doors := range byInboundDoor {
@@ -200,7 +200,7 @@ func TestInboundPriorityIsRegistered(t *testing.T) {
 
 	registered := map[Protocol]bool{}
 	for _, r := range m.Routes() {
-		registered[r.In] = true
+		registered[r.InProtocol()] = true
 	}
 	for i, f := range InboundPriority {
 		if !f.Implemented() {
@@ -501,12 +501,12 @@ func TestDashScopeNativeInboundPreservesMost(t *testing.T) {
 	best := native.Preservation(m.Availability(), Endpoint("")).DesignScore()
 
 	for _, r := range m.Routes() {
-		if r.In == ProtoDashScopeNative {
+		if r.InProtocol() == ProtoDashScopeNative {
 			continue
 		}
 		if s := r.Preservation(m.Availability(), Endpoint("")).DesignScore(); s > best {
 			t.Errorf("路径 %s -> %s 的保留度 %.3f 高于 DashScope 原生直通的 %.3f，"+
-				"原生直通本应是上限", r.In, r.Out, s, best)
+				"原生直通本应是上限", r.InProtocol(), r.OutProvider(), s, best)
 		}
 	}
 	t.Logf("DashScope 原生直通保留度 %.3f（%d 项透传）", best,

@@ -127,7 +127,7 @@ func TestImplementedAgreesWithEndpoints(t *testing.T) {
 	for _, r := range m.Routes() {
 		if got, want := r.Implemented(), len(r.Endpoints()) > 0; got != want {
 			t.Errorf("路径 %s -> %s：Implemented()=%v，但门数为 %d",
-				r.In, r.Out, got, len(r.Endpoints()))
+				r.InProtocol(), r.OutProvider(), got, len(r.Endpoints()))
 		}
 	}
 
@@ -178,7 +178,7 @@ func TestBuildRejectsUnknownDisposition(t *testing.T) {
 // TestRouteIsImmutableAfterBuild 封住 Build 之后剩下的写入口。
 //
 // 只从裁决结果观察：Check 的错误分类、Verdict 的降级/模拟清单、门清单、
-// Homogeneous。读 r.rules 断言 disposition 会把测试焊死在私有字段上——
+// IsHomogeneous()。读 r.rules 断言 disposition 会把测试焊死在私有字段上——
 // 换一种存储方式就得重写测试，而封口这件事本身根本没变。
 //
 // 每一次尝试修改都挑了「拆掉闸门就会换一个裁决」的格子：
@@ -210,7 +210,7 @@ func TestRouteIsImmutableAfterBuild(t *testing.T) {
 	}
 	in := Inbound{Protocol: ProtoDashScopeNative, Endpoint: EndpointDashScopeTextGeneration}
 
-	baseHomogeneous := r.Homogeneous
+	baseHomogeneous := r.IsHomogeneous()
 	baseEndpoints := r.Endpoints()
 
 	assertPassthrough(t, m, in, canonical.CapTextGeneration, "基准状态")
@@ -227,9 +227,9 @@ func TestRouteIsImmutableAfterBuild(t *testing.T) {
 	r.Redeem(EndpointDashScopeTextGeneration, canonical.CapStreaming, canonical.CapVisionInput)
 	r.Redeem(EndpointDashScopeMultimodal, canonical.CapVisionInput)
 
-	if r.Homogeneous != baseHomogeneous {
-		t.Errorf("MarkHomogeneous 在 Build 之后仍然生效：Homogeneous 从 %v 变成 %v",
-			baseHomogeneous, r.Homogeneous)
+	if r.IsHomogeneous() != baseHomogeneous {
+		t.Errorf("MarkHomogeneous 在 Build 之后仍然生效：IsHomogeneous() 从 %v 变成 %v",
+			baseHomogeneous, r.IsHomogeneous())
 	}
 	if got := r.Endpoints(); !slices.Equal(got, baseEndpoints) {
 		t.Errorf("Redeem 在 Build 之后开出了新门：门清单从 %v 变成 %v", baseEndpoints, got)
@@ -346,7 +346,7 @@ func TestBuildFailureDoesNotSealRoute(t *testing.T) {
 // Add 的签名收的是 (r, err) 一对，调用点几乎都写成 m.Add(x.Build())——
 // Build 失败时返回的正是 (nil, err)。err 非空的那条分支先返回，nil 路径
 // 走不到解引用；但任何一个手写 m.Add(r, nil) 的调用点只要 r 是 nil，
-// 就会在取 r.In 时崩掉整个进程。矩阵是启动期装配的东西，它该报错，不该 panic。
+// 就会在读它的身份时崩掉整个进程。矩阵是启动期装配的东西，它该报错，不该 panic。
 func TestAddRejectsNilRoute(t *testing.T) {
 	m := NewMatrix()
 
@@ -519,7 +519,7 @@ func TestMutatorsAfterBuildIsRaceFree(t *testing.T) {
 	// 「本来就开着」而恒真，封口有没有生效反而测不出来。
 	const probe = Endpoint("/api/v1/services/aigc/never-opened/generation")
 
-	baseHomogeneous := r.Homogeneous
+	baseHomogeneous := r.IsHomogeneous()
 	baseEndpoints := r.Endpoints()
 
 	var wg sync.WaitGroup
@@ -548,9 +548,9 @@ func TestMutatorsAfterBuildIsRaceFree(t *testing.T) {
 	}
 	wg.Wait()
 
-	if r.Homogeneous != baseHomogeneous {
-		t.Errorf("并发的事后 MarkHomogeneous 改变了 Homogeneous：%v -> %v",
-			baseHomogeneous, r.Homogeneous)
+	if r.IsHomogeneous() != baseHomogeneous {
+		t.Errorf("并发的事后 MarkHomogeneous 改变了快通道事实：%v -> %v",
+			baseHomogeneous, r.IsHomogeneous())
 	}
 	if got := r.Endpoints(); !slices.Equal(got, baseEndpoints) {
 		t.Errorf("并发的事后 Redeem 改变了门清单：%v -> %v", baseEndpoints, got)
