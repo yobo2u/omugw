@@ -272,6 +272,75 @@ func assertNotImplemented(t *testing.T, m *Matrix, in Inbound, c canonical.Capab
 	}
 }
 
+// TestBuildAfterBuildIsIdempotent 封住 Build 自己这条写入口。
+//
+// 封口只挡住了 Pass/Override/Redeem，却漏了 Build 本身——而 Build 恰恰是
+// 这个包里写得最狠的一处：它给全部 27 项能力补齐 N/A 格子。于是第二次 Build
+// 会把上一次补进去的 N/A 当成「作者为一项表达不出来的能力写了声明」，
+// 报一个与事实相反的 declared but not expressible，把一条已经过关的路径判死。
+// 更要紧的是它在报错前已经又写了一遍 r.rules 与 r.errs：路径进了矩阵之后，
+// 任何一次重复 Build 都在与并发的 Check 抢同一张 map。
+//
+// 封口之后 Build 必须幂等：原样交回同一个指针与 nil，一格不动。返回同一个
+// 指针是承重的——调用点写的是 m.Add(x.Build())，换一个副本出去，矩阵里那条
+// 和手上这条就成了两条路。
+func TestBuildAfterBuildIsIdempotent(t *testing.T) {
+	r, err := NewRoute(ProtoDashScopeNative, ProviderDashScopeNative).
+		MarkHomogeneous().
+		Pass(ExpressibleSet(ProtoDashScopeNative)...).
+		Redeem(EndpointDashScopeTextGeneration, canonical.CapTextGeneration).
+		Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	m := NewMatrix()
+	if err := m.Add(r, nil); err != nil {
+		t.Fatal(err)
+	}
+	in := Inbound{Protocol: ProtoDashScopeNative, Endpoint: EndpointDashScopeTextGeneration}
+
+	baseEndpoints := r.Endpoints()
+	baseRedeemed := r.RedeemedAt(EndpointDashScopeTextGeneration)
+	assertPassthrough(t, m, in, canonical.CapTextGeneration, "首次 Build 之后")
+	assertNotImplemented(t, m, in, canonical.CapStreaming, "首次 Build 之后")
+
+	again, againErr := r.Build()
+	if againErr != nil {
+		t.Fatalf("已封口路径重复 Build 应当原样返回，实际报错 %v", againErr)
+	}
+	if again != r {
+		t.Errorf("重复 Build 应当交回同一个指针，实际 %p != %p", again, r)
+	}
+
+	// 裁决结果是唯一的观察口：只要重复 Build 动过任何一格，
+	// 这三条断言里至少有一条会翻。
+	if got := r.Endpoints(); !slices.Equal(got, baseEndpoints) {
+		t.Errorf("重复 Build 改变了门清单：%v -> %v", baseEndpoints, got)
+	}
+	if got := r.RedeemedAt(EndpointDashScopeTextGeneration); !slices.Equal(got, baseRedeemed) {
+		t.Errorf("重复 Build 改变了兑现集合：%v -> %v", baseRedeemed, got)
+	}
+	assertPassthrough(t, m, in, canonical.CapTextGeneration, "重复 Build 之后")
+	assertNotImplemented(t, m, in, canonical.CapStreaming, "重复 Build 之后")
+}
+
+// TestBuildFailureStaysRetryable 是上面那道闸门的对照组。
+//
+// 幂等只许对**成功**的 Build 生效。失败的路径从未封口，它得能继续补声明再
+// Build——把「第二次直接返回」写成无条件的，等于让一条校验没过的路径
+// 在第二次调用时假装自己过了。
+func TestBuildFailureStaysRetryable(t *testing.T) {
+	r := NewRoute(ProtoDashScopeNative, ProviderDashScopeNative)
+
+	if _, err := r.Build(); err == nil {
+		t.Fatal("零声明的路径本该 Build 失败，测试前提不成立")
+	}
+	if _, err := r.Build(); err == nil {
+		t.Fatal("失败的路径重复 Build 仍该失败，不该被当成已封口")
+	}
+}
+
 // TestAddRejectsNilRoute 防的是 Add 对着 nil 解引用。
 //
 // Add 的签名收的是 (r, err) 一对，调用点几乎都写成 m.Add(x.Build())——
@@ -435,6 +504,9 @@ func TestAddRejectsRoutesBuildWouldHaveRefused(t *testing.T) {
 // 会在重复声明检查里往 r.errs 追加——8 个 goroutine 并发 append 同一个切片
 // 就是数据竞争；Override 与 Redeem 更直接，它们写的 map 与 Check 读的是同一张。
 // 没有 -race 的生产环境不会报错，只会悄悄地坏。
+//
+// Build 也在写手一侧：它给全部能力补 N/A 格子，是这里写得最狠的一处，
+// 却最容易被漏掉——它顶着「校验」的名字，读起来不像个写入口。
 func TestMutatorsAfterBuildIsRaceFree(t *testing.T) {
 	m, err := Phase1()
 	if err != nil {
@@ -463,6 +535,7 @@ func TestMutatorsAfterBuildIsRaceFree(t *testing.T) {
 			r.Override(canonical.CapTextGeneration, Reject, "test")
 			r.Redeem(EndpointDashScopeTextGeneration, canonical.CapStreaming)
 			r.Redeem(probe, canonical.CapVisionInput)
+			_, _ = r.Build()
 		}()
 		go func() {
 			defer wg.Done()

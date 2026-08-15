@@ -327,6 +327,17 @@ func (r *Route) Override(c canonical.Capability, d Disposition, note string) *Ro
 // 字段被吞了。新增 Capability 常量时，所有已注册路径都会在这里失败——
 // 这是刻意的设计，不是需要绕过的麻烦。
 func (r *Route) Build() (*Route, error) {
+	// Build 顶着「校验」的名字，实际是这个包里写得最狠的一处写入口——它给
+	// 全部能力补齐 N/A 格子。所以它也得服从封口，而且理由比别的写入口更硬：
+	// 第二次进来会把上一次补进去的 N/A 当成「声明了表达不出来的能力」，
+	// 把一条已经过关的路径判死；报错之前它已经又写了一遍 rules 与 errs，
+	// 与并发的 Check 抢同一张 map。封口之后重复调用原样交回同一个指针。
+	//
+	// 只对成功的 Build 生效：失败的路径从未封口，仍要能补完声明再 Build。
+	if r.built {
+		return r, nil
+	}
+
 	spec, ok := expressible[r.In]
 	if !ok {
 		r.errs = append(r.errs,
