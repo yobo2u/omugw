@@ -11,6 +11,7 @@
 package degrade
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -462,9 +463,22 @@ func (m *Matrix) WithAvailability(a Availability) *Matrix {
 func (m *Matrix) Availability() Availability { return m.avail }
 
 // Add 注册一条已 Build 的路径。
+//
+// 只收已封口的路径：Build 是全部路径级校验的唯一执行点（能力表态完整、端点非零值、
+// 兑现的格子可交付、门没有错绑协议），而 Add(r, nil) 天然是一条绕开它的平行入口——
+// 一条从未受检的路径就此落进矩阵，还会被 Check 当成权威裁决依据。
+// 闸门顺序是承重的：先放 Build 自己的错误原样出去（否则真正的失败原因被盖掉），
+// 再挡 nil（启动期装配该报错，不该 panic），最后才轮到读路径上的字段。
 func (m *Matrix) Add(r *Route, err error) error {
 	if err != nil {
 		return err
+	}
+	if r == nil {
+		return errors.New("degrade: nil route")
+	}
+	if !r.built {
+		return fmt.Errorf("degrade: route %s -> %s was not built: call Build before Add",
+			r.In, r.Out)
 	}
 	k := [2]string{string(r.In), string(r.Out)}
 	if _, dup := m.routes[k]; dup {

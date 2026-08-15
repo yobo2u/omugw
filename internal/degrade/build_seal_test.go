@@ -1,6 +1,7 @@
 package degrade
 
 import (
+	"errors"
 	"slices"
 	"strings"
 	"sync"
@@ -268,6 +269,163 @@ func assertNotImplemented(t *testing.T, m *Matrix, in Inbound, c canonical.Capab
 	if cerr.Class != canonical.ClassNotImplemented {
 		t.Fatalf("%s：%s 应当因未投放返回 %s，实际 %s：%s",
 			stage, c, canonical.ClassNotImplemented, cerr.Class, cerr.Message)
+	}
+}
+
+// TestAddRejectsNilRoute 防的是 Add 对着 nil 解引用。
+//
+// Add 的签名收的是 (r, err) 一对，调用点几乎都写成 m.Add(x.Build())——
+// Build 失败时返回的正是 (nil, err)。err 非空的那条分支先返回，nil 路径
+// 走不到解引用；但任何一个手写 m.Add(r, nil) 的调用点只要 r 是 nil，
+// 就会在取 r.In 时崩掉整个进程。矩阵是启动期装配的东西，它该报错，不该 panic。
+func TestAddRejectsNilRoute(t *testing.T) {
+	m := NewMatrix()
+
+	defer func() {
+		if p := recover(); p != nil {
+			t.Fatalf("Add(nil, nil) 不该 panic，实际 %v", p)
+		}
+	}()
+
+	err := m.Add(nil, nil)
+	if err == nil {
+		t.Fatal("Add(nil, nil) 应当报错，实际放行")
+	}
+	if !strings.Contains(err.Error(), "nil route") {
+		t.Errorf("错误信息应当点名 nil route，实际: %v", err)
+	}
+	if len(m.Routes()) != 0 {
+		t.Errorf("被拒的 nil 路径不该留在矩阵里，实际 %d 条", len(m.Routes()))
+	}
+}
+
+// TestAddRejectsUnbuiltRoute 封死 Build 校验的绕过入口。
+//
+// Build 是这个包全部路径级校验的唯一执行点：能力表态是否完整、端点是否为零值、
+// 兑现的格子是否可交付、门有没有错绑协议。Add 只看 err 而不问这条路径究竟
+// 过没过 Build，m.Add(r, nil) 就成了一条平行入口——从未受检的路径直接落进
+// 矩阵，被 Check 当成权威裁决依据。
+//
+// 这条路径刻意做得「看起来很完整」：全部可表达能力都 Pass 了，门也兑现了，
+// 唯独没有 Build。看起来完整正是它危险的地方——漏的是校验，不是内容。
+func TestAddRejectsUnbuiltRoute(t *testing.T) {
+	m := NewMatrix()
+
+	r := NewRoute(ProtoDashScopeNative, ProviderDashScopeNative).
+		MarkHomogeneous().
+		Pass(ExpressibleSet(ProtoDashScopeNative)...).
+		Redeem(EndpointDashScopeTextGeneration, canonical.CapTextGeneration)
+
+	err := m.Add(r, nil)
+	if err == nil {
+		t.Fatal("未 Build 的路径不该进得了矩阵")
+	}
+	if !strings.Contains(err.Error(), string(ProtoDashScopeNative)) ||
+		!strings.Contains(err.Error(), string(ProviderDashScopeNative)) {
+		t.Errorf("错误信息应当点名是哪条路径，实际: %v", err)
+	}
+	if !strings.Contains(err.Error(), "Build") {
+		t.Errorf("错误信息应当说明必须先 Build，实际: %v", err)
+	}
+
+	// 被拒的路径不能留下痕迹：留在 routes 里，Check 就照样能拿它裁决，
+	// 报错也就只是句空话。
+	if _, ok := m.Route(ProtoDashScopeNative, ProviderDashScopeNative); ok {
+		t.Fatal("被拒的路径不该出现在矩阵里")
+	}
+	in := Inbound{Protocol: ProtoDashScopeNative, Endpoint: EndpointDashScopeTextGeneration}
+	if _, err := m.Check(in, ProviderDashScopeNative,
+		[]canonical.Capability{canonical.CapTextGeneration}); err == nil {
+		t.Fatal("未 Build 的路径不该能被 Check 裁决通过")
+	}
+}
+
+// TestAddStillAcceptsBuiltRouteAndPropagatesError 是上面两道闸门的对照组。
+//
+// 一道只会拒绝的闸门是没用的：它得放行合法的那条，也得原样保留
+// m.Add(r.Build()) 的错误传播——Build 失败时返回 (nil, err)，
+// Add 必须把那个 err 原样交出去，而不是换成自己的 nil 路径报错，
+// 否则真正的失败原因（漏了哪格能力）就被盖掉了。
+func TestAddStillAcceptsBuiltRouteAndPropagatesError(t *testing.T) {
+	m := NewMatrix()
+
+	built, err := NewRoute(ProtoDashScopeNative, ProviderDashScopeNative).
+		MarkHomogeneous().
+		Pass(ExpressibleSet(ProtoDashScopeNative)...).
+		Redeem(EndpointDashScopeTextGeneration, canonical.CapTextGeneration).
+		Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Add(built, nil); err != nil {
+		t.Fatalf("已 Build 的路径应当照常接收，实际 %v", err)
+	}
+	if _, ok := m.Route(ProtoDashScopeNative, ProviderDashScopeNative); !ok {
+		t.Fatal("已 Build 的路径应当留在矩阵里")
+	}
+
+	// Build 失败这条：路径少了一格能力表态，返回 (nil, err)。
+	incomplete := NewRoute(ProtoOpenAIChat, ProviderOpenAICompat)
+	bad, buildErr := incomplete.Build()
+	if buildErr == nil {
+		t.Fatal("零声明的路径本该 Build 失败，测试前提不成立")
+	}
+	if bad != nil {
+		t.Fatal("Build 失败时不该返回路径")
+	}
+	if got := m.Add(bad, buildErr); !errors.Is(got, buildErr) {
+		t.Errorf("Add 应当原样传出 Build 的错误，实际 %v", got)
+	}
+}
+
+// TestAddRejectsRoutesBuildWouldHaveRefused 证明绕过 Build 能带进来什么。
+//
+// 上一条只说「未 Build 的路径进不来」，这条说的是为什么要拦：这两条路径
+// 各自踩了一格 Build 明令拒绝的东西——未知处置、门错绑入站协议。走 Add
+// 这条平行入口，它们都能落进矩阵；Check 会拿一个自己不认识的 disposition
+// 去裁决，或者按 openai.chat 的可表达性裁决一个由 Responses 解码器把守的请求。
+func TestAddRejectsRoutesBuildWouldHaveRefused(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		// 每次现造一条：Route 的 rules/redeemed 是 map，复制结构体等于共享底层，
+		// 拿副本试 Build 会把补齐的 N/A 写回样本。
+		newRoute func() *Route
+	}{
+		{
+			// 未知处置：Check 的 switch 不认识它，会一路落到放行分支。
+			name: "未知处置",
+			newRoute: func() *Route {
+				return NewRoute(ProtoDashScopeNative, ProviderDashScopeNative).
+					Pass(ExpressibleSet(ProtoDashScopeNative)...).
+					Override(canonical.CapTextGeneration, Disposition("UNKNOWN"), "test").
+					Redeem(EndpointDashScopeTextGeneration, canonical.CapTextGeneration)
+			},
+		},
+		{
+			// 门错绑协议：/v1/responses 收的是 Responses 请求，
+			// 兑现在 chat 路径上等于让 chat 的可表达性替它背书。
+			name: "门错绑入站协议",
+			newRoute: func() *Route {
+				return NewRoute(ProtoOpenAIChat, ProviderOpenAICompat).
+					Pass(ExpressibleSet(ProtoOpenAIChat)...).
+					Redeem(EndpointOpenAIResponses, canonical.CapTextGeneration)
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// 前提：这两条路径确实是 Build 拦得下的，拦不下就说明测试选错了样本。
+			if _, err := tc.newRoute().Build(); err == nil {
+				t.Fatal("样本路径本该被 Build 拒绝，测试前提不成立")
+			}
+
+			m := NewMatrix()
+			if err := m.Add(tc.newRoute(), nil); err == nil {
+				t.Fatal("Build 拒绝的路径不该从 Add 这条路进来")
+			}
+			if len(m.Routes()) != 0 {
+				t.Errorf("被拒的路径不该留在矩阵里，实际 %d 条", len(m.Routes()))
+			}
+		})
 	}
 }
 
