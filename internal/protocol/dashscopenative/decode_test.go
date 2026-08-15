@@ -144,6 +144,38 @@ func TestDecodeVideoArrayDoesNotDropSiblings(t *testing.T) {
 	}
 }
 
+// TestDecodeVideoFramesCountEveryFrame 钉死 video 帧数组的**逐帧**内联统计。
+//
+// 只算首帧的话，后面每一帧都白送——一个 200 帧的 base64 视频，入口只看见
+// 第一帧那点字节，内联上限形同虚设，内存该吃的照吃（原则 2.6）。
+//
+// 三帧长度刻意各不相同（3 / 6 / 9），总和 18 只有「三帧都算」这一种拆法：
+// 漏掉任何一帧、或把某帧重复计入，得到的都不是 18。用三个等长帧就没有这个
+// 分辨力——漏一帧与算错一帧的结果可能撞在一起。
+func TestDecodeVideoFramesCountEveryFrame(t *testing.T) {
+	// base64("xxx") / base64("xxxxxx") / base64("xxxxxxxxx")，解码后 3 / 6 / 9 字节。
+	const (
+		frame3 = "eHh4"
+		frame6 = "eHh4eHh4"
+		frame9 = "eHh4eHh4eHh4"
+	)
+	d := mustDecode(t, `{"model":"m","input":{"messages":[{"role":"user","content":[
+	  {"text":"概括视频"},
+	  {"video":[
+	    "data:video/mp4;base64,`+frame3+`",
+	    "data:video/mp4;base64,`+frame6+`",
+	    "data:video/mp4;base64,`+frame9+`"]}
+	]}]}}`)
+
+	if want := int64(3 + 6 + 9); d.InlineBytes != want {
+		t.Errorf("InlineBytes = %d，期望 %d（三帧逐帧累加）——后续帧绕过了内联上限",
+			d.InlineBytes, want)
+	}
+	if !hasCap(d.Capabilities(), canonical.CapVideoInput) {
+		t.Errorf("帧数组形态应报告 video_input: %v", d.Capabilities())
+	}
+}
+
 // TestDecodeVideoStringStillWorks 保证字符串形态没被改坏。
 func TestDecodeVideoStringStillWorks(t *testing.T) {
 	d := mustDecode(t, `{"model":"m","input":{"messages":[{"role":"user","content":[
