@@ -677,6 +677,11 @@ func TestMultimodalDoorRejectsReasoning(t *testing.T) {
 // 顺序反过来的话，一个塞满 base64 视频的请求要先跑完整套矩阵裁决才被拒，
 // 内存早就吃进去了（原则 2.6）。400 说「改请求」，与 501 的「等实现」
 // 是两件事，不能互相顶替。
+//
+// 负载刻意用内联 file 块，让两个答案正面竞争：file 既是超限的内联负载，
+// 该答 400；又对应多模态门未兑现的 file_input，该答 501。用内联 image
+// 是测不出顺序的——vision_input 在这扇门已兑现，矩阵放行，闸门挪到矩阵之后
+// 照样得到 400，测试白绿一场。
 func TestInlineLimitBeatsMatrixOnMultimodalDoor(t *testing.T) {
 	up := newUpstream(t, func(http.ResponseWriter, *http.Request) {})
 	limits := config.Default().Limits
@@ -686,15 +691,19 @@ func TestInlineLimitBeatsMatrixOnMultimodalDoor(t *testing.T) {
 	// 128 个 'A' 是合法 base64，解码后 96 字节，越过 64 字节上限。
 	inline := strings.Repeat("A", 128)
 	rec := doPath(t, hs, dashscopenative.MultimodalGenerationPath,
-		`{"model":"m","input":{"messages":[{"role":"user","content":[{"text":"x"},{"image":"data:image/png;base64,`+inline+`"}]}]}}`)
+		`{"model":"m","input":{"messages":[{"role":"user","content":[{"text":"x"},{"file":"data:application/pdf;base64,`+inline+`"}]}]}}`)
 
 	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("状态码 = %d，期望 400（内联负载超限）: %s", rec.Code, rec.Body.String())
+		t.Fatalf("状态码 = %d，期望 400（内联负载超限先于矩阵作答）: %s", rec.Code, rec.Body.String())
 	}
 	if n := up.calls.Load(); n != 0 {
 		t.Errorf("请求打到了上游 %d 次——内联闸门应先于矩阵拦下请求", n)
 	}
 	if !strings.Contains(rec.Body.String(), "内联") {
 		t.Errorf("错误应说明是内联负载超限: %s", rec.Body.String())
+	}
+	// 拿到的必须是闸门的答案，不是矩阵的。两者都成立时先答哪个，就是这条测试要钉的。
+	if strings.Contains(rec.Body.String(), string(canonical.CapFileInput)) {
+		t.Errorf("答的是矩阵的 file_input，说明内联闸门被挪到了矩阵之后: %s", rec.Body.String())
 	}
 }
