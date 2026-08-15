@@ -57,10 +57,10 @@ docs/               # principles.md、degradation-matrix.md（生成物）、adr
 
 | 符号 | 类型 | 位置 | 角色 |
 |---|---|---|---|
-| `degrade.Matrix.Check` | Method | `internal/degrade/matrix.go:549` | 全部处置裁决的唯一入口；按入站坐标（协议 + 端点）裁决，fail-closed |
+| `degrade.Matrix.Check` | Method | `internal/degrade/matrix.go:560` | 全部处置裁决的唯一入口；按入站坐标（协议 + 端点）裁决，fail-closed |
 | `degrade.Matrix.BestOutbound` | Method | `internal/degrade/preference.go:271` | 候选上游排序 + 能力校验，返回 Verdict |
 | `degrade.Route.Build` | Method | `internal/degrade/matrix.go:329` | 路径级校验唯一执行点：缺一格能力声明、未知处置、已知门错绑协议都报错；成功后 Route 封口 |
-| `degrade.Matrix.Add` | Method | `internal/degrade/matrix.go:472` | 路径入库唯一入口：只收已 Build 的路径，拒绝 nil——Build 校验绕不过去 |
+| `degrade.Matrix.Add` | Method | `internal/degrade/matrix.go:483` | 路径入库唯一入口：只收已 Build 的路径，拒绝 nil——Build 校验绕不过去 |
 | `degrade.Route.Redeem` | Method | `internal/degrade/matrix.go:217` | 登记指定端点已投放的能力；`Redeems(ep,c)` / `RedeemedAt(ep)` / `ImplementedAt(ep)` 由它派生 |
 | `degrade.Route.Endpoints` | Method | `internal/degrade/matrix.go:252` | 已开门清单，字典序；门的存在只从兑现格子推导 |
 | `canonical.Capability` | Type | `internal/canonical/capability.go:8` | 矩阵第三维，27 项 |

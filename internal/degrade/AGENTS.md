@@ -23,7 +23,7 @@
 | 从已有路径派生 | `Route.Derive()` (`matrix.go:291`) + `Override()` (`:311`) |
 | 路径转正 / 能力投放 | `Route.Redeem(ep, caps...)` (`matrix.go:217`) — 显式列出指定端点已投放的能力，需先有该端点的 fixture 通过 |
 | 查某能力是否已投放 | `Route.Redeems(ep, c)` (`matrix.go:231`)；`ImplementedAt(ep)` (`:264`) 答「这扇门开了没」，`Endpoints()` (`:252`) 列已开门，`Implemented()` (`:273`) 只答「路径通车了没」 |
-| 路径入库 | `Matrix.Add` (`matrix.go:472`) — 只收已 Build 的路径并拒绝 nil，Build 校验无法绕过 |
+| 路径入库 | `Matrix.Add` (`matrix.go:483`) — 只收已 Build 的路径并拒绝 nil，Build 校验无法绕过 |
 | 已知门的协议归属 | `Endpoint.Protocol()` (`endpoint.go:47`) — Build 用它拦错绑；只覆盖已知门，不是准入名单 |
 | 端点级 fixture 证据 | `matrix_test.go` 的 `checkRouteFixtures` (`:449`) — 按 fixture 的 `request.path` 与门清单双向对账 |
 | 选路排序逻辑 | `RankOutbound` (`preference.go:215`) / `BestOutbound(Inbound,…)` (`:271`) |
