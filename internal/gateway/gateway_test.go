@@ -3,7 +3,6 @@ package gateway
 import (
 	"encoding/json"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,200 +10,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
-
 	"github.com/yobo2u/omugw/internal/canonical"
 	"github.com/yobo2u/omugw/internal/config"
 	"github.com/yobo2u/omugw/internal/credential"
 	"github.com/yobo2u/omugw/internal/degrade"
-	"github.com/yobo2u/omugw/internal/obs"
 	"github.com/yobo2u/omugw/internal/protocol/dashscopenative"
-	"github.com/yobo2u/omugw/internal/provider"
-	"github.com/yobo2u/omugw/internal/provider/passthrough"
 	"github.com/yobo2u/omugw/internal/router"
 	"github.com/yobo2u/omugw/internal/testkit"
-	"github.com/yobo2u/omugw/internal/transport/httpx"
 )
-
-const testKey = "omugw-test-key-0123456789"
-
-// upstream 是一个可编排的假上游。
-type upstream struct {
-	srv   *httptest.Server
-	calls atomic.Int32
-}
-
-func newUpstream(t *testing.T, h http.HandlerFunc) *upstream {
-	t.Helper()
-	u := &upstream{}
-	u.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		u.calls.Add(1)
-		h(w, r)
-	}))
-	t.Cleanup(u.srv.Close)
-	return u
-}
-
-// harness 组装一套可用的网关，targets 按顺序即 failover 顺序。
-type harness struct {
-	h       *Handler
-	matrix  *degrade.Matrix
-	metrics *obs.Metrics
-	// path 是 do() 打入的入站路由，与所测入站协议一致。
-	path string
-}
-
-// newHarness 是 Responses 入站的 harness。
-//
-// 已实现的路径用 openai.compat（已转正）；要测 PLANNED 行为就把目标指到一条
-// 仍未实现的路径上。不去「取消转正」——那需要给生产代码开一个只为测试存在的
-// 后门，而后门迟早会被当成正常用法。
-func newHarness(t *testing.T, implemented bool, ups ...*upstream) *harness {
-	t.Helper()
-	kind := degrade.ProviderOpenAICompat
-	if !implemented {
-		kind = degrade.ProviderDashScopeCompatible
-	}
-	return newHarnessFor(t, "/v1/responses", "/v1/responses", kind, NewResponsesHandler,
-		config.Default().Limits, ups...)
-}
-
-// newChatHarness 是 Chat Completions 入站的 harness。
-//
-// provider 的默认路径故意用生产里 openai.compat 的默认值 "/v1/responses"，
-// 而不是 Chat 自己的路径——这样只有当 handler 真的把 provider.Request.Path
-// 注入成 "/v1/chat/completions" 时，请求才会打到正确的上游端点。若把两者设成
-// 一样，即使 Path 注入被删掉测试也照样通过，等于没测。
-func newChatHarness(t *testing.T, implemented bool, ups ...*upstream) *harness {
-	t.Helper()
-	kind := degrade.ProviderOpenAICompat
-	if !implemented {
-		kind = degrade.ProviderDashScopeCompatible
-	}
-	return newHarnessFor(t, "/v1/chat/completions", "/v1/responses", kind, NewChatHandler,
-		config.Default().Limits, ups...)
-}
-
-// newDashScopeNativeHarness 是 DashScope Native 入站的 harness。
-//
-// provider 默认路径故意用 /v1/responses（而非 DashScope 自己的端点），这样只有
-// 当 handler 真的注入了请求路径，上游才会收到正确端点——否则测试会失败。
-func newDashScopeNativeHarness(t *testing.T, implemented bool, ups ...*upstream) *harness {
-	t.Helper()
-	kind := degrade.ProviderDashScopeNative
-	if !implemented {
-		kind = degrade.ProviderDashScopeCompatible
-	}
-	return newHarnessFor(t, dashscopenative.TextGenerationPath, "/v1/responses",
-		kind, NewDashScopeNativeHandler, config.Default().Limits, ups...)
-}
-
-// newDashScopeNativeHarnessWithLimits 与 newDashScopeNativeHarness 相同，
-// 但注入自定义 Limits——内联闸门先于矩阵裁决生效的性质要用一个小到会被
-// 击穿的上限来证明。不走 hs.h.deps.Limits 事后改写：那是绕过构造契约的后门，
-// 而这里要证的恰恰是「按配置构造出来的网关」在闸门顺序上的行为。
-func newDashScopeNativeHarnessWithLimits(t *testing.T, limits config.Limits, ups ...*upstream) *harness {
-	t.Helper()
-	return newHarnessFor(t, dashscopenative.TextGenerationPath, "/v1/responses",
-		degrade.ProviderDashScopeNative, NewDashScopeNativeHandler, limits, ups...)
-}
-
-func newHarnessFor(t *testing.T, requestPath, providerDefaultPath string, kind degrade.Provider, mk func(Deps) *Handler, limits config.Limits, ups ...*upstream) *harness {
-	t.Helper()
-
-	m, err := degrade.Phase1()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	timeouts := config.Timeouts{
-		Connect:   200 * time.Millisecond,
-		FirstByte: 1 * time.Second,
-		Total:     10 * time.Second,
-		Idle:      500 * time.Millisecond,
-	}
-	client := httpx.New(timeouts, nil)
-
-	var targets []router.Target
-	pools := map[string]*credential.Pool{}
-	provs := map[string]provider.Provider{}
-
-	for i, u := range ups {
-		name := endpointName(i)
-		targets = append(targets, router.Target{
-			Kind:           kind,
-			Endpoint:       name,
-			BaseURL:        u.srv.URL,
-			UpstreamModel:  "upstream-model",
-			CredentialPool: name,
-		})
-		pool, err := credential.NewPool(name,
-			[]credential.Credential{{ID: "k1", Secret: "sk-" + name}},
-			credential.DefaultPolicy(), nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		pools[name] = pool
-		provs[name] = passthrough.New(kind, providerDefaultPath, client, nil)
-	}
-
-	rt, err := router.New([]router.Rule{{Match: "*", Targets: targets}})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	metrics := obs.NewMetrics(prometheus.NewRegistry())
-	return &harness{
-		matrix:  m,
-		metrics: metrics,
-		path:    requestPath,
-		h: mk(Deps{
-			Matrix:    m,
-			Router:    rt,
-			Auth:      NewAuthenticator([]config.AuthKey{{ID: "tester", Key: testKey}}),
-			Limits:    limits,
-			Metrics:   metrics,
-			Log:       slog.New(slog.NewTextHandler(io.Discard, nil)),
-			Pools:     pools,
-			Providers: provs,
-		}),
-	}
-}
-
-func endpointName(i int) string { return string(rune('a' + i)) }
-
-func (hs *harness) do(t *testing.T, body string, withAuth bool) *httptest.ResponseRecorder {
-	t.Helper()
-	req := httptest.NewRequest(http.MethodPost, hs.path, strings.NewReader(body))
-	if withAuth {
-		req.Header.Set("Authorization", "Bearer "+testKey)
-	}
-	rec := httptest.NewRecorder()
-	hs.h.ServeHTTP(rec, req)
-	return rec
-}
-
-// doPath 按指定端点路径直接打 Handler。
-//
-// 走 Handler 而不是 Build 出来的 Mux 是刻意的：Mux 的 /api/v1/ 兜底会把任何
-// 未注册端点一律答成 501，那条 501 出自路由表，与矩阵裁决无关。要证的是矩阵
-// 按 (端点, 能力) 作答，就必须绕开兜底，让请求真的走完 serve 的闸门。
-func doPath(t *testing.T, hs *harness, path, body string) *httptest.ResponseRecorder {
-	t.Helper()
-	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
-	req.Header.Set("Authorization", "Bearer "+testKey)
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	hs.h.ServeHTTP(rec, req)
-	return rec
-}
-
-func jsonUpstream(t *testing.T, body string) *upstream {
-	return newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, body)
-	})
-}
 
 // TestPlannedRouteReturns501 固化 ADR-0001 的运行时表现。
 //
@@ -218,6 +31,20 @@ func TestPlannedRouteReturns501(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "尚未实现") {
 		t.Errorf("错误体应说明路径尚未实现: %s", rec.Body.String())
+	}
+}
+
+// TestChatPlannedRouteReturns501 固化 Chat 入站的未实现哨兵。
+//
+// 哨兵指向仍是 PLANNED 的 anthropic.messages：dashscope.compatible 转正之后，
+// 「未实现路径 501」在 Chat 入站仍然可测。谁把哨兵指回已转正的路径，
+// 这条测试就在转正当天变红。
+func TestChatPlannedRouteReturns501(t *testing.T) {
+	hs := newChatHarness(t, false, jsonUpstream(t, `{}`))
+
+	rec := hs.do(t, `{"model":"m","messages":[{"role":"user","content":"hi"}]}`, true)
+	if rec.Code != http.StatusNotImplemented {
+		t.Fatalf("状态码 = %d, 期望 501: %s", rec.Code, rec.Body.String())
 	}
 }
 
