@@ -116,12 +116,14 @@ func testInbound(p Protocol) Inbound { return Inbound{Protocol: p, Endpoint: tes
 // 那种做法。想转正就得同时改代码、写 fixture、改这份名单，三处都动过一遍，
 // 就很难是无意的。
 func TestImplementedRoutesAreExplicit(t *testing.T) {
-	// 已转正：OpenAI 族两条同源直通 + DashScope Native 文本生成同源直通。
-	// 其余仍为 PLANNED，dashscope.compatible / anthropic 等排在其后。
+	// 已转正：OpenAI 族两条同源直通、DashScope Native 文本生成同源直通，
+	// 以及 Chat 到 DashScope Compatible 的 wire-compatible 路径（非同质快通道）。
+	// 其余仍为 PLANNED，anthropic 等排在其后。
 	want := map[string]bool{
 		string(ProtoOpenAIResponses) + " -> " + string(ProviderOpenAICompat):    true,
 		string(ProtoOpenAIChat) + " -> " + string(ProviderOpenAICompat):         true,
 		string(ProtoDashScopeNative) + " -> " + string(ProviderDashScopeNative): true,
+		string(ProtoOpenAIChat) + " -> " + string(ProviderDashScopeCompatible):  true,
 	}
 
 	m, err := Phase1()
@@ -156,12 +158,25 @@ func TestImplementedRoutesAreExplicit(t *testing.T) {
 // 等于宣称一个还没写的实现可用。
 func TestRedeemedCapabilitiesAreExplicit(t *testing.T) {
 	// OpenAI 两条同源直通各一扇门，字节级转发，可表达的全部兑现；
-	// Native 投放了文本生成与多模态生成两扇门，各 5 项，两份名单彼此独立。
+	// Chat 到 DashScope Compatible 兑现九项可交付能力（两项 REJECT 不在其列）；
+	// Native 投放了文本生成与多模态生成两扇门，各 5 项，名单彼此独立。
 	want := map[string][]canonical.Capability{
 		string(ProtoOpenAIResponses) + " -> " + string(ProviderOpenAICompat) +
 			" @ " + string(EndpointOpenAIResponses): ExpressibleSet(ProtoOpenAIResponses),
 		string(ProtoOpenAIChat) + " -> " + string(ProviderOpenAICompat) +
 			" @ " + string(EndpointOpenAIChat): ExpressibleSet(ProtoOpenAIChat),
+		string(ProtoOpenAIChat) + " -> " + string(ProviderDashScopeCompatible) +
+			" @ " + string(EndpointOpenAIChat): {
+			canonical.CapTextGeneration,
+			canonical.CapStreaming,
+			canonical.CapToolCalling,
+			canonical.CapParallelToolCalls,
+			canonical.CapStructuredOutput,
+			canonical.CapReasoning,
+			canonical.CapVisionInput,
+			canonical.CapAudioInput,
+			canonical.CapWebSearch,
+		},
 		string(ProtoDashScopeNative) + " -> " + string(ProviderDashScopeNative) +
 			" @ " + string(EndpointDashScopeTextGeneration): {
 			canonical.CapTextGeneration,

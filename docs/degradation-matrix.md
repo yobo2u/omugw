@@ -45,7 +45,7 @@
 | `dashscope.realtime` | `dashscope.ws.realtime` | 规划中 | ✅ | 15 | 0 | 0 | 0 | 12 | 1.000 | — |
 | `dashscope.realtime` | `openai.realtime` | 规划中 |  | 10 | 0 | 2 | 3 | 12 | 0.733 | — |
 | `openai.chat` | `openai.compat` | 已实现 | ✅ | 11 | 0 | 0 | 0 | 16 | 1.000 | 1.000 |
-| `openai.chat` | `dashscope.compatible` | 规划中 |  | 7 | 0 | 2 | 2 | 16 | 0.727 | — |
+| `openai.chat` | `dashscope.compatible` | 已实现 |  | 7 | 0 | 2 | 2 | 16 | 0.727 | 0.727 |
 | `openai.chat` | `dashscope.native` | 规划中 |  | 6 | 0 | 3 | 2 | 16 | 0.682 | — |
 | `openai.chat` | `anthropic.messages` | 规划中 |  | 6 | 0 | 1 | 4 | 16 | 0.591 | — |
 | `openai.realtime` | `openai.realtime` | 规划中 | ✅ | 12 | 0 | 0 | 0 | 15 | 1.000 | — |
@@ -63,6 +63,7 @@
 |---|---|---|---|---:|
 | dashscope.native | dashscope.native | /api/v1/services/aigc/multimodal-generation/generation | text_generation, streaming, vision_input, audio_input, video_input | 0.278（18 项中 5 项已投放） |
 | dashscope.native | dashscope.native | /api/v1/services/aigc/text-generation/generation | text_generation, streaming, tool_calling, reasoning, web_search | 0.278（18 项中 5 项已投放） |
+| openai.chat | dashscope.compatible | /v1/chat/completions | text_generation, streaming, tool_calling, parallel_tool_calls, structured_output, reasoning, vision_input, audio_input, web_search | 0.727 |
 | openai.chat | openai.compat | /v1/chat/completions | text_generation, streaming, tool_calling, parallel_tool_calls, structured_output, reasoning, vision_input, audio_input, file_input, audio_output, web_search | 1.000 |
 | openai.responses | openai.compat | /v1/responses | text_generation, streaming, tool_calling, parallel_tool_calls, structured_output, reasoning, vision_input, audio_input, file_input, audio_output, image_generation, stateful_conversation, web_search, computer_use | 0.929（开启 convstore 后 1.000） |
 
@@ -261,7 +262,7 @@
 | `realtime_commit_modes` | `N/A` | openai.chat 表达不了该能力，请改用入站协议 dashscope.realtime |
 | `realtime_server_vad` | `N/A` | openai.chat 表达不了该能力，请改用入站协议 openai.realtime |
 | `realtime_interrupt_turns` | `N/A` | openai.chat 表达不了该能力，请改用入站协议 openai.realtime |
-| `web_search` | `DEGRADE` | DashScope 的 enable_search 是布尔开关，承载不了 OpenAI web_search 工具的参数，仅开关本身被映射 |
+| `web_search` | `DEGRADE` | DashScope Compatible 只有 enable_search 布尔开关：搜索上下文大小 search_context_size 与用户位置 user_location 在此丢失，响应也不返回搜索来源；仅开关本身被映射 |
 | `computer_use` | `N/A` | openai.chat 表达不了该能力，请改用入站协议 openai.responses |
 
 ## `openai.chat` → `dashscope.native`
@@ -459,7 +460,7 @@
 | `realtime_commit_modes` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 dashscope.realtime |
 | `realtime_server_vad` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 openai.realtime |
 | `realtime_interrupt_turns` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 openai.realtime |
-| `web_search` | `DEGRADE` | DashScope 的 enable_search 是布尔开关，承载不了 OpenAI web_search 工具的参数，仅开关本身被映射 |
+| `web_search` | `DEGRADE` | DashScope Compatible 只有 enable_search 布尔开关：搜索上下文大小 search_context_size 与用户位置 user_location 在此丢失，响应也不返回搜索来源；仅开关本身被映射 |
 | `computer_use` | `REJECT` | 该内建工具在 Phase 1 不做跨 Provider 映射——各家的工具 schema 不兼容，勉强映射只会让模型收到一个它读不懂的定义 |
 
 ## `openai.responses` → `dashscope.native`

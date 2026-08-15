@@ -14,6 +14,9 @@ const (
 		"模型可能返回不合规 JSON"
 	noteSearchSwitch = "DashScope 的 enable_search 是布尔开关，承载不了 OpenAI web_search 工具的" +
 		"参数，仅开关本身被映射"
+	noteSearchSwitchCompat = "DashScope Compatible 只有 enable_search 布尔开关：搜索上下文大小 " +
+		"search_context_size 与用户位置 user_location 在此丢失，响应也不返回搜索来源；" +
+		"仅开关本身被映射"
 	noteBuiltinTool = "该内建工具在 Phase 1 不做跨 Provider 映射——各家的工具 schema 不兼容，" +
 		"勉强映射只会让模型收到一个它读不懂的定义"
 	noteImageViaJobs = "Responses 的内建 image_generation 工具在 Phase 1 不做路由，" +
@@ -91,10 +94,25 @@ func Phase1() (*Matrix, error) {
 		).
 		Degrade("DashScope 兼容模式支持 json_object，但不保证 strict json_schema 校验",
 			canonical.CapStructuredOutput).
-		Degrade(noteSearchSwitch, canonical.CapWebSearch).
+		Degrade(noteSearchSwitchCompat, canonical.CapWebSearch).
 		Reject(noteFileRefBound, canonical.CapFileInput).
 		Reject("兼容模式不返回音频；音频输出须经 Qwen-Omni Realtime 或 Native 端点",
-			canonical.CapAudioOutput)
+			canonical.CapAudioOutput).
+		// 兑现门槛是端到端 fixture 通过（ADR-0001）：九份用例在
+		// testdata/routes/openai.chat__dashscope.compatible/，回放与上游请求
+		// 断言在 internal/gateway/chat_dscompat_conformance_test.go。
+		// file_input / audio_output 是 REJECT，不在兑现之列。
+		Redeem(EndpointOpenAIChat,
+			canonical.CapTextGeneration,
+			canonical.CapStreaming,
+			canonical.CapToolCalling,
+			canonical.CapParallelToolCalls,
+			canonical.CapStructuredOutput,
+			canonical.CapReasoning,
+			canonical.CapVisionInput,
+			canonical.CapAudioInput,
+			canonical.CapWebSearch,
+		)
 	if err := m.Add(chatToDSCompat.Build()); err != nil {
 		return nil, err
 	}
