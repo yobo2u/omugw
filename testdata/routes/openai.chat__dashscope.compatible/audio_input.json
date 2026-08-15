@@ -1,0 +1,58 @@
+{
+  "name": "openai.chat__dashscope.compatible/audio_input",
+  "note": "内联音频输入：base64 负载计入内联字节，请求体原样交给上游（wire 兼容，音频块不需要重编码）。",
+  "request": {
+    "method": "POST",
+    "path": "/v1/chat/completions",
+    "headers": {
+      "authorization": "<redacted>",
+      "content-type": "application/json"
+    },
+    "body": {
+      "model": "logical-audio",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            { "type": "text", "text": "这段音频里说了什么？" },
+            { "type": "input_audio", "input_audio": { "data": "QUJDREVG", "format": "wav" } }
+          ]
+        }
+      ]
+    }
+  },
+  "upstream": {
+    "method": "POST",
+    "path": "/v1/chat/completions",
+    "body": {
+      "model": "upstream-model",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            { "type": "text", "text": "这段音频里说了什么？" },
+            { "type": "input_audio", "input_audio": { "data": "QUJDREVG", "format": "wav" } }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": { "content-type": "application/json" },
+    "body": {
+      "id": "chatcmpl-ds08",
+      "object": "chat.completion",
+      "created": 1755216000,
+      "model": "qwen-audio-upstream",
+      "choices": [
+        { "index": 0, "message": { "role": "assistant", "content": "音频里说的是「测试录音」。" }, "finish_reason": "stop" }
+      ],
+      "usage": {
+        "prompt_tokens": 96,
+        "completion_tokens": 9,
+        "total_tokens": 105
+      }
+    }
+  }
+}

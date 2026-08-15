@@ -1,0 +1,60 @@
+{
+  "name": "openai.chat__dashscope.compatible/vision_input",
+  "note": "image URL 与 data URI 两种图像承载：http(s) URL 不计内联字节，data URI 计入；两者都原样交给上游，网关不代下载。",
+  "request": {
+    "method": "POST",
+    "path": "/v1/chat/completions",
+    "headers": {
+      "authorization": "<redacted>",
+      "content-type": "application/json"
+    },
+    "body": {
+      "model": "logical-vision",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            { "type": "text", "text": "这两张图里分别是什么？" },
+            { "type": "image_url", "image_url": { "url": "https://example.com/shanghai.png" } },
+            { "type": "image_url", "image_url": { "url": "data:image/png;base64,QUJD", "detail": "low" } }
+          ]
+        }
+      ]
+    }
+  },
+  "upstream": {
+    "method": "POST",
+    "path": "/v1/chat/completions",
+    "body": {
+      "model": "upstream-model",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            { "type": "text", "text": "这两张图里分别是什么？" },
+            { "type": "image_url", "image_url": { "url": "https://example.com/shanghai.png" } },
+            { "type": "image_url", "image_url": { "url": "data:image/png;base64,QUJD", "detail": "low" } }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": { "content-type": "application/json" },
+    "body": {
+      "id": "chatcmpl-ds07",
+      "object": "chat.completion",
+      "created": 1755216000,
+      "model": "qwen-vl-upstream",
+      "choices": [
+        { "index": 0, "message": { "role": "assistant", "content": "第一张是城市天际线，第二张是纯色测试图。" }, "finish_reason": "stop" }
+      ],
+      "usage": {
+        "prompt_tokens": 128,
+        "completion_tokens": 18,
+        "total_tokens": 146
+      }
+    }
+  }
+}

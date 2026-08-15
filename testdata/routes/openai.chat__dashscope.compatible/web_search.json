@@ -1,0 +1,54 @@
+{
+  "name": "openai.chat__dashscope.compatible/web_search",
+  "note": "DEGRADE 举证（文件名即能力名，ADR-0001）：web_search_options 整体删除、换写 enable_search: true；search_context_size 与 user_location 丢失、响应无搜索来源，降级头必须可见。请求体特意带 n 与 presence_penalty 两个无关字段——搜索映射不得覆盖客户端已提交的它们。",
+  "request": {
+    "method": "POST",
+    "path": "/v1/chat/completions",
+    "headers": {
+      "authorization": "<redacted>",
+      "content-type": "application/json"
+    },
+    "body": {
+      "model": "logical-fast",
+      "messages": [{ "role": "user", "content": "今天上海有什么新闻？" }],
+      "web_search_options": {
+        "search_context_size": "high",
+        "user_location": {
+          "approximate_location": { "type": "approximate", "country": "CN", "city": "上海" }
+        }
+      },
+      "n": 2,
+      "presence_penalty": 0.5
+    }
+  },
+  "upstream": {
+    "method": "POST",
+    "path": "/v1/chat/completions",
+    "body": {
+      "model": "upstream-model",
+      "messages": [{ "role": "user", "content": "今天上海有什么新闻？" }],
+      "n": 2,
+      "presence_penalty": 0.5,
+      "enable_search": true
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": { "content-type": "application/json" },
+    "body": {
+      "id": "chatcmpl-ds09",
+      "object": "chat.completion",
+      "created": 1755216000,
+      "model": "qwen-plus-upstream",
+      "choices": [
+        { "index": 0, "message": { "role": "assistant", "content": "今天上午的要闻：……（示例内容，DashScope Compatible 不返回搜索来源）" }, "finish_reason": "stop" },
+        { "index": 1, "message": { "role": "assistant", "content": "另一条摘要：……（n=2 的第二份）" }, "finish_reason": "stop" }
+      ],
+      "usage": {
+        "prompt_tokens": 41,
+        "completion_tokens": 58,
+        "total_tokens": 99
+      }
+    }
+  }
+}
