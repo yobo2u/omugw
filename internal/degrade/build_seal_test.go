@@ -1,6 +1,7 @@
 package degrade
 
 import (
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -155,80 +156,6 @@ func BenchmarkImplemented(b *testing.B) {
 	}
 }
 
-// TestRouteIsImmutableAfterBuild 验证 Build 之后，所有的写方法都变成空操作。
-func TestRouteIsImmutableAfterBuild(t *testing.T) {
-	r, err := NewRoute(ProtoDashScopeNative, ProviderDashScopeNative).
-		Pass(ExpressibleSet(ProtoDashScopeNative)...).
-		Redeem(EndpointDashScopeTextGeneration, canonical.CapTextGeneration).
-		Build()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// 尝试修改
-	r.MarkHomogeneous()
-	if r.Homogeneous {
-		t.Error("Build 之后 MarkHomogeneous 不应生效")
-	}
-
-	r.Pass(canonical.CapStreaming)
-	if rule, ok := r.rules[canonical.CapStreaming]; !ok || rule.Disposition != Passthrough {
-		t.Errorf("Build 之后 Pass 不应生效，实际 disposition: %v", rule.Disposition)
-	}
-
-	r.Degrade("test", canonical.CapStreaming)
-	if rule, ok := r.rules[canonical.CapStreaming]; !ok || rule.Disposition != Passthrough {
-		t.Errorf("Build 之后 Degrade 不应生效，实际 disposition: %v", rule.Disposition)
-	}
-
-	r.Reject("test", canonical.CapStreaming)
-	if rule, ok := r.rules[canonical.CapStreaming]; !ok || rule.Disposition != Passthrough {
-		t.Errorf("Build 之后 Reject 不应生效，实际 disposition: %v", rule.Disposition)
-	}
-
-	r.Emulate("feature", "test", canonical.CapStreaming)
-	if rule, ok := r.rules[canonical.CapStreaming]; !ok || rule.Disposition != Passthrough {
-		t.Errorf("Build 之后 Emulate 不应生效，实际 disposition: %v", rule.Disposition)
-	}
-
-	r.Override(canonical.CapTextGeneration, Reject, "test")
-	if rule, ok := r.rules[canonical.CapTextGeneration]; !ok || rule.Disposition != Passthrough {
-		t.Errorf("Build 之后 Override 不应生效，实际 disposition: %v", rule.Disposition)
-	}
-}
-
-// TestMutatorsAfterBuildIsRaceFree 验证 Build 之后并发调用写方法不会引发数据竞争。
-func TestMutatorsAfterBuildIsRaceFree(t *testing.T) {
-	m, err := Phase1()
-	if err != nil {
-		t.Fatal(err)
-	}
-	r := mustRoute(t, m, ProtoDashScopeNative, ProviderDashScopeNative)
-	in := Inbound{Protocol: ProtoDashScopeNative, Endpoint: EndpointDashScopeTextGeneration}
-
-	var wg sync.WaitGroup
-	for range 8 {
-		wg.Add(2)
-		go func() {
-			defer wg.Done()
-			r.MarkHomogeneous()
-			r.Pass(canonical.CapVisionInput)
-			r.Degrade("test", canonical.CapVisionInput)
-			r.Reject("test", canonical.CapVisionInput)
-			r.Emulate("feature", "test", canonical.CapVisionInput)
-			r.Override(canonical.CapTextGeneration, Reject, "test")
-		}()
-		go func() {
-			defer wg.Done()
-			_, _ = m.Check(in, ProviderDashScopeNative,
-				[]canonical.Capability{canonical.CapTextGeneration})
-			_ = r.Endpoints()
-			_ = r.Implemented()
-		}()
-	}
-	wg.Wait()
-}
-
 // TestBuildRejectsUnknownDisposition 验证 Build 会拒绝未知的 Disposition。
 func TestBuildRejectsUnknownDisposition(t *testing.T) {
 	r := NewRoute(ProtoDashScopeNative, ProviderDashScopeNative).
@@ -244,5 +171,160 @@ func TestBuildRejectsUnknownDisposition(t *testing.T) {
 
 	if !strings.Contains(err.Error(), "unknown disposition") || !strings.Contains(err.Error(), "UNKNOWN") {
 		t.Errorf("错误信息应该包含 unknown disposition 和 UNKNOWN，实际: %v", err)
+	}
+}
+
+// TestRouteIsImmutableAfterBuild 封住 Build 之后剩下的写入口。
+//
+// 只从裁决结果观察：Check 的错误分类、Verdict 的降级/模拟清单、门清单、
+// Homogeneous。读 r.rules 断言 disposition 会把测试焊死在私有字段上——
+// 换一种存储方式就得重写测试，而封口这件事本身根本没变。
+//
+// 每一次尝试修改都挑了「拆掉闸门就会换一个裁决」的格子：
+//   - Override(text_generation → DEGRADE)：拆掉就多出一条 Degraded 记录
+//   - Override(streaming → REJECT)：拆掉就从 501 未投放翻成 422 不支持
+//   - Redeem(文本门 + streaming/vision)：拆掉就把 501 变成放行
+//   - Redeem(多模态门)：拆掉就凭空多开一扇门
+//
+// Pass/Degrade/Reject/Emulate 走的 set() 是例外，它在这里**观察不到**：
+// Build 会给全部 27 项能力补齐 rules，事后再 set 同一格会先撞上重复声明检查
+// 而原地返回，只往 errs 里追加一条谁也读不到的记录（Build 不可重入，errs
+// 再无出口）。所以 set() 的 built 闸门是靠 -race 咬住的，见
+// TestMutatorsAfterBuildIsRaceFree；别把这里的绿灯记在它头上。
+func TestRouteIsImmutableAfterBuild(t *testing.T) {
+	// text_generation / streaming / vision_input 都是 PASSTHROUGH，
+	// 但只有 text_generation 兑现在文本门上——于是「可表达但未投放」
+	// 与「已投放」两种形状都在同一条路径上，事后写入往哪边偏都看得见。
+	r, err := NewRoute(ProtoDashScopeNative, ProviderDashScopeNative).
+		Pass(ExpressibleSet(ProtoDashScopeNative)...).
+		Redeem(EndpointDashScopeTextGeneration, canonical.CapTextGeneration).
+		Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	m := NewMatrix()
+	if err := m.Add(r, nil); err != nil {
+		t.Fatal(err)
+	}
+	in := Inbound{Protocol: ProtoDashScopeNative, Endpoint: EndpointDashScopeTextGeneration}
+
+	baseHomogeneous := r.Homogeneous
+	baseEndpoints := r.Endpoints()
+
+	assertPassthrough(t, m, in, canonical.CapTextGeneration, "基准状态")
+	assertNotImplemented(t, m, in, canonical.CapStreaming, "基准状态")
+	assertNotImplemented(t, m, in, canonical.CapVisionInput, "基准状态")
+
+	r.MarkHomogeneous()
+	r.Pass(canonical.CapVisionInput)
+	r.Degrade("test degrade", canonical.CapTextGeneration)
+	r.Reject("test reject", canonical.CapTextGeneration)
+	r.Emulate("feature", "test emulate", canonical.CapTextGeneration)
+	r.Override(canonical.CapTextGeneration, Degrade, "test override degrade")
+	r.Override(canonical.CapStreaming, Reject, "test override reject")
+	r.Redeem(EndpointDashScopeTextGeneration, canonical.CapStreaming, canonical.CapVisionInput)
+	r.Redeem(EndpointDashScopeMultimodal, canonical.CapVisionInput)
+
+	if r.Homogeneous != baseHomogeneous {
+		t.Errorf("MarkHomogeneous 在 Build 之后仍然生效：Homogeneous 从 %v 变成 %v",
+			baseHomogeneous, r.Homogeneous)
+	}
+	if got := r.Endpoints(); !slices.Equal(got, baseEndpoints) {
+		t.Errorf("Redeem 在 Build 之后开出了新门：门清单从 %v 变成 %v", baseEndpoints, got)
+	}
+
+	assertPassthrough(t, m, in, canonical.CapTextGeneration, "Build 之后")
+	assertNotImplemented(t, m, in, canonical.CapStreaming, "Build 之后")
+	assertNotImplemented(t, m, in, canonical.CapVisionInput, "Build 之后")
+}
+
+// assertPassthrough 断言这项能力被放行，且裁决里没有降级或模拟记录。
+//
+// 只断言「没报错」是不够的：Override 成 DEGRADE 之后 Check 照样返回 nil，
+// 差别全在 Verdict 的清单里。
+func assertPassthrough(t *testing.T, m *Matrix, in Inbound, c canonical.Capability, stage string) {
+	t.Helper()
+	v, err := m.Check(in, ProviderDashScopeNative, []canonical.Capability{c})
+	if err != nil {
+		t.Fatalf("%s：%s 应当放行，实际报错 %v", stage, c, err)
+	}
+	if len(v.Degraded) > 0 || len(v.Emulated) > 0 {
+		t.Fatalf("%s：%s 应当无损透传，实际裁决 %+v", stage, c, v)
+	}
+}
+
+// assertNotImplemented 断言这项能力因「尚未投放」被挡下，分类必须是 501。
+//
+// 分类是承重的：REJECT 给的是 422，把它当成 501 的同类会让「事后 Override
+// 成 REJECT」这种改动悄悄溜过去。
+func assertNotImplemented(t *testing.T, m *Matrix, in Inbound, c canonical.Capability, stage string) {
+	t.Helper()
+	_, err := m.Check(in, ProviderDashScopeNative, []canonical.Capability{c})
+	cerr := canonical.AsError(err)
+	if cerr == nil {
+		t.Fatalf("%s：%s 尚未投放，应当被挡下，实际 %v", stage, c, err)
+	}
+	if cerr.Class != canonical.ClassNotImplemented {
+		t.Fatalf("%s：%s 应当因未投放返回 %s，实际 %s：%s",
+			stage, c, canonical.ClassNotImplemented, cerr.Class, cerr.Message)
+	}
+}
+
+// TestMutatorsAfterBuildIsRaceFree 防的是「封了口但还在写」。
+//
+// 这里是 set() 那道 built 闸门唯一的证人。拆掉它，Pass/Degrade/Reject/Emulate
+// 会在重复声明检查里往 r.errs 追加——8 个 goroutine 并发 append 同一个切片
+// 就是数据竞争；Override 与 Redeem 更直接，它们写的 map 与 Check 读的是同一张。
+// 没有 -race 的生产环境不会报错，只会悄悄地坏。
+func TestMutatorsAfterBuildIsRaceFree(t *testing.T) {
+	m, err := Phase1()
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := mustRoute(t, m, ProtoDashScopeNative, ProviderDashScopeNative)
+	in := Inbound{Protocol: ProtoDashScopeNative, Endpoint: EndpointDashScopeTextGeneration}
+
+	// 探针门必须是一扇真没投放的门：拿已投放的门当探针，断言会因为
+	// 「本来就开着」而恒真，封口有没有生效反而测不出来。
+	const probe = Endpoint("/api/v1/services/aigc/never-opened/generation")
+
+	baseHomogeneous := r.Homogeneous
+	baseEndpoints := r.Endpoints()
+
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			r.MarkHomogeneous()
+			r.Pass(canonical.CapVisionInput)
+			r.Degrade("test", canonical.CapVisionInput)
+			r.Reject("test", canonical.CapVisionInput)
+			r.Emulate("feature", "test", canonical.CapVisionInput)
+			r.Override(canonical.CapTextGeneration, Reject, "test")
+			r.Redeem(EndpointDashScopeTextGeneration, canonical.CapStreaming)
+			r.Redeem(probe, canonical.CapVisionInput)
+		}()
+		go func() {
+			defer wg.Done()
+			_, _ = m.Check(in, ProviderDashScopeNative,
+				[]canonical.Capability{canonical.CapTextGeneration})
+			_ = r.Endpoints()
+			_ = r.Implemented()
+			_ = r.RedeemedAt(EndpointDashScopeTextGeneration)
+		}()
+	}
+	wg.Wait()
+
+	if r.Homogeneous != baseHomogeneous {
+		t.Errorf("并发的事后 MarkHomogeneous 改变了 Homogeneous：%v -> %v",
+			baseHomogeneous, r.Homogeneous)
+	}
+	if got := r.Endpoints(); !slices.Equal(got, baseEndpoints) {
+		t.Errorf("并发的事后 Redeem 改变了门清单：%v -> %v", baseEndpoints, got)
+	}
+	if r.ImplementedAt(probe) {
+		t.Error("并发的事后 Redeem 开出了新门")
 	}
 }
