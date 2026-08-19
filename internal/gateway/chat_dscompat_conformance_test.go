@@ -22,6 +22,37 @@ var chatDSCompatDegradedHeaders = map[string]string{
 	"web_search":        "web_search=",
 }
 
+// TestChatDSCompatNullSearchOptionsDoNotReachUpstream：null 表示不开搜索，但
+// web_search_options 仍属于 OpenAI 入站协议，目标协议不认识它。假上游刻意拒绝
+// 该字段，防止 Provider 单测与网关真实装配之间出现假绿。
+func TestChatDSCompatNullSearchOptionsDoNotReachUpstream(t *testing.T) {
+	up := newUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(body, &fields); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if _, ok := fields["web_search_options"]; ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"chatcmpl-null","object":"chat.completion","choices":[]}`)
+	})
+	hs := newChatDSCompatHarness(t, up)
+
+	rec := hs.do(t, `{"model":"m","messages":[{"role":"user","content":"hi"}],"web_search_options":null}`, true)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("状态码 = %d，期望删除目标协议不认识的 null 字段后成功: %s", rec.Code, rec.Body.String())
+	}
+}
+
 // TestChatDSCompatRouteConformance 回放 wire-compatible 路径的全部 fixture。
 //
 // 与同源直通的回放不同：除了客户端响应 golden，还必须逐项断言上游实际收到的

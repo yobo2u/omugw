@@ -72,8 +72,9 @@ func TestEmptySearchOptionsStillEnables(t *testing.T) {
 	}
 }
 
-// TestNullSearchOptionsStayUntouched：null 与缺省同义——不开搜索，也不动字段。
-func TestNullSearchOptionsStayUntouched(t *testing.T) {
+// TestNullSearchOptionsRemovedWithoutEnabling：null 与缺省同义——不开搜索；但它是
+// OpenAI 专属字段，仍必须从 DashScope 出站请求删除。
+func TestNullSearchOptionsRemovedWithoutEnabling(t *testing.T) {
 	srv, got := okServer(t)
 
 	if _, err := call(t, srv, searchInput(
@@ -86,8 +87,8 @@ func TestNullSearchOptionsStayUntouched(t *testing.T) {
 	if _, ok := fields["enable_search"]; ok {
 		t.Errorf("null 等同缺省，不得注入 enable_search: %s", got.body)
 	}
-	if string(fields["web_search_options"]) != "null" {
-		t.Errorf("null 的 web_search_options 应原样保留: %s", got.body)
+	if _, ok := fields["web_search_options"]; ok {
+		t.Errorf("null 的 web_search_options 不得泄漏到 DashScope: %s", got.body)
 	}
 }
 

@@ -6,8 +6,8 @@
 // wire-compatible 只说明不需要重编码，不能推导为语义零损失，X-Omugw-Degraded
 // 仍由矩阵生成。
 //
-// 对客户端原始 JSON 只做两处定点修补：改写模型名；把非 null 的
-// web_search_options 映射成 enable_search: true。其余字段保持原始字节——
+// 对客户端原始 JSON 只做两处定点修补：改写模型名；删除 web_search_options，
+// 非 null 时映射成 enable_search: true。其余字段保持原始字节——
 // 当前 IR 不承载 n、presence/frequency penalty、logprobs 等全部 Chat 参数，
 // 经 Canonical 往返会制造静默损失。
 package dashscopecompat
@@ -121,8 +121,8 @@ func (p *Provider) decodeError(resp *httpx.Response) error {
 	return openaiwire.DecodeError(resp.StatusCode, body, resp.Header, p.now())
 }
 
-// patch 对客户端原始 JSON 做仅有的两处修改：改写模型名；把非 null 的
-// web_search_options 映射成 enable_search: true 并删除原字段。
+// patch 对客户端原始 JSON 做仅有的两处修改：改写模型名；删除
+// web_search_options，并在非 null 时映射成 enable_search: true。
 //
 // 解成 map[string]json.RawMessage 再写回，而不是整体反序列化：这样除修补点
 // 之外的每个字段都保持原始字节，包括网关不认识的新参数。键序会随重新序列化
@@ -155,9 +155,11 @@ func patch(raw []byte, upstreamModel string) ([]byte, error) {
 	// 替客户端开搜索会改输出内容并额外计费，而响应里看不出网关做过这件事。
 	// search_context_size / user_location 没有 DashScope 落点，不猜测映射——
 	// 损失登记在降级矩阵，随响应头告知客户端。
-	if wso, ok := fields["web_search_options"]; ok && string(wso) != "null" {
+	if wso, ok := fields["web_search_options"]; ok {
 		delete(fields, "web_search_options")
-		fields["enable_search"] = json.RawMessage("true")
+		if !bytes.Equal(bytes.TrimSpace(wso), []byte("null")) {
+			fields["enable_search"] = json.RawMessage("true")
+		}
 	}
 
 	out, err := json.Marshal(fields)
