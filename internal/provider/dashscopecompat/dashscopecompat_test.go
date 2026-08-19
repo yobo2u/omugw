@@ -203,6 +203,26 @@ func TestDefaultPathWhenRequestPathEmpty(t *testing.T) {
 	}
 }
 
+// TestOfficialBaseURLDoesNotRepeatVersion：官方 base_url 已经包含
+// /compatible-mode/v1，适配器不得再把入站路径开头的 /v1 重复拼进去。
+func TestOfficialBaseURLDoesNotRepeatVersion(t *testing.T) {
+	srv, got := okServer(t)
+
+	if _, err := call(t, srv, callInput{
+		raw:           `{"model":"m","messages":[]}`,
+		upstreamModel: "m",
+		baseURL:       srv.URL + "/compatible-mode/v1",
+		path:          ChatCompletionsPath,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	want := "/compatible-mode/v1/chat/completions"
+	if got.path != want {
+		t.Errorf("path = %q，期望官方 base_url 只保留一个版本段 %q", got.path, want)
+	}
+}
+
 // TestUpstreamErrorDecoded：非 2xx 按 OpenAI 信封解码，Retry-After 保留。
 // DashScope Compatible 的错误信封与 OpenAI 同形。
 func TestUpstreamErrorDecoded(t *testing.T) {

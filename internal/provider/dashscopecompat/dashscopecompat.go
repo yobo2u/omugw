@@ -57,7 +57,14 @@ func (p *Provider) Call(ctx context.Context, req provider.Request) (*httpx.Respo
 		return nil, err
 	}
 
-	url := strings.TrimSuffix(req.Target.BaseURL, "/") + p.pathFor(req)
+	baseURL := strings.TrimSuffix(req.Target.BaseURL, "/")
+	upstreamPath := p.pathFor(req)
+	// 官方 base_url 已含 /compatible-mode/v1；只在两边版本段确实重叠时去重，
+	// 同时保留以主机根地址为 base_url 的既有配置形态。
+	if strings.HasSuffix(baseURL, "/v1") && strings.HasPrefix(upstreamPath, "/v1/") {
+		upstreamPath = strings.TrimPrefix(upstreamPath, "/v1")
+	}
+	url := baseURL + upstreamPath
 	hreq, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, canonical.Wrapf(err, canonical.ClassInternal, "构造上游请求失败")
