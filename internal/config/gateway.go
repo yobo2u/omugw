@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -87,6 +88,32 @@ func DefaultConvStore() ConvStore {
 	}
 }
 
+// validateBaseURL 强制 base_url 的契约：scheme + host + 可选路径前缀。
+//
+// 出站适配器把端点路径追加在 base_url 之后。带 query 或 fragment 时，追加的
+// 路径会落进 query 或 fragment 里（`...?trace=1/v1/chat/completions`），请求
+// 打不到真实端点——启动看着成功，运行时才表现为 404 或鉴权失败。在这里拒绝，
+// 是把一个查半天的运行时故障换成一行启动期配置错误。
+func validateBaseURL(p ProviderSpec) error {
+	u, err := url.Parse(p.BaseURL)
+	if err != nil {
+		return fmt.Errorf("config: provider %q 的 base_url %q 不是合法 URL: %w",
+			p.Endpoint, p.BaseURL, err)
+	}
+	switch {
+	case u.Scheme != "http" && u.Scheme != "https":
+		return fmt.Errorf("config: provider %q 的 base_url 必须是 http 或 https，实际 %q",
+			p.Endpoint, p.BaseURL)
+	case u.Host == "":
+		return fmt.Errorf("config: provider %q 的 base_url 缺少主机名: %q", p.Endpoint, p.BaseURL)
+	case u.RawQuery != "" || u.ForceQuery:
+		return fmt.Errorf("config: provider %q 的 base_url 不能带查询参数: %q", p.Endpoint, p.BaseURL)
+	case u.Fragment != "":
+		return fmt.Errorf("config: provider %q 的 base_url 不能带 fragment: %q", p.Endpoint, p.BaseURL)
+	}
+	return nil
+}
+
 // validateGateway 做网关配置的交叉引用校验。
 //
 // 这些错误必须在启动时炸掉，而不是等第一个请求打进来：一个指向不存在
@@ -128,6 +155,9 @@ func (c Config) validateGateway() error {
 			return fmt.Errorf("config: provider %q 缺少 base_url", p.Endpoint)
 		case p.CredentialPool == "":
 			return fmt.Errorf("config: provider %q 缺少 credential_pool", p.Endpoint)
+		}
+		if err := validateBaseURL(p); err != nil {
+			return err
 		}
 		if _, dup := endpoints[p.Endpoint]; dup {
 			return fmt.Errorf("config: 重复的 provider endpoint %q", p.Endpoint)

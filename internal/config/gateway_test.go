@@ -67,6 +67,44 @@ func TestPartialGatewayConfigIsRejected(t *testing.T) {
 	}
 }
 
+// TestBaseURLContractIsEnforced 固化 base_url 的契约：只允许「scheme + host +
+// 可选路径前缀」。带 query 或 fragment 时，出站追加端点路径会被吞进 query 或
+// fragment，请求打不到真实端点——启动看着成功，运行时才表现为 404 或鉴权失败。
+func TestBaseURLContractIsEnforced(t *testing.T) {
+	for name, baseURL := range map[string]string{
+		"带 query":    "https://dashscope.aliyuncs.com/compatible-mode/v1?trace=1",
+		"带 fragment": "https://dashscope.aliyuncs.com/compatible-mode/v1#frag",
+		"缺少 scheme":  "dashscope.aliyuncs.com/compatible-mode/v1",
+		"缺少 host":    "https:///compatible-mode/v1",
+		"不是合法 URL":   "https://exa mple.com",
+		"非 http 协议":  "ftp://dashscope.aliyuncs.com/v1",
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := fullGateway()
+			c.Providers[0].BaseURL = baseURL
+
+			err := c.Validate()
+			if err == nil {
+				t.Fatalf("base_url %q 应当在启动时被拒绝", baseURL)
+			}
+			if !strings.Contains(err.Error(), "openai") {
+				t.Errorf("错误应点名出问题的 provider，实际: %v", err)
+			}
+		})
+	}
+}
+
+// TestBaseURLAcceptsOfficialPathPrefix：官方 base_url 自带 /compatible-mode/v1
+// 路径前缀，这是合法形态，不能被上面的契约误伤。
+func TestBaseURLAcceptsOfficialPathPrefix(t *testing.T) {
+	c := fullGateway()
+	c.Providers[0].BaseURL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+
+	if err := c.Validate(); err != nil {
+		t.Fatalf("官方带路径前缀的 base_url 应当合法: %v", err)
+	}
+}
+
 // TestDanglingReferencesAreCaughtAtStartup 固化「交叉引用在启动时炸掉」。
 //
 // 一个指向不存在 endpoint 的模型规则，在启动时是一行配置错误，
