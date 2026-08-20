@@ -223,6 +223,27 @@ func TestOfficialBaseURLDoesNotRepeatVersion(t *testing.T) {
 	}
 }
 
+// TestBaseURLPathPrefixIsPreserved：base_url 带非版本路径前缀时，端点路径必须
+// 追加在前缀之后，而不是把前缀截断或吞掉。字符串拼接对 URL 组件没有概念，
+// 这里要的是结构化拼接的结果。
+func TestBaseURLPathPrefixIsPreserved(t *testing.T) {
+	srv, got := okServer(t)
+
+	if _, err := call(t, srv, callInput{
+		raw:           `{"model":"m","messages":[]}`,
+		upstreamModel: "m",
+		baseURL:       srv.URL + "/proxy/dashscope",
+		path:          ChatCompletionsPath,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	want := "/proxy/dashscope" + ChatCompletionsPath
+	if got.path != want {
+		t.Errorf("path = %q，期望前缀保留后追加端点 %q", got.path, want)
+	}
+}
+
 // TestUpstreamErrorDecoded：非 2xx 按 OpenAI 信封解码，Retry-After 保留。
 // DashScope Compatible 的错误信封与 OpenAI 同形。
 func TestUpstreamErrorDecoded(t *testing.T) {
