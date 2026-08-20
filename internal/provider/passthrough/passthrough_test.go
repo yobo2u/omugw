@@ -189,6 +189,38 @@ func TestPathIsAppendedToBaseURL(t *testing.T) {
 	}
 }
 
+// TestBaseURLPathPrefixIsPreserved：base_url 带路径前缀时，端点路径必须追加在
+// 前缀之后。同源直通与 Compatible 适配器共用同一套拼接契约，这里独立咬住它。
+func TestBaseURLPathPrefixIsPreserved(t *testing.T) {
+	srv, got := serve(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{}`)
+	})
+
+	p := New(degrade.ProviderOpenAICompat, "/v1/responses",
+		httpx.New(config.Default().Timeouts, func() time.Time { return refTime }),
+		func() time.Time { return refTime })
+
+	resp, err := p.Call(context.Background(), provider.Request{
+		Target: router.Target{
+			Kind:           degrade.ProviderOpenAICompat,
+			Endpoint:       "test",
+			BaseURL:        srv.URL + "/proxy/openai",
+			UpstreamModel:  "m",
+			CredentialPool: "test",
+		},
+		Credential: credential.Credential{ID: "k1", Secret: "sk-gateway-own-key"},
+		Raw:        []byte(`{"model":"m","input":"hi"}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { resp.Body.Close() })
+
+	if want := "/proxy/openai/v1/responses"; got.path != want {
+		t.Errorf("path = %q，期望前缀保留后追加端点 %q", got.path, want)
+	}
+}
+
 // TestUpstreamErrorBecomesCanonical 验证错误经 openaiwire 解码。
 func TestUpstreamErrorBecomesCanonical(t *testing.T) {
 	srv, _ := serve(t, func(w http.ResponseWriter, _ *http.Request) {
