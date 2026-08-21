@@ -123,6 +123,20 @@ func runHTTPContract(t *testing.T, s Subject) {
 		}
 	})
 
+	// 配置里的 base_url 带尾斜杠是合法形态（Validate 不拒它）。
+	// 字符串拼接会拼出 //v1/...，不少上游路由会 404——TrimSuffix 不是风格问题。
+	t.Run("base_url 尾斜杠归一", func(t *testing.T) {
+		h := okServer(t)
+		if _, err := h.call(t, s, callOpts{
+			baseURL: h.server.URL + "/",
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if h.got.path != s.DefaultPath {
+			t.Errorf("path = %q，期望尾斜杠归一后为默认端点 %q", h.got.path, s.DefaultPath)
+		}
+	})
+
 	runHeaderClosure(t, s)
 	runErrorDecoding(t, s)
 }
