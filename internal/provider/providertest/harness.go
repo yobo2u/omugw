@@ -1,6 +1,7 @@
 package providertest
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net/http"
@@ -73,6 +74,10 @@ func newHarness(t *testing.T, h http.HandlerFunc) *harness {
 	got := &captured{extra: t.Errorf}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
+
+		// 读完得把体放回去：ReadAll 耗尽了 r.Body，不还就等于把空体交给桩，
+		// 桩想按请求体分支或回显时会静默照着 "" 应答。
+		r.Body = io.NopCloser(bytes.NewReader(body))
 
 		got.mu.Lock()
 		got.hits++

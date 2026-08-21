@@ -32,6 +32,30 @@ func TestHarnessCapturesUpstreamRequest(t *testing.T) {
 	}
 }
 
+// TestHarnessHandsBodyToStub 钉住「桩 handler 拿得到原始请求体」。
+//
+// 防的是夹具把体读干净了才交给桩：捕获用的 io.ReadAll 会耗尽 r.Body，桩再读就
+// 只剩空串。于是一个想按请求体分支应答（或原样回显）的 Subject 桩会静默拿到
+// ""，照着空体做出错误响应——夹具自己成了给出错误答案的那个，正是本文件开头
+// 那句「比没有夹具更糟」说的情形。
+func TestHarnessHandsBodyToStub(t *testing.T) {
+	var seen string
+	h := newHarness(t, func(w http.ResponseWriter, r *http.Request) {
+		b, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("桩读取请求体失败: %v", err)
+		}
+		seen = string(b)
+		_, _ = io.WriteString(w, `{}`)
+	})
+
+	hit(t, h, http.MethodPost, "/v1/x", "v", `{"seq":"first"}`)
+
+	if seen != `{"seq":"first"}` {
+		t.Errorf("桩看到的请求体 = %q，期望 %q", seen, `{"seq":"first"}`)
+	}
+}
+
 // TestHarnessRejectsSecondUpstreamRequest 钉住「第二次上游请求当场报错，且不覆盖第一次」。
 //
 // 防的是静默覆盖：httpx.Client 默认跟随重定向，一个 3xx 桩会让同一个夹具收到
@@ -47,6 +71,8 @@ func TestHarnessRejectsSecondUpstreamRequest(t *testing.T) {
 	// 出口留成字段的理由就在这里：否则这条错误路径本身永远没人测。
 	var mu sync.Mutex
 	var alarms []string
+	// 这次替换发生在任何请求之前，本已 happens-before 桩的读；加锁是照着
+	// 「extra 归 mu 管」的规矩走，免得日后有人挪动它时才发现少了同步。
 	h.got.mu.Lock()
 	h.got.extra = func(format string, args ...any) {
 		mu.Lock()
