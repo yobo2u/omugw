@@ -16,16 +16,7 @@ func TestHarnessCapturesUpstreamRequest(t *testing.T) {
 		_, _ = io.WriteString(w, `{"ok":true}`)
 	})
 
-	req, err := http.NewRequest(http.MethodPost, h.server.URL+"/v1/x", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	req.Header.Set("X-Probe", "v")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
+	hit(t, h, http.MethodPost, "/v1/x", "v", `{"probe":"body"}`)
 
 	if h.got.method != http.MethodPost {
 		t.Errorf("method = %q，期望 POST", h.got.method)
@@ -35,6 +26,9 @@ func TestHarnessCapturesUpstreamRequest(t *testing.T) {
 	}
 	if h.got.header.Get("X-Probe") != "v" {
 		t.Errorf("头未被捕获: %v", h.got.header)
+	}
+	if got := string(h.got.body); got != `{"probe":"body"}` {
+		t.Errorf("body 未被捕获: %s", got)
 	}
 }
 
@@ -61,8 +55,8 @@ func TestHarnessRejectsSecondUpstreamRequest(t *testing.T) {
 	}
 	h.got.mu.Unlock()
 
-	hit(t, h, http.MethodPost, "/v1/first", "first")
-	hit(t, h, http.MethodGet, "/v1/second", "second")
+	hit(t, h, http.MethodPost, "/v1/first", "first", `{"seq":"first"}`)
+	hit(t, h, http.MethodPut, "/v1/second", "second", `{"seq":"second"}`)
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -82,13 +76,20 @@ func TestHarnessRejectsSecondUpstreamRequest(t *testing.T) {
 	if h.got.header.Get("X-Probe") != "first" {
 		t.Errorf("header 被第二次请求覆盖: %q", h.got.header.Get("X-Probe"))
 	}
+	if got := string(h.got.body); got != `{"seq":"first"}` {
+		t.Errorf("body = %s，期望仍是第一次的 {\"seq\":\"first\"}", got)
+	}
 }
 
 // hit 向夹具打一次请求并读完响应体，避免连接悬着影响后续断言。
-func hit(t *testing.T, h *harness, method, path, probe string) {
+//
+// 四项可辨识输入（method / path / probe / body）都由调用方给，且每次都传不同的
+// 值：防的是「两次请求在某一维上长得一样」——那一维即便被覆盖了，断言也照样绿，
+// 于是那一维的 first-write-wins 实际上没人验证过。
+func hit(t *testing.T, h *harness, method, path, probe, body string) {
 	t.Helper()
 
-	req, err := http.NewRequest(method, h.server.URL+path, nil)
+	req, err := http.NewRequest(method, h.server.URL+path, strings.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
 	}
