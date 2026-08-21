@@ -175,9 +175,11 @@ func runHeaderClosure(t *testing.T, s Subject) {
 		for _, name := range s.ForwardedHeaders {
 			allowed[http.CanonicalHeaderKey(name)] = true
 		}
-		for name := range s.StreamHeaders {
-			allowed[http.CanonicalHeaderKey(name)] = true
-		}
+		// StreamHeaders 刻意**不**进允许集：这一次是非流式调用，流式头没有任何
+		// 正当理由出现在上游请求里。而流式头也在 probeHeaders 里，客户端伪造的
+		// 那一份一旦被适配器原样转走，闭集才抓得到；把它算进允许集等于给这条
+		// 泄漏开一个后门，测试照样全绿。「非流式时适配器不自己设流式头」由
+		// 「流式信号落位」那条不变量管，那条用的是空头，证明不了不转发。
 
 		// 注入全部探针头。声明为转发的那些，期望原样到达；其余一个都不该出现。
 		clientHeader := http.Header{}
