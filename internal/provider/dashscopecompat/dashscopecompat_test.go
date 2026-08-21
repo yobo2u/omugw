@@ -3,14 +3,12 @@ package dashscopecompat
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
-	"github.com/yobo2u/omugw/internal/canonical"
 	"github.com/yobo2u/omugw/internal/config"
 	"github.com/yobo2u/omugw/internal/credential"
 	"github.com/yobo2u/omugw/internal/degrade"
@@ -118,91 +116,6 @@ func upstreamFields(t *testing.T, got *captured) map[string]json.RawMessage {
 	return fields
 }
 
-func TestKindIsDashScopeCompatible(t *testing.T) {
-	p := New(httpx.New(config.Default().Timeouts, nil), nil)
-	if p.Kind() != degrade.ProviderDashScopeCompatible {
-		t.Errorf("Kind() = %q，期望 %q", p.Kind(), degrade.ProviderDashScopeCompatible)
-	}
-}
-
-// TestRequestShape 钉死上游请求的协议事实：method、path、网关凭据、模型改写、
-// Accept 随流式与否，以及客户端头一概不转发。
-//
-// 头这两项是安全项：客户端发来的 Authorization 转给上游等于泄露客户端密钥，
-// 而上游没有理由知道它；转发任意自定义头则等于给客户端开了一条直通上游的
-// 隧道，能绕过网关去操纵上游的租户、审查、异步等行为。所以这里刻意让客户端
-// 带上一个假凭据与一个自定义头，再断言上游两样都没收到。
-func TestRequestShape(t *testing.T) {
-	for _, tc := range []struct {
-		stream     bool
-		wantAccept string
-	}{
-		{false, "application/json"},
-		{true, "text/event-stream"},
-	} {
-		srv, got := okServer(t)
-
-		clientHeader := http.Header{}
-		clientHeader.Set("Authorization", "Bearer sk-client-must-not-leak")
-		clientHeader.Set("X-Client-Custom", "must-not-be-forwarded")
-		clientHeader.Set("X-DashScope-WorkSpace", "ws-must-not-be-forwarded")
-
-		if _, err := call(t, srv, callInput{
-			raw:           `{"model":"logical","messages":[{"role":"user","content":"hi"}]}`,
-			upstreamModel: "qwen-plus",
-			stream:        tc.stream,
-			path:          ChatCompletionsPath,
-			header:        clientHeader,
-		}); err != nil {
-			t.Fatal(err)
-		}
-
-		if got.method != http.MethodPost {
-			t.Errorf("method = %q，期望 POST", got.method)
-		}
-		if got.path != ChatCompletionsPath {
-			t.Errorf("path = %q，期望 %q", got.path, ChatCompletionsPath)
-		}
-		if auth := got.header.Get("Authorization"); auth != "Bearer sk-gateway-own-key" {
-			t.Errorf("Authorization = %q，期望网关自己的凭据而非客户端的", auth)
-		}
-		for _, name := range []string{"X-Client-Custom", "X-DashScope-WorkSpace"} {
-			if v := got.header.Get(name); v != "" {
-				t.Errorf("客户端头 %s 被转发给上游了: %q", name, v)
-			}
-		}
-		if ct := got.header.Get("Content-Type"); ct != "application/json" {
-			t.Errorf("Content-Type = %q", ct)
-		}
-		if a := got.header.Get("Accept"); a != tc.wantAccept {
-			t.Errorf("stream=%v 时 Accept = %q，期望 %q", tc.stream, a, tc.wantAccept)
-		}
-
-		fields := upstreamFields(t, got)
-		if string(fields["model"]) != `"qwen-plus"` {
-			t.Errorf("model = %s，期望 qwen-plus", fields["model"])
-		}
-	}
-}
-
-// TestDefaultPathWhenRequestPathEmpty：请求没带路径时退回本适配器唯一的端点，
-// 而不是打到上游根地址。
-func TestDefaultPathWhenRequestPathEmpty(t *testing.T) {
-	srv, got := okServer(t)
-
-	if _, err := call(t, srv, callInput{
-		raw:           `{"model":"m","messages":[]}`,
-		upstreamModel: "m",
-		baseURL:       srv.URL + "/",
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	if got.path != ChatCompletionsPath {
-		t.Errorf("path = %q，期望缺省退回 %q", got.path, ChatCompletionsPath)
-	}
-}
-
 // TestOfficialBaseURLDoesNotRepeatVersion：官方 base_url 已经包含
 // /compatible-mode/v1，适配器不得再把入站路径开头的 /v1 重复拼进去。
 func TestOfficialBaseURLDoesNotRepeatVersion(t *testing.T) {
@@ -220,115 +133,5 @@ func TestOfficialBaseURLDoesNotRepeatVersion(t *testing.T) {
 	want := "/compatible-mode/v1/chat/completions"
 	if got.path != want {
 		t.Errorf("path = %q，期望官方 base_url 只保留一个版本段 %q", got.path, want)
-	}
-}
-
-// TestBaseURLPathPrefixIsPreserved：base_url 带非版本路径前缀时，端点路径必须
-// 追加在前缀之后，而不是把前缀截断或吞掉。字符串拼接对 URL 组件没有概念，
-// 这里要的是结构化拼接的结果。
-func TestBaseURLPathPrefixIsPreserved(t *testing.T) {
-	srv, got := okServer(t)
-
-	if _, err := call(t, srv, callInput{
-		raw:           `{"model":"m","messages":[]}`,
-		upstreamModel: "m",
-		baseURL:       srv.URL + "/proxy/dashscope",
-		path:          ChatCompletionsPath,
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	want := "/proxy/dashscope" + ChatCompletionsPath
-	if got.path != want {
-		t.Errorf("path = %q，期望前缀保留后追加端点 %q", got.path, want)
-	}
-}
-
-// TestUpstreamErrorDecoded：非 2xx 按 OpenAI 信封解码，Retry-After 保留。
-// DashScope Compatible 的错误信封与 OpenAI 同形。
-func TestUpstreamErrorDecoded(t *testing.T) {
-	srv, _ := serve(t, func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Retry-After", "7")
-		w.WriteHeader(http.StatusTooManyRequests)
-		_, _ = io.WriteString(w, `{"error":{"type":"rate_limit_error","message":"slow down"}}`)
-	})
-
-	_, err := call(t, srv, callInput{
-		raw:           `{"model":"m","messages":[{"role":"user","content":"hi"}]}`,
-		upstreamModel: "m",
-		path:          ChatCompletionsPath,
-	})
-	if err == nil {
-		t.Fatal("非 2xx 应当返回错误")
-	}
-	var cerr *canonical.Error
-	if !errors.As(err, &cerr) {
-		t.Fatalf("应返回 *canonical.Error，实际为 %T", err)
-	}
-	if cerr.Class != canonical.ClassRateLimit {
-		t.Errorf("分类 = %q，期望 rate_limit", cerr.Class)
-	}
-	if !cerr.Retryable {
-		t.Error("429 应可重试（换凭据可能成功）")
-	}
-	if cerr.RetryAfter != 7*time.Second {
-		t.Errorf("Retry-After = %v，期望 7s", cerr.RetryAfter)
-	}
-	if cerr.UpstreamStatus != http.StatusTooManyRequests {
-		t.Errorf("UpstreamStatus = %d，期望 429", cerr.UpstreamStatus)
-	}
-}
-
-// TestMissingModelRejected：请求体缺 model 是入站解码就该拦下的，
-// 适配器这里只做兜底，不能 panic。
-func TestMissingModelRejected(t *testing.T) {
-	srv, _ := okServer(t)
-
-	_, err := call(t, srv, callInput{
-		raw:           `{"messages":[{"role":"user","content":"hi"}]}`,
-		upstreamModel: "m",
-		path:          ChatCompletionsPath,
-	})
-	assertClass(t, err, canonical.ClassBadRequest)
-}
-
-// TestInvalidJSONRejected：请求体不是 JSON 对象时必须在适配器边界拦下，
-// 而不是把一段垃圾原样打给上游再让上游给出一条与网关无关的错。
-func TestInvalidJSONRejected(t *testing.T) {
-	srv, _ := okServer(t)
-
-	for _, raw := range []string{`not json at all`, `[1,2,3]`, `"a string"`} {
-		_, err := call(t, srv, callInput{
-			raw:           raw,
-			upstreamModel: "m",
-			path:          ChatCompletionsPath,
-		})
-		assertClass(t, err, canonical.ClassBadRequest)
-	}
-}
-
-// TestMissingUpstreamModelIsInternal：路由目标缺上游模型名是网关自己的装配
-// 错误，不是客户端的错，分类必须是 internal——否则会误导客户端去改请求。
-func TestMissingUpstreamModelIsInternal(t *testing.T) {
-	srv, _ := okServer(t)
-
-	_, err := call(t, srv, callInput{
-		raw:  `{"model":"m","messages":[]}`,
-		path: ChatCompletionsPath,
-	})
-	assertClass(t, err, canonical.ClassInternal)
-}
-
-func assertClass(t *testing.T, err error, want canonical.ErrorClass) {
-	t.Helper()
-	if err == nil {
-		t.Fatalf("期望 %q 错误，实际为 nil", want)
-	}
-	var cerr *canonical.Error
-	if !errors.As(err, &cerr) {
-		t.Fatalf("应返回 *canonical.Error，实际为 %T: %v", err, err)
-	}
-	if cerr.Class != want {
-		t.Errorf("分类 = %q，期望 %q", cerr.Class, want)
 	}
 }

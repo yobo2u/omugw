@@ -52,6 +52,8 @@ func runTransportAgnostic(t *testing.T, s Subject) {
 		assertClass(t, err, canonical.ClassInternal)
 	})
 
+	// 请求体不合法要在适配器边界就拦下，而不是把一段垃圾原样打给上游，
+	// 再让上游给出一条与网关无关的错——那条错会把排查引到错误的方向。
 	t.Run("客户端错误归客户端", func(t *testing.T) {
 		for _, tc := range []struct {
 			name string

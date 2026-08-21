@@ -96,27 +96,6 @@ func TestUnknownFieldsSurvive(t *testing.T) {
 	}
 }
 
-func TestModelIsRewritten(t *testing.T) {
-	srv, got := serve(t, func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = io.WriteString(w, `{}`)
-	})
-
-	if _, err := call(t, srv, `{"model":"fast","input":"hi"}`, "qwen-turbo", false); err != nil {
-		t.Fatal(err)
-	}
-
-	var fields map[string]any
-	if err := json.Unmarshal(got.body, &fields); err != nil {
-		t.Fatal(err)
-	}
-	if fields["model"] != "qwen-turbo" {
-		t.Errorf("模型名 = %v, 期望 qwen-turbo", fields["model"])
-	}
-	if fields["input"] != "hi" {
-		t.Errorf("其余字段应保持不变，实际 %v", fields)
-	}
-}
-
 // TestIdenticalModelIsByteExact 覆盖真正的零改动转发。
 // 逻辑名与上游名相同时连重新序列化都省掉。
 func TestIdenticalModelIsByteExact(t *testing.T) {
@@ -134,125 +113,12 @@ func TestIdenticalModelIsByteExact(t *testing.T) {
 	}
 }
 
-// TestClientAuthorizationIsNotForwarded 是一条安全约束。
+// TestOversizedErrorBodyIsCapped 固化「垃圾错误体不让分类退化」。
 //
-// 网关用自己的凭据。把客户端发来的 Authorization 转给上游，等于把网关的
-// API Key 泄露给一个没有理由知道它的第三方。
-func TestClientAuthorizationIsNotForwarded(t *testing.T) {
-	srv, got := serve(t, func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = io.WriteString(w, `{}`)
-	})
-
-	if _, err := call(t, srv, `{"model":"m","input":"hi"}`, "m", false); err != nil {
-		t.Fatal(err)
-	}
-
-	auth := got.header.Get("Authorization")
-	if auth != "Bearer sk-gateway-own-key" {
-		t.Errorf("上游应收到网关自己的凭据，实际 %q", auth)
-	}
-	if strings.Contains(auth, "client") {
-		t.Error("客户端凭据被转发给了上游")
-	}
-}
-
-func TestAcceptHeaderMatchesStreaming(t *testing.T) {
-	for _, tc := range []struct {
-		stream bool
-		want   string
-	}{
-		{true, "text/event-stream"},
-		{false, "application/json"},
-	} {
-		srv, got := serve(t, func(w http.ResponseWriter, _ *http.Request) {
-			_, _ = io.WriteString(w, `{}`)
-		})
-		if _, err := call(t, srv, `{"model":"m","input":"hi"}`, "m", tc.stream); err != nil {
-			t.Fatal(err)
-		}
-		if a := got.header.Get("Accept"); a != tc.want {
-			t.Errorf("stream=%v 时 Accept = %q, 期望 %q", tc.stream, a, tc.want)
-		}
-	}
-}
-
-func TestPathIsAppendedToBaseURL(t *testing.T) {
-	srv, got := serve(t, func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = io.WriteString(w, `{}`)
-	})
-
-	if _, err := call(t, srv, `{"model":"m","input":"hi"}`, "m", false); err != nil {
-		t.Fatal(err)
-	}
-	if got.path != "/v1/responses" {
-		t.Errorf("上游路径 = %q, 期望 /v1/responses", got.path)
-	}
-}
-
-// TestBaseURLPathPrefixIsPreserved：base_url 带路径前缀时，端点路径必须追加在
-// 前缀之后。同源直通与 Compatible 适配器共用同一套拼接契约，这里独立咬住它。
-func TestBaseURLPathPrefixIsPreserved(t *testing.T) {
-	srv, got := serve(t, func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = io.WriteString(w, `{}`)
-	})
-
-	p := New(degrade.ProviderOpenAICompat, "/v1/responses",
-		httpx.New(config.Default().Timeouts, func() time.Time { return refTime }),
-		func() time.Time { return refTime })
-
-	resp, err := p.Call(context.Background(), provider.Request{
-		Target: router.Target{
-			Kind:           degrade.ProviderOpenAICompat,
-			Endpoint:       "test",
-			BaseURL:        srv.URL + "/proxy/openai",
-			UpstreamModel:  "m",
-			CredentialPool: "test",
-		},
-		Credential: credential.Credential{ID: "k1", Secret: "sk-gateway-own-key"},
-		Raw:        []byte(`{"model":"m","input":"hi"}`),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { resp.Body.Close() })
-
-	if want := "/proxy/openai/v1/responses"; got.path != want {
-		t.Errorf("path = %q，期望前缀保留后追加端点 %q", got.path, want)
-	}
-}
-
-// TestUpstreamErrorBecomesCanonical 验证错误经 openaiwire 解码。
-func TestUpstreamErrorBecomesCanonical(t *testing.T) {
-	srv, _ := serve(t, func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Retry-After", "30")
-		w.WriteHeader(429)
-		_, _ = io.WriteString(w,
-			`{"error":{"message":"rate limited","type":"rate_limit_error"}}`)
-	})
-
-	_, err := call(t, srv, `{"model":"m","input":"hi"}`, "m", false)
-	if err == nil {
-		t.Fatal("上游 429 应当返回错误")
-	}
-
-	var cerr *canonical.Error
-	if !errors.As(err, &cerr) {
-		t.Fatalf("应返回 *canonical.Error，实际 %T", err)
-	}
-	if cerr.Class != canonical.ClassRateLimit {
-		t.Errorf("分类 = %q, 期望 rate_limit", cerr.Class)
-	}
-	// Retry-After 必须活着传到凭据池——它决定冷却多久。
-	if cerr.RetryAfter != 30*time.Second {
-		t.Errorf("RetryAfter = %v, 期望 30s", cerr.RetryAfter)
-	}
-	if !cerr.Retryable {
-		t.Error("限流应可重试（换一份凭据可能成功）")
-	}
-}
-
-// TestOversizedErrorBodyIsCapped 固化「读错误体也要设上限」。
-// 一个故障上游可能在 500 里塞进一整个 HTML 页面，甚至更糟。
+// 一个故障上游可能在 500 里塞进一整个 HTML 页面，甚至更糟。适配器必须能
+// 读完就走，且分类仍按状态码走 upstream_unavailable——状态码本身就是可靠
+// 信号。不在这里断言 Message 长度：不可解析的体回退成 21 字节的
+// "Internal Server Error"，长度断言无论有没有读取上限都会通过，一直在空转。
 func TestOversizedErrorBodyIsCapped(t *testing.T) {
 	srv, _ := serve(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(500)
@@ -268,12 +134,11 @@ func TestOversizedErrorBodyIsCapped(t *testing.T) {
 	if !errors.As(err, &cerr) {
 		t.Fatalf("应返回 *canonical.Error，实际 %T", err)
 	}
-	// 无法解析的体不该让分类退化——状态码本身就是可靠信号。
 	if cerr.Class != canonical.ClassUpstreamUnavailable {
 		t.Errorf("分类 = %q, 期望 upstream_unavailable", cerr.Class)
 	}
-	if len(cerr.Message) > 128<<10 {
-		t.Errorf("错误消息长达 %d 字节，读取上限没有生效", len(cerr.Message))
+	if cerr.UpstreamStatus != 500 {
+		t.Errorf("UpstreamStatus = %d, 期望 500", cerr.UpstreamStatus)
 	}
 }
 
@@ -306,27 +171,6 @@ func TestStreamingResponsePassesThrough(t *testing.T) {
 		if !strings.Contains(string(body), want) {
 			t.Errorf("流式响应缺少 %q:\n%s", want, body)
 		}
-	}
-}
-
-func TestMissingModelIsRejected(t *testing.T) {
-	srv, _ := serve(t, func(w http.ResponseWriter, _ *http.Request) {})
-
-	_, err := call(t, srv, `{"input":"hi"}`, "m", false)
-	if err == nil {
-		t.Fatal("缺少 model 的请求体应当被拒绝")
-	}
-	var cerr *canonical.Error
-	if !errors.As(err, &cerr) || cerr.Class != canonical.ClassBadRequest {
-		t.Errorf("应为 bad_request，实际 %v", err)
-	}
-}
-
-func TestNonObjectBodyIsRejected(t *testing.T) {
-	srv, _ := serve(t, func(w http.ResponseWriter, _ *http.Request) {})
-
-	if _, err := call(t, srv, `["not","an","object"]`, "m", false); err == nil {
-		t.Fatal("非 JSON 对象的请求体应当被拒绝")
 	}
 }
 
@@ -406,52 +250,5 @@ func TestDashScopeStreamingSetsSSEHeader(t *testing.T) {
 
 	if got.header.Get("X-DashScope-SSE") != "enable" {
 		t.Errorf("流式请求应带 X-DashScope-SSE: enable，实际 %q", got.header.Get("X-DashScope-SSE"))
-	}
-}
-
-// TestRequestPathOverridesDefault 固化「上游路径随请求走」：同一个 openai.compat
-// 适配器既要打 Responses 端点也要打 Chat 端点，路径不能写死在装配时。
-func TestRequestPathOverridesDefault(t *testing.T) {
-	srv, got := serve(t, func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = io.WriteString(w, `{"id":"chatcmpl_1"}`)
-	})
-
-	p := New(degrade.ProviderOpenAICompat, "/v1/responses",
-		httpx.New(config.Default().Timeouts, nil), nil)
-
-	resp, err := p.Call(context.Background(), provider.Request{
-		Target: router.Target{
-			Kind:           degrade.ProviderOpenAICompat,
-			Endpoint:       "test",
-			BaseURL:        srv.URL,
-			UpstreamModel:  "gpt-4o",
-			CredentialPool: "test",
-		},
-		Credential: credential.Credential{ID: "k1", Secret: "sk-x"},
-		Raw:        []byte(`{"model":"logical","messages":[{"role":"user","content":"hi"}]}`),
-		Path:       "/v1/chat/completions",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-
-	if got.path != "/v1/chat/completions" {
-		t.Errorf("上游路径 = %q, 期望 /v1/chat/completions", got.path)
-	}
-}
-
-// TestDefaultPathUsedWhenRequestPathEmpty 保证未携带路径时退回装配默认，
-// 既有单上游装配不受影响。
-func TestDefaultPathUsedWhenRequestPathEmpty(t *testing.T) {
-	srv, got := serve(t, func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = io.WriteString(w, `{"id":"resp_1"}`)
-	})
-
-	if _, err := call(t, srv, `{"model":"logical","input":"hi"}`, "m", false); err != nil {
-		t.Fatal(err)
-	}
-	if got.path != "/v1/responses" {
-		t.Errorf("上游路径 = %q, 期望默认的 /v1/responses", got.path)
 	}
 }
