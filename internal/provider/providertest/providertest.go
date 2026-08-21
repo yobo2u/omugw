@@ -86,3 +86,25 @@ func validate(s Subject) error {
 	}
 	return fmt.Errorf("Subject %q 缺少必填项: %s", s.Name, strings.Join(missing, ", "))
 }
+
+// Run 跑全部不变量族。
+//
+// 必填项缺失时立即失败并列出缺哪些，而不是跳过对应的族——跳过等于把「没跑」
+// 伪装成「跑过了」，而消除那种隐形缺口正是这个套件存在的理由。
+func Run(t *testing.T, s Subject) {
+	t.Helper()
+
+	if err := validate(s); err != nil {
+		t.Fatal(err)
+	}
+
+	name := s.Name
+	if name == "" {
+		name = string(s.Kind)
+	}
+
+	t.Run(name, func(t *testing.T) {
+		runTransportAgnostic(t, s)
+		runHTTPContract(t, s)
+	})
+}

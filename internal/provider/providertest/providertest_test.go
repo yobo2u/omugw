@@ -37,3 +37,20 @@ func TestValidateAcceptsCompleteSubject(t *testing.T) {
 		t.Errorf("完整 Subject 不应报错: %v", err)
 	}
 }
+
+// TestRunFailsOnIncompleteSubject 保证必填项缺失时是硬失败，不是静默跳过。
+func TestRunFailsOnIncompleteSubject(t *testing.T) {
+	fake := &testing.T{}
+	// 用一个子测试承接 Fatal，避免打断本测试。
+	done := make(chan bool)
+	go func() {
+		defer func() { done <- true }()
+		defer func() { _ = recover() }()
+		Run(fake, Subject{Name: "incomplete"})
+	}()
+	<-done
+
+	if !fake.Failed() {
+		t.Error("零值 Subject 应当让 Run 失败")
+	}
+}
