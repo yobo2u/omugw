@@ -271,9 +271,14 @@ func runErrorDecoding(t *testing.T, s Subject) {
 	// 这里刻意不断言 len(Message) 的上限。实测过：不可解析的体走的是
 	// 「解析失败 → 回退 http.StatusText(status)」这条路，Message 恒为 21 字节
 	//（"Internal Server Error"），无论读取上限是 64 KiB、1 MiB 还是根本没有
-	// 上限，长度断言都通过——它抓不到任何东西。读取上限是 wire 层的实现细节，
-	// 该由 openaiwire / dashscopewire 自己的测试守住；适配器这一层真正的契约
-	// 是「垃圾进来，分类不许乱」。
+	// 上限，长度断言都通过——它抓不到任何东西。这条不变量守的是「垃圾进来，
+	// 分类不许乱」。
+	//
+	// 读取上限本身没人守：它是各 HTTP 适配器 decodeError 里的 maxErrorBody
+	//（passthrough / dashscopecompat 各有一份 64 KiB），而 openaiwire /
+	// dashscopewire 的 DecodeError 收到的是**已经读完的 []byte**，压根管不到
+	// reader，所以别指望 wire 层的测试兜住它。改那个常数或删掉那个循环，
+	// 目前全仓库不会有任何测试变红。
 	t.Run("不可解析的超大体不让分类退化", func(t *testing.T) {
 		h := newHarness(t, func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
