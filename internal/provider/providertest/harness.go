@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -29,11 +30,28 @@ const gatewaySecret = "sk-gateway-own-key"
 const clientSecret = "sk-client-must-not-leak"
 
 // captured 记录上游实际收到了什么。
+//
+// 只记**第一次**请求。防的是静默覆盖：httpx.Client 默认跟随重定向，一个 3xx 桩
+// 会让同一个夹具连收两次，末次写入把第一次的 method/path/header 冲掉，断言于是
+// 拿第二跳的内容当成适配器发出的东西。一个「证明上游收到了什么」的夹具给出错误
+// 答案，比没有夹具更糟，所以多出来的请求当场报错而不是覆盖。
 type captured struct {
+	// mu 守护下面全部字段。桩跑在 httptest 的服务端 goroutine 上，与测试
+	// goroutine 的读并发；没有它，-race 下的并发请求就是一个数据竞争。
+	mu sync.Mutex
+
 	body   []byte
 	header http.Header
 	method string
 	path   string
+
+	// hits 是收到的请求次数，第二次起即违约。
+	hits int
+
+	// extra 是多余请求的告警出口，默认写进当次 t.Error。
+	// 留成字段是为了让「多打一次会响」这条路径自己也能被测到——
+	// 否则验证它的唯一办法是让某个测试真的失败。
+	extra func(format string, args ...any)
 }
 
 // harness 是一次契约断言的运行环境。
@@ -47,12 +65,28 @@ type harness struct {
 func newHarness(t *testing.T, h http.HandlerFunc) *harness {
 	t.Helper()
 
-	got := &captured{}
+	got := &captured{extra: t.Errorf}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		got.body, _ = io.ReadAll(r.Body)
+		body, _ := io.ReadAll(r.Body)
+
+		got.mu.Lock()
+		got.hits++
+		if got.hits > 1 {
+			// 在这里就报，才能失败到「多打了一次」的那个测试上；
+			// 留到事后统一检查，报出来的会是下一个测试。
+			got.extra("夹具收到第 %d 次上游请求（%s %s）——一个夹具只服务一次调用，"+
+				"多出来的通常是跟随重定向；请为第二跳另起一个 newHarness",
+				got.hits, r.Method, r.URL.Path)
+			got.mu.Unlock()
+			h(w, r)
+			return
+		}
+		got.body = body
 		got.header = r.Header.Clone()
 		got.method = r.Method
 		got.path = r.URL.Path
+		got.mu.Unlock()
+
 		h(w, r)
 	}))
 	t.Cleanup(srv.Close)
