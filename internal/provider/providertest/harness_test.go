@@ -63,13 +63,24 @@ func TestHarnessHandsBodyToStub(t *testing.T) {
 // 的内容，却以为那就是适配器发出的东西——一个「证明上游收到了什么」的夹具给
 // 出错误答案，比没有夹具更糟。所以多出来的请求必须响，而不是把前一次盖掉。
 func TestHarnessRejectsSecondUpstreamRequest(t *testing.T) {
-	h := newHarness(t, func(w http.ResponseWriter, _ *http.Request) {
+	// seen 逐次记下桩读到的请求体。防的是「只有第一跳把体交回桩」：还体那一行
+	// 若挪到首跳的 Unlock 之后，多出来的那一跳就只剩空体，而此前整套测试照样
+	// 全绿——一条声明过的契约没有任何护栏，正是本文件要消灭的那种隐形缺口。
+	var mu sync.Mutex
+	var seen []string
+	h := newHarness(t, func(w http.ResponseWriter, r *http.Request) {
+		b, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("桩读取请求体失败: %v", err)
+		}
+		mu.Lock()
+		seen = append(seen, string(b))
+		mu.Unlock()
 		_, _ = io.WriteString(w, `{}`)
 	})
 
 	// 把告警出口换掉，才能在不失败本测试的前提下断言它确实响了。
 	// 出口留成字段的理由就在这里：否则这条错误路径本身永远没人测。
-	var mu sync.Mutex
 	var alarms []string
 	// 这次替换发生在任何请求之前，本已 happens-before 桩的读；加锁是照着
 	// 「extra 归 mu 管」的规矩走，免得日后有人挪动它时才发现少了同步。
@@ -103,7 +114,18 @@ func TestHarnessRejectsSecondUpstreamRequest(t *testing.T) {
 		t.Errorf("header 被第二次请求覆盖: %q", h.got.header.Get("X-Probe"))
 	}
 	if got := string(h.got.body); got != `{"seq":"first"}` {
-		t.Errorf("body = %s，期望仍是第一次的 {\"seq\":\"first\"}", got)
+		t.Errorf("body = %q，期望仍是第一次的 %q", got, `{"seq":"first"}`)
+	}
+
+	// 两跳都得把体交回桩，第二跳读到的必须是它自己那份。
+	if len(seen) != 2 {
+		t.Fatalf("桩应当被调用两次，实得 %d 次: %q", len(seen), seen)
+	}
+	if seen[0] != `{"seq":"first"}` {
+		t.Errorf("桩第一次读到 %q，期望 %q", seen[0], `{"seq":"first"}`)
+	}
+	if seen[1] != `{"seq":"second"}` {
+		t.Errorf("桩第二次读到 %q，期望 %q", seen[1], `{"seq":"second"}`)
 	}
 }
 
