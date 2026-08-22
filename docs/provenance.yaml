@@ -69,6 +69,18 @@ modules:
   - path: internal/obs
     implementation_type: original
 
+  - path: internal/provider/providertest
+    implementation_type: original
+    reference:
+      - name: LiteLLM
+        kind: concept-only
+        url: https://github.com/BerriAI/litellm/tree/e17988f4fe7891bd39335b7e2a4b405bbe7b5ddc
+    note: |
+      共享 provider 契约测试基类的思路参考 LiteLLM 固定提交
+      e17988f4fe7891bd39335b7e2a4b405bbe7b5ddc。概念借鉴，无源码复制：
+      不变量清单来自本仓库现有两个适配器测试的交集，API 形状按本仓库
+      Go 惯例独立设计。未读取、未参考 enterprise/ 目录。
+
 # 计划参考但尚未接入的上游。接入时必须逐条更新上面的 modules 列表。
 planned_upstreams:
   - name: CLIProxyAPI
@@ -106,7 +118,11 @@ planned_upstreams:
     repository: BerriAI/litellm
     license: MIT（部分）
     planned_usage: reference
-    modules: [provider-abstraction]
+    modules: [provider-abstraction, provider-contract-test-suite]
+    note: |
+      provider-contract-test-suite 已作为概念借鉴接入（见 modules 里
+      internal/provider/providertest，钉在 e17988f，无源码复制）。
+      provider-abstraction 仍未接入。
     warning: |
       必须做**文件路径级**许可证审计。仓库根 LICENSE 明确区分：
       enterprise/ 目录适用单独的 Enterprise License，不可按 MIT 处理。
