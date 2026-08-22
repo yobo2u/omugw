@@ -274,11 +274,10 @@ func runErrorDecoding(t *testing.T, s Subject) {
 	// 上限，长度断言都通过——它抓不到任何东西。这条不变量守的是「垃圾进来，
 	// 分类不许乱」。
 	//
-	// 读取上限本身没人守：它是各 HTTP 适配器 decodeError 里的 maxErrorBody
-	//（passthrough / dashscopecompat 各有一份 64 KiB），而 openaiwire /
-	// dashscopewire 的 DecodeError 收到的是**已经读完的 []byte**，压根管不到
-	// reader，所以别指望 wire 层的测试兜住它。改那个常数或删掉那个循环，
-	// 目前全仓库不会有任何测试变红。
+	// 读取上限不能由共享套件守：它只能经 HTTP 桩喂响应，量不到适配器究竟从
+	// reader 取了多少。passthrough / dashscopecompat 各自的
+	// TestDecodeErrorCapsReadVolumeAt64KiB 负责钉住本地 64 KiB 上限；这里仍只守
+	// 「垃圾体不让分类退化」，两条不变量不要混成一个长度断言。
 	t.Run("不可解析的超大体不让分类退化", func(t *testing.T) {
 		h := newHarness(t, func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
