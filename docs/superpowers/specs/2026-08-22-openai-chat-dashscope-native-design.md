@@ -106,7 +106,7 @@ provider.Request
 | `tools` / `tool_choice` | 同名参数 | 同时强制 `result_format:message` |
 | 工具调用历史 | `assistant.tool_calls` / `tool` | id、name、arguments、tool_call_id 保持关联 |
 | `parallel_tool_calls` | `parameters.parallel_tool_calls` | 缺省时显式注入 `true` 对齐 OpenAI 默认；仍 DEGRADE |
-| `reasoning_effort` | `parameters.reasoning_effort` / `enable_thinking` | 档位逐字透传，网关不做档位重映射；非流式请求提交该字段即 422 |
+| `reasoning_effort` | `parameters.reasoning_effort` / `enable_thinking` | 档位逐字透传，网关不做档位重映射；`none` 发 `enable_thinking:false`，其余档位在非流式下 422 |
 | `web_search_options` | `enable_search:true` | 只保留开关，丢失位置、上下文大小等选项 |
 | `response_format=json_object` | Native `response_format` | 原样表达模式，模型支持面仍受限 |
 | `response_format=json_schema` | Native `response_format` | schema 与 strict 保留；路径级不承诺所有模型严格执行 |
@@ -136,9 +136,14 @@ OpenAI 图片 URL/data URI 转成 `{"image":...}`，音频转成 `{"audio":...}`
 | `frequency_penalty`、`logit_bias`、`service_tier`、`store` 显式提交 | Native 无落点 |
 | `user`、`metadata` 显式提交 | Native 无落点；`metadata` 是 `store` 的伴生字段，而 `store` 已 422 |
 | `audio` 显式提交 | 音频输出请求；不带 `modalities` 时能力门拦不住，会静默丢失 |
-| `reasoning_effort` 提交且 `stream != true` | 官方硬约束：思考模式不允许非流式调用 |
+| `reasoning_effort` 提交、值非 `none`、且 `stream != true` | 官方硬约束：思考模式不允许非流式调用 |
 | `n > 1` 且同时提交 `tools` | 官方契约：带 tools 时 Native 把 `n` 强制为 1，**且不报错** |
-| `n > 1` 且同时提交 `reasoning_effort` | `n` 仅非思考模式支持；强制回落与否未文档化，fail-closed |
+| `n > 1` 且同时提交非 `none` 的 `reasoning_effort` | `n` 仅非思考模式支持；强制回落与否未文档化，fail-closed |
+
+两条与推理相关的规则都必须排除 `none`。判据是**是否真的开启了推理**，不是字段在不在：
+`reasoning_effort:"none"` 是显式关闭思考，它既不触发 Native 的非流式禁令，也不与 `n`
+冲突。按字段存在与否判定会把这个合法请求拒掉，与下面 `EffortNone` 不报告
+`CapReasoning` 的守卫自相矛盾。
 
 `n > 1` 与 tools/推理的组合必须在入站拦截，而不是透传等上游报错：官方契约里这是
 **静默强制回落**，客户端会收到一个 200、少了候选、没有降级头、矩阵也看不见——正是
@@ -341,6 +346,9 @@ Provider 身份判断散到 relay；专用分支集中在 dispatch 请求构造�
 - Native 请求信封、两扇门的 content 形态、所有参数映射与显式不可映射字段。
 - 入站 422 规则逐条：四个无落点字段、`user`/`metadata`、`audio`、非流式 + 推理、
   `n>1` + tools、`n>1` + 推理，每条都断言点名了字段且上游调用次数为零。
+- `none` 的两条正例：非流式 + `reasoning_effort:"none"` 必须**放行**并发出
+  `enable_thinking:false`；`n>1` + `none` 同样放行。这两条是守卫的证据，缺了它们，
+  按字段存在与否误判的回归改不出红。
 - `stream_options` 严格子解码：未知子字段 400；`include_usage` 决定是否发 usage chunk。
 - 推理档位：`minimal` 不再被拒；`none` 只发 `enable_thinking:false` 且不报告
   `CapReasoning`（否则非流式会被 422 误伤）。
