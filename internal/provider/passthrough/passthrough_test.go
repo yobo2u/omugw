@@ -252,3 +252,55 @@ func TestDashScopeStreamingSetsSSEHeader(t *testing.T) {
 		t.Errorf("流式请求应带 X-DashScope-SSE: enable，实际 %q", got.header.Get("X-DashScope-SSE"))
 	}
 }
+
+// fillingReader 模拟无限填充缓冲区的 ReadCloser，并累计读取字节数。
+// 读满 1 MiB 后返回 io.ErrUnexpectedEOF，确保无上限实现会触发失败而非死循环挂住。
+type fillingReader struct {
+	read int
+}
+
+func (r *fillingReader) Read(p []byte) (int, error) {
+	if r.read >= 1<<20 {
+		return 0, io.ErrUnexpectedEOF
+	}
+	for i := range p {
+		p[i] = 'x'
+	}
+	n := len(p)
+	r.read += n
+	return n, nil
+}
+
+func (r *fillingReader) Close() error {
+	return nil
+}
+
+// TestDecodeErrorCapsReadVolumeAt64KiB 验证 decodeError 在处理错误响应体时，
+// 读入字节量被严格限制在 64 KiB 上限（65536 字节）。
+//
+// 契约关注点在于**底层的读取字节数**（body.read），而非最终解码出的错误消息长度——
+// 上游故障时可能返回巨大响应体（如几兆的 HTML 错误页），网关必须在 transport 读
+// 阶段掐断读取以防资源耗尽。测试中 p.client 为 nil 是因为 decodeError 仅依赖 p.now()
+// 构造错误时间戳，不需要网络客户端。
+func TestDecodeErrorCapsReadVolumeAt64KiB(t *testing.T) {
+	body := &fillingReader{}
+	p := New(degrade.ProviderOpenAICompat, "/v1/responses", nil, func() time.Time { return refTime })
+
+	resp := &httpx.Response{
+		Response: &http.Response{
+			StatusCode: http.StatusInternalServerError,
+			Header:     make(http.Header),
+			Body:       body,
+		},
+	}
+
+	err := p.decodeError(resp)
+	if err == nil {
+		t.Fatal("期望 decodeError 返回非 nil 错误")
+	}
+
+	const wantBytes = 64 << 10
+	if body.read != wantBytes {
+		t.Errorf("读取字节数 = %d，期望精确等于 %d (64 KiB)", body.read, wantBytes)
+	}
+}
