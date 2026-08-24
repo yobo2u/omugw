@@ -145,6 +145,15 @@ type WebSearchOptions struct {
 	UserLocation      *UserLocation `json:"user_location,omitempty"`
 }
 
+// StreamOptions 是 Chat 的流式选项。
+//
+// 它只服务网关自身的 usage chunk 决策，不进出站请求。外层严格模式管不到
+// RawMessage 子树，未知子字段必须在入站 400，不能静默吞掉。
+type StreamOptions struct {
+	IncludeUsage       *bool `json:"include_usage,omitempty"`
+	IncludeObfuscation *bool `json:"include_obfuscation,omitempty"`
+}
+
 // UserLocation 是搜索的用户位置。OpenAI 当前只接受 approximate 类型；
 // 具体位置在 approximate 子对象里。
 type UserLocation struct {

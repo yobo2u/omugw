@@ -24,6 +24,9 @@ type Decoded struct {
 	// 那是同源快通道专属的原样回填通道。
 	webSearch         bool
 	parallelToolCalls bool
+
+	// streamOptions 是严格解码后的流式选项，只服务网关自身的 usage chunk 决策。
+	streamOptions *StreamOptions
 }
 
 // Decode 把 Chat Completions 请求线格式解成 Canonical。
@@ -106,6 +109,16 @@ func Decode(body []byte) (*Decoded, error) {
 			return nil, err
 		}
 		out.webSearch = true
+	}
+
+	// stream_options：严格子解码先行。它只服务网关自身的 usage chunk 决策，
+	// 不进出站请求；未知子字段必须 400。
+	if len(w.StreamOptions) > 0 && string(w.StreamOptions) != "null" {
+		so, err := decodeStreamOptions(w.StreamOptions)
+		if err != nil {
+			return nil, err
+		}
+		out.streamOptions = so
 	}
 
 	if err := r.Validate(); err != nil {
