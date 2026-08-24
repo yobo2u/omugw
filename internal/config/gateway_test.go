@@ -197,6 +197,54 @@ func TestConvStoreDefaultsToDisabled(t *testing.T) {
 	}
 }
 
+// TestNativeEndpointValidation 钉死 native_endpoint 的三条启动期校验。
+//
+// 门是部署事实：漏声明会让 Provider 在运行时对着两个 Native 上游路径二选一，
+// 只能靠模型名或本次请求是否含媒体去猜——猜错的表现是打到错误端点后返回一个
+// 语焉不详的上游 400，而不是一行启动期配置错误。
+func TestNativeEndpointValidation(t *testing.T) {
+	// 构造一份最小合法配置：一个 dashscope.native provider + 一个指向它的 target。
+	base := func(nativeEndpoint string) Config {
+		c := fullGateway()
+		c.Providers[0].Kind = "dashscope.native"
+		c.Providers[0].BaseURL = "https://dashscope.aliyuncs.com"
+		c.Models[0].Targets[0].NativeEndpoint = nativeEndpoint
+		return c
+	}
+
+	t.Run("native kind 缺 native_endpoint 应失败", func(t *testing.T) {
+		c := base("")
+		if err := c.validateGateway(); err == nil {
+			t.Fatal("dashscope.native target 必须声明 native_endpoint")
+		}
+	})
+	t.Run("非 native kind 带 native_endpoint 应失败", func(t *testing.T) {
+		c := base("text-generation")
+		c.Providers[0].Kind = "openai.compat"
+		if err := c.validateGateway(); err == nil {
+			t.Fatal("非 dashscope.native target 不得声明 native_endpoint")
+		}
+	})
+	t.Run("未知枚举应失败", func(t *testing.T) {
+		c := base("embedding")
+		if err := c.validateGateway(); err == nil {
+			t.Fatal("未知 native_endpoint 枚举必须在启动期拒绝")
+		}
+	})
+	t.Run("合法枚举应通过", func(t *testing.T) {
+		c := base("text-generation")
+		if err := c.validateGateway(); err != nil {
+			t.Fatalf("text-generation 应合法: %v", err)
+		}
+	})
+	t.Run("多模态门应通过", func(t *testing.T) {
+		c := base("multimodal-generation")
+		if err := c.validateGateway(); err != nil {
+			t.Fatalf("multimodal-generation 应合法: %v", err)
+		}
+	})
+}
+
 func TestConvStoreValidationOnlyAppliesWhenEnabled(t *testing.T) {
 	c := fullGateway()
 	c.ConvStore = ConvStore{Enabled: false} // 全零值
