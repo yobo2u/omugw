@@ -441,7 +441,7 @@ func decodeReasoning(effort *string) (*canonical.Reasoning, error) {
 		return nil, nil
 	}
 	switch canonical.ReasoningEffort(*effort) {
-	case canonical.EffortLow, canonical.EffortMedium, canonical.EffortHigh:
+	case canonical.EffortNone, canonical.EffortMinimal, canonical.EffortLow, canonical.EffortMedium, canonical.EffortHigh:
 		return &canonical.Reasoning{Effort: canonical.ReasoningEffort(*effort)}, nil
 	default:
 		return nil, canonical.Newf(canonical.ClassBadRequest,

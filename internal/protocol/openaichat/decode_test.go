@@ -91,6 +91,38 @@ func TestDecodeReportsReasoning(t *testing.T) {
 	}
 }
 
+func TestDecodeReasoningAcceptsMinimalAndNone(t *testing.T) {
+	t.Run("minimal", func(t *testing.T) {
+		d := mustDecode(t, `{"model":"m","messages":[{"role":"user","content":"x"}],
+		  "reasoning_effort":"minimal"}`)
+		if d.Request.Reasoning == nil || d.Request.Reasoning.Effort != canonical.EffortMinimal {
+			t.Fatalf("Reasoning 解码异常: %+v", d.Request.Reasoning)
+		}
+		if !hasCap(d.Capabilities(), canonical.CapReasoning) {
+			t.Errorf("minimal 应报告 reasoning: %v", d.Capabilities())
+		}
+	})
+
+	t.Run("none", func(t *testing.T) {
+		d := mustDecode(t, `{"model":"m","messages":[{"role":"user","content":"x"}],
+		  "reasoning_effort":"none"}`)
+		if d.Request.Reasoning == nil || d.Request.Reasoning.Effort != canonical.EffortNone {
+			t.Fatalf("Reasoning 解码异常: %+v", d.Request.Reasoning)
+		}
+		if hasCap(d.Capabilities(), canonical.CapReasoning) {
+			t.Errorf("none 代表显式关闭思考，不应报告 reasoning: %v", d.Capabilities())
+		}
+	})
+
+	t.Run("rejects unknown", func(t *testing.T) {
+		_, err := Decode([]byte(`{"model":"m","messages":[{"role":"user","content":"x"}],
+		  "reasoning_effort":"ultra"}`))
+		if err == nil {
+			t.Fatal("未知 reasoning_effort 应被拒绝")
+		}
+	})
+}
+
 func TestDecodeExtractsSystemMessage(t *testing.T) {
 	d := mustDecode(t, `{"model":"m","messages":[
 	  {"role":"system","content":"你是助手"},
