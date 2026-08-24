@@ -82,6 +82,11 @@ func validate(s Subject) error {
 	if s.New == nil {
 		missing = append(missing, "New")
 	}
+	// 漏填入站协议不会让任何一条不变量变红：套件照跑，只是每次调用都递给适配器
+	// 一个半填的 Inbound。那种坐标现实中不存在，于是整轮契约是在一个假坐标上过的。
+	if s.InboundProtocol == "" {
+		missing = append(missing, "InboundProtocol")
+	}
 	if s.ValidBody == "" {
 		missing = append(missing, "ValidBody")
 	}

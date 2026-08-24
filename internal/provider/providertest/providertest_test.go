@@ -16,7 +16,7 @@ func TestValidateReportsMissingFields(t *testing.T) {
 	if err == nil {
 		t.Fatal("零值 Subject 应当报错")
 	}
-	for _, want := range []string{"Kind", "New", "ValidBody", "RateLimitEnvelope"} {
+	for _, want := range []string{"Kind", "New", "InboundProtocol", "ValidBody", "RateLimitEnvelope"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("错误信息未指出缺失项 %q: %v", want, err)
 		}
