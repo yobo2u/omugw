@@ -48,6 +48,9 @@ type Request struct {
 type ReasoningEffort string
 
 const (
+	// EffortNone 表示显式关闭思考（如 reasoning_effort="none"）。
+	// 此时仅作为关闭信号，不代表请求消耗或需要推理能力。
+	EffortNone    ReasoningEffort = "none"
 	EffortMinimal ReasoningEffort = "minimal"
 	EffortLow     ReasoningEffort = "low"
 	EffortMedium  ReasoningEffort = "medium"
@@ -165,7 +168,9 @@ func (r *Request) UsedCapabilities() []Capability {
 	if r.ResponseFormat != nil && r.ResponseFormat.Kind != FormatText {
 		seen[CapStructuredOutput] = true
 	}
-	if r.Reasoning != nil {
+	// EffortNone 代表显式关闭思考，不应报告 CapReasoning 能力；
+	// 否则未支持推理的异构路径会在矩阵判定时被误拒绝（422/501）。
+	if r.Reasoning != nil && r.Reasoning.Effort != EffortNone {
 		seen[CapReasoning] = true
 	}
 	if r.Cache != nil {
