@@ -12,6 +12,7 @@ import (
 
 	"github.com/yobo2u/omugw/internal/config"
 	"github.com/yobo2u/omugw/internal/credential"
+	"github.com/yobo2u/omugw/internal/degrade"
 	"github.com/yobo2u/omugw/internal/provider"
 	"github.com/yobo2u/omugw/internal/router"
 	"github.com/yobo2u/omugw/internal/transport/httpx"
@@ -122,9 +123,13 @@ func okServer(t *testing.T) *harness {
 
 // callOpts 是一次适配器调用的可变输入。零值即最常见的那一种。
 type callOpts struct {
-	body    string
-	stream  bool
-	path    string
+	body   string
+	stream bool
+
+	// inboundEndpoint 是这次调用敲的那扇门，留空即「请求没带门」，
+	// 用来验证适配器退回自己的默认路径。
+	inboundEndpoint degrade.Endpoint
+
 	baseURL string
 	header  http.Header
 
@@ -173,8 +178,11 @@ func (h *harness) call(t *testing.T, s Subject, o callOpts) (*httpx.Response, er
 		Credential: credential.Credential{ID: "k1", Secret: gatewaySecret},
 		Raw:        []byte(body),
 		Stream:     o.stream,
-		Path:       o.path,
-		Header:     o.header,
+		Inbound: degrade.Inbound{
+			Protocol: s.InboundProtocol,
+			Endpoint: o.inboundEndpoint,
+		},
+		Header: o.header,
 	})
 	if err == nil && resp != nil {
 		t.Cleanup(func() { resp.Body.Close() })

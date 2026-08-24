@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/yobo2u/omugw/internal/canonical"
+	"github.com/yobo2u/omugw/internal/degrade"
 )
 
 // runHTTPContract 跑 HTTP 出站特有的不变量。
@@ -81,16 +82,16 @@ func runHTTPContract(t *testing.T, s Subject) {
 		}
 	})
 
-	// 同一个适配器要服务多个上游端点，路径只能随请求走，不能写死在装配时；
+	// 同一个适配器要服务多个上游端点，端点只能随入站坐标走，不能写死在装配时；
 	// 保留默认值是为了不影响既有单端点装配——退不回默认就会打到上游根地址。
-	t.Run("路径来源", func(t *testing.T) {
-		t.Run("请求路径优先", func(t *testing.T) {
+	t.Run("端点来源", func(t *testing.T) {
+		t.Run("入站门优先", func(t *testing.T) {
 			h := okServer(t)
-			const override = "/v1/override/endpoint"
-			if _, err := h.call(t, s, callOpts{path: override}); err != nil {
+			const override degrade.Endpoint = "/v1/override/endpoint"
+			if _, err := h.call(t, s, callOpts{inboundEndpoint: override}); err != nil {
 				t.Fatal(err)
 			}
-			if h.got.path != override {
+			if h.got.path != string(override) {
 				t.Errorf("path = %q，期望 %q", h.got.path, override)
 			}
 		})
@@ -100,8 +101,8 @@ func runHTTPContract(t *testing.T, s Subject) {
 			if _, err := h.call(t, s, callOpts{}); err != nil {
 				t.Fatal(err)
 			}
-			if h.got.path != s.DefaultPath {
-				t.Errorf("path = %q，期望默认 %q", h.got.path, s.DefaultPath)
+			if h.got.path != string(s.DefaultEndpoint) {
+				t.Errorf("path = %q，期望默认 %q", h.got.path, s.DefaultEndpoint)
 			}
 		})
 	})
@@ -112,12 +113,12 @@ func runHTTPContract(t *testing.T, s Subject) {
 		h := okServer(t)
 		const prefix = "/proxy/upstream"
 		if _, err := h.call(t, s, callOpts{
-			baseURL: h.server.URL + prefix,
-			path:    s.DefaultPath,
+			baseURL:         h.server.URL + prefix,
+			inboundEndpoint: s.DefaultEndpoint,
 		}); err != nil {
 			t.Fatal(err)
 		}
-		want := prefix + s.DefaultPath
+		want := prefix + string(s.DefaultEndpoint)
 		if h.got.path != want {
 			t.Errorf("path = %q，期望前缀保留后追加端点 %q", h.got.path, want)
 		}
@@ -132,8 +133,8 @@ func runHTTPContract(t *testing.T, s Subject) {
 		}); err != nil {
 			t.Fatal(err)
 		}
-		if h.got.path != s.DefaultPath {
-			t.Errorf("path = %q，期望尾斜杠归一后为默认端点 %q", h.got.path, s.DefaultPath)
+		if h.got.path != string(s.DefaultEndpoint) {
+			t.Errorf("path = %q，期望尾斜杠归一后为默认端点 %q", h.got.path, s.DefaultEndpoint)
 		}
 	})
 

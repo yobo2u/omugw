@@ -105,13 +105,14 @@ func acceptFor(stream bool) string {
 	return "application/json"
 }
 
-// pathFor 优先用请求携带的上游路径，缺省退回装配时的默认路径。
+// pathFor 优先用入站坐标携带的门路径，缺省退回装配时的默认路径。
 //
-// 同一个 openai.compat 适配器要同时服务 Responses 与 Chat 两个上游端点，
-// 路径只能随请求走；保留默认值是为了不影响既有单上游的装配。
+// 同源直通下入站门与出站端点同路径，门路径随请求走；同一个 openai.compat
+// 适配器要同时服务 Responses 与 Chat 两扇门，路径写死在装配时就只剩一扇。
+// 保留默认值是为了不影响既有单上游的装配。
 func (p *Provider) pathFor(req provider.Request) string {
-	if req.Path != "" {
-		return req.Path
+	if req.Inbound.Endpoint != "" {
+		return string(req.Inbound.Endpoint)
 	}
 	return p.path
 }

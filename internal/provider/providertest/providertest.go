@@ -30,8 +30,18 @@ type Subject struct {
 	// New 构造适配器。套件按传输族注入不同的依赖。
 	New func(t *testing.T, deps Deps) provider.Provider
 
-	// DefaultPath 是请求未带 Path 时应落到的端点。
-	DefaultPath string
+	// InboundProtocol 是契约里这个适配器服务的入站协议。
+	//
+	// 请求带的是入站坐标而不是裸路径，坐标缺了协议这一维就不是坐标了：
+	// 半填的 Inbound 会让适配器看到一个现实中不存在的「无协议的门」。
+	// 与 Kind（出站族）成对，一个说从哪进来，一个说往哪出去。
+	InboundProtocol degrade.Protocol
+
+	// DefaultEndpoint 是请求未带 Inbound.Endpoint 时应落到的端点。
+	//
+	// 类型是门而不是字符串：装配时的默认路径是 Provider 自己的兜底配置，
+	// 而这里断言的是「门没随请求来时落在哪扇门」，两者不该长成同一个类型。
+	DefaultEndpoint degrade.Endpoint
 
 	// ForwardedHeaders 是允许原样带给上游的客户端头。
 	//

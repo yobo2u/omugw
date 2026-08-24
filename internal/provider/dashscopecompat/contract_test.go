@@ -19,7 +19,8 @@ func TestContract(t *testing.T) {
 		New: func(t *testing.T, d providertest.Deps) provider.Provider {
 			return New(d.HTTPClient, d.Now)
 		},
-		DefaultPath:       ChatCompletionsPath,
+		InboundProtocol:   degrade.ProtoOpenAIChat,
+		DefaultEndpoint:   ChatCompletionsPath,
 		ValidBody:         `{"model":"logical","messages":[{"role":"user","content":"hi"}]}`,
 		RateLimitEnvelope: `{"error":{"type":"rate_limit_error","message":"slow down"}}`,
 	})

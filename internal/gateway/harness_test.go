@@ -28,8 +28,8 @@ const testKey = "omugw-test-key-0123456789"
 
 // sentinelProviderPath 是 harness 给 passthrough 适配器故意挑的默认路径：
 // /v1/responses 不属于 Chat 与 DashScope Native 的任何端点，只有当 handler
-// 真的注入了 provider.Request.Path，请求才会打到正确端点——两者若设成一样，
-// 即使 Path 注入被删掉测试也照样通过，等于没测。
+// 真的注入了 provider.Request.Inbound.Endpoint，请求才会打到正确端点——两者
+// 若设成一样，即使入站坐标注入被删掉测试也照样通过，等于没测。
 const sentinelProviderPath = "/v1/responses"
 
 // upstream 是一个可编排的假上游。

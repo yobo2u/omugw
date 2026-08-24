@@ -29,7 +29,8 @@ func TestValidateAcceptsCompleteSubject(t *testing.T) {
 		Name:              "complete",
 		Kind:              "test.provider",
 		New:               func(*testing.T, Deps) provider.Provider { return nil },
-		DefaultPath:       "/v1/x",
+		InboundProtocol:   "test.protocol",
+		DefaultEndpoint:   "/v1/x",
 		ValidBody:         `{"model":"m"}`,
 		RateLimitEnvelope: `{"error":{}}`,
 	}

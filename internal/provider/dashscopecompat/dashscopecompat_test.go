@@ -53,14 +53,14 @@ func okServer(t *testing.T) (*httptest.Server, *captured) {
 //
 // 收成一个具名类型而不是继续加形参：调用点写 `call(t, srv, "raw", "m", false)`
 // 时，读的人无从判断末尾那个 false 是 stream 还是别的开关，加第六项时更是要
-// 逐个调用点数位置。零值即缺省——path 留空验证缺省退回，baseURL 留空用测试服务器。
+// 逐个调用点数位置。零值即缺省——门留空验证缺省退回，baseURL 留空用测试服务器。
 type callInput struct {
 	raw           string
 	upstreamModel string
 	stream        bool
 
-	path    string
-	baseURL string
+	inboundEndpoint degrade.Endpoint
+	baseURL         string
 
 	// header 是客户端原始请求头。适配器不得把它们转给上游。
 	header http.Header
@@ -94,8 +94,11 @@ func call(t *testing.T, srv *httptest.Server, in callInput) (*httpx.Response, er
 		Credential: credential.Credential{ID: "k1", Secret: "sk-gateway-own-key"},
 		Raw:        []byte(in.raw),
 		Stream:     in.stream,
-		Path:       in.path,
-		Header:     in.header,
+		Inbound: degrade.Inbound{
+			Protocol: degrade.ProtoOpenAIChat,
+			Endpoint: in.inboundEndpoint,
+		},
+		Header: in.header,
 	})
 	if err == nil && resp != nil {
 		t.Cleanup(func() { resp.Body.Close() })
@@ -122,10 +125,10 @@ func TestOfficialBaseURLDoesNotRepeatVersion(t *testing.T) {
 	srv, got := okServer(t)
 
 	if _, err := call(t, srv, callInput{
-		raw:           `{"model":"m","messages":[]}`,
-		upstreamModel: "m",
-		baseURL:       srv.URL + "/compatible-mode/v1",
-		path:          ChatCompletionsPath,
+		raw:             `{"model":"m","messages":[]}`,
+		upstreamModel:   "m",
+		baseURL:         srv.URL + "/compatible-mode/v1",
+		inboundEndpoint: ChatCompletionsPath,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -142,10 +145,10 @@ func TestOfficialBaseURLWithTrailingSlashDoesNotRepeatVersion(t *testing.T) {
 	srv, got := okServer(t)
 
 	if _, err := call(t, srv, callInput{
-		raw:           `{"model":"m","messages":[]}`,
-		upstreamModel: "m",
-		baseURL:       srv.URL + "/compatible-mode/v1/",
-		path:          ChatCompletionsPath,
+		raw:             `{"model":"m","messages":[]}`,
+		upstreamModel:   "m",
+		baseURL:         srv.URL + "/compatible-mode/v1/",
+		inboundEndpoint: ChatCompletionsPath,
 	}); err != nil {
 		t.Fatal(err)
 	}

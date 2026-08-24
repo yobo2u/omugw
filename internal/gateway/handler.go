@@ -219,13 +219,16 @@ func (h *Handler) serve(w *tracked, r *http.Request) (outcome, outbound string, 
 		return "bad_request", outbound, err
 	}
 
+	// 入站坐标只算一次，矩阵与 Provider 共用同一份：分别算两次，日后任一侧的
+	// 取法改了，裁决依据与实际打出去的门就会悄悄分家——那种错在响应里看不出来。
+	inbound := degrade.Inbound{
+		Protocol: h.in.protocol,
+		Endpoint: degrade.Endpoint(h.in.upstreamPath(r)),
+	}
+
 	// 路由给出候选，矩阵按入站坐标（协议 + 门）与能力裁决。两者分工，不互相包含。
 	kind, verdict, err := h.deps.Matrix.BestOutbound(
-		degrade.Inbound{
-			Protocol: h.in.protocol,
-			Endpoint: degrade.Endpoint(h.in.upstreamPath(r)),
-		},
-		router.Kinds(targets), decoded.Capabilities())
+		inbound, router.Kinds(targets), decoded.Capabilities())
 	if err != nil {
 		if canonical.AsError(err).Class == canonical.ClassNotImplemented {
 			h.deps.Metrics.ObserveNotImplemented(string(h.in.protocol), "planned")
@@ -243,6 +246,7 @@ func (h *Handler) serve(w *tracked, r *http.Request) (outcome, outbound string, 
 		decoded: decoded,
 		targets: router.OfKind(targets, kind),
 		kind:    kind,
+		inbound: inbound,
 		headers: verdictHeaders(verdict),
 	})
 }
@@ -253,6 +257,10 @@ type dispatchInput struct {
 	decoded *decodedRequest
 	targets []router.Target
 	kind    degrade.Provider
+
+	// inbound 是 serve 裁决时用的那一份入站坐标，原样交给 Provider。
+	inbound degrade.Inbound
+
 	headers map[string]string
 }
 
@@ -292,7 +300,7 @@ func (h *Handler) dispatch(w *tracked, r *http.Request, in dispatchInput) (strin
 				Raw:        in.raw,
 				Canonical:  &in.decoded.Request,
 				Stream:     in.decoded.Request.Stream,
-				Path:       h.in.upstreamPath(r),
+				Inbound:    in.inbound,
 				Header:     r.Header,
 			})
 			if err != nil {
