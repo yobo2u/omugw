@@ -101,8 +101,8 @@ func runHTTPContract(t *testing.T, s Subject) {
 			if _, err := h.call(t, s, callOpts{}); err != nil {
 				t.Fatal(err)
 			}
-			if h.got.path != string(s.DefaultEndpoint) {
-				t.Errorf("path = %q，期望默认 %q", h.got.path, s.DefaultEndpoint)
+			if h.got.path != s.DefaultPath {
+				t.Errorf("path = %q，期望默认 %q", h.got.path, s.DefaultPath)
 			}
 		})
 	})
@@ -114,11 +114,11 @@ func runHTTPContract(t *testing.T, s Subject) {
 		const prefix = "/proxy/upstream"
 		if _, err := h.call(t, s, callOpts{
 			baseURL:         h.server.URL + prefix,
-			inboundEndpoint: s.DefaultEndpoint,
+			inboundEndpoint: degrade.Endpoint(s.DefaultPath),
 		}); err != nil {
 			t.Fatal(err)
 		}
-		want := prefix + string(s.DefaultEndpoint)
+		want := prefix + s.DefaultPath
 		if h.got.path != want {
 			t.Errorf("path = %q，期望前缀保留后追加端点 %q", h.got.path, want)
 		}
@@ -133,8 +133,8 @@ func runHTTPContract(t *testing.T, s Subject) {
 		}); err != nil {
 			t.Fatal(err)
 		}
-		if h.got.path != string(s.DefaultEndpoint) {
-			t.Errorf("path = %q，期望尾斜杠归一后为默认端点 %q", h.got.path, s.DefaultEndpoint)
+		if h.got.path != s.DefaultPath {
+			t.Errorf("path = %q，期望尾斜杠归一后为默认端点 %q", h.got.path, s.DefaultPath)
 		}
 	})
 

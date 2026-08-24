@@ -22,7 +22,7 @@ func TestContractOpenAICompat(t *testing.T) {
 			return New(degrade.ProviderOpenAICompat, "/v1/responses", d.HTTPClient, d.Now)
 		},
 		InboundProtocol:   degrade.ProtoOpenAIResponses,
-		DefaultEndpoint:   degrade.EndpointOpenAIResponses,
+		DefaultPath:       "/v1/responses",
 		ValidBody:         `{"model":"logical","input":"hi"}`,
 		RateLimitEnvelope: `{"error":{"type":"rate_limit_error","message":"slow down"}}`,
 	})
@@ -41,7 +41,7 @@ func TestContractDashScopeNative(t *testing.T) {
 				dashscopenative.TextGenerationPath, d.HTTPClient, d.Now)
 		},
 		InboundProtocol: degrade.ProtoDashScopeNative,
-		DefaultEndpoint: degrade.EndpointDashScopeTextGeneration,
+		DefaultPath:     dashscopenative.TextGenerationPath,
 		ForwardedHeaders: []string{
 			"X-DashScope-WorkSpace",
 			"X-DashScope-DataInspection",
