@@ -134,18 +134,37 @@ func EncodeRequest(canon *canonical.Request, extra ChatSampling, door Door, upst
 	}
 	// 先过 Canonical 自校验：Part 的判别字段与负载不一致时，后面每一处
 	// 按 Kind 取负载的地方都会读到 nil，静默编出一条缺内容的消息。
+	//
+	// 失败按 internal 记：入站解码器已经校验过客户端提交的内容，能走到这里
+	// 的不自洽 Canonical 只可能是网关自己造出来的。报成 400 会让客户端去改
+	// 一个本来就对的请求，真正的 bug 却没人查。
 	if err := canon.Validate(); err != nil {
-		return nil, canonical.Wrapf(err, canonical.ClassBadRequest, "请求无法编码为 DashScope Native")
+		return nil, canonical.Wrapf(err, canonical.ClassInternal, "请求无法编码为 DashScope Native")
 	}
 
 	msgs, err := encodeMessages(canon, door)
 	if err != nil {
 		return nil, err
 	}
+	// 一条消息都没有时 input.messages 会编成 null，上游拿不到任何对话内容，
+	// 却仍是一个语法合法的请求。
+	//
+	// 这是客户端可达的形态，所以报 400 而不是 500：Chat 侧
+	// messages:[{"role":"system","content":""}] 数组非空、过得了解码器的空数组
+	// 检查，但空 content 解出零个 Part、system 又不进 Messages，落地就是双空的
+	// Canonical——Validate 只查自洽性，不查非空。记成 500 会把客户端的输入问题
+	// 混进网关故障告警里。
+	if len(msgs) == 0 {
+		return nil, canonical.Newf(canonical.ClassBadRequest, "请求没有任何可发送的消息内容")
+	}
+	params, err := encodeParameters(canon, extra)
+	if err != nil {
+		return nil, err
+	}
 	out := outRequest{
 		Model:      upstreamModel,
 		Input:      outInput{Messages: msgs},
-		Parameters: encodeParameters(canon, extra),
+		Parameters: params,
 	}
 	body, err := json.Marshal(out)
 	if err != nil {
@@ -158,7 +177,7 @@ func EncodeRequest(canon *canonical.Request, extra ChatSampling, door Door, upst
 //
 // 用 map 而不是结构体：Native 的参数省略与显式零值语义不同（temperature=0 是
 // 合法取值），omitempty 会把显式零值一起抹掉，静默变成上游默认值。
-func encodeParameters(canon *canonical.Request, extra ChatSampling) map[string]any {
+func encodeParameters(canon *canonical.Request, extra ChatSampling) (map[string]any, error) {
 	p := map[string]any{"result_format": "message"}
 
 	// 指针字段逐个判 nil 而不是靠 omitempty：显式零值是合法取值
@@ -188,14 +207,24 @@ func encodeParameters(canon *canonical.Request, extra ChatSampling) map[string]a
 	case extra.MaxTokens != nil:
 		p["max_tokens"] = *extra.MaxTokens
 	}
-	encodeReasoning(p, canon.Reasoning)
+	if err := encodeReasoning(p, canon.Reasoning); err != nil {
+		return nil, err
+	}
 	if tools := encodeTools(canon.Tools); len(tools) > 0 {
 		p["tools"] = tools
 	}
-	if choice := encodeToolChoice(canon.ToolChoice); choice != nil {
+	choice, err := encodeToolChoice(canon.ToolChoice)
+	if err != nil {
+		return nil, err
+	}
+	if choice != nil {
 		p["tool_choice"] = choice
 	}
-	if format := encodeResponseFormat(canon.ResponseFormat); format != nil {
+	format, err := encodeResponseFormat(canon.ResponseFormat)
+	if err != nil {
+		return nil, err
+	}
+	if format != nil {
 		p["response_format"] = format
 	}
 	if stop := encodeStop(canon.StopSequences); stop != nil {
@@ -211,7 +240,7 @@ func encodeParameters(canon *canonical.Request, extra ChatSampling) map[string]a
 	if extra.IncrementalOutput {
 		p["incremental_output"] = true
 	}
-	return p
+	return p, nil
 }
 
 // encodeStop 编停止词。单元素发字符串、多元素发数组，是 Native 的线格式事实。
@@ -227,13 +256,17 @@ func encodeStop(stop []string) any {
 }
 
 // encodeResponseFormat 编结构化输出约束。text 是默认形态，显式发出去没有意义。
-func encodeResponseFormat(f *canonical.ResponseFormat) any {
+// 未知形态是内部错：解码器只放行三种取值，第四种只能来自网关自己的 bug，
+// 静默省略等于把客户端要求的 schema 约束凭空撤掉，请求照样 200。
+func encodeResponseFormat(f *canonical.ResponseFormat) (any, error) {
 	if f == nil {
-		return nil
+		return nil, nil
 	}
 	switch f.Kind {
+	case canonical.FormatText:
+		return nil, nil
 	case canonical.FormatJSONObject:
-		return outFormat{Type: string(canonical.FormatJSONObject)}
+		return outFormat{Type: string(canonical.FormatJSONObject)}, nil
 	case canonical.FormatJSONSchema:
 		return outFormat{
 			Type: string(canonical.FormatJSONSchema),
@@ -242,9 +275,10 @@ func encodeResponseFormat(f *canonical.ResponseFormat) any {
 				Schema: f.Schema,
 				Strict: f.Strict,
 			},
-		}
+		}, nil
 	default:
-		return nil
+		return nil, canonical.Newf(canonical.ClassInternal,
+			"未知的 response_format 形态 %q", string(f.Kind))
 	}
 }
 
@@ -266,14 +300,21 @@ func encodeTools(tools []canonical.Tool) []outTool {
 
 // encodeToolChoice 编工具选择策略。specific 必须带上工具名——退化成裸
 // "required" 会让模型自由挑一个工具，客户端点名的那个未必被调用。
-func encodeToolChoice(c *canonical.ToolChoice) any {
+// 未知模式是内部错：原样发出去上游拒整轮，是最好的下场；真正危险的是
+// 它恰好撞上某个上游认识的词，工具约束就变成了另一回事。
+func encodeToolChoice(c *canonical.ToolChoice) (any, error) {
 	if c == nil || c.Mode == "" {
-		return nil
+		return nil, nil
 	}
-	if c.Mode == canonical.ToolChoiceSpecific {
-		return outToolChoice{Type: "function", Function: outToolChoiceName{Name: c.Name}}
+	switch c.Mode {
+	case canonical.ToolChoiceSpecific:
+		return outToolChoice{Type: "function", Function: outToolChoiceName{Name: c.Name}}, nil
+	case canonical.ToolChoiceAuto, canonical.ToolChoiceNone, canonical.ToolChoiceRequired:
+		return string(c.Mode), nil
+	default:
+		return nil, canonical.Newf(canonical.ClassInternal,
+			"未知的 tool_choice 模式 %q", string(c.Mode))
 	}
-	return string(c.Mode)
 }
 
 // putIf 只在客户端提交过该字段时写入，保住「显式零值」与「未设置」的区别。
@@ -286,13 +327,19 @@ func putIf[T any](p map[string]any, key string, v *T) {
 // encodeReasoning 写推理档位。两个字段互斥：none 是「显式关思考」的开关，
 // 当成 effort 档位发出去上游会拒绝整个请求；两个都发则自相矛盾。
 // thinking_budget 一律不发——Canonical 的 MaxTokens 与它口径不同，换算是猜的。
-func encodeReasoning(p map[string]any, r *canonical.Reasoning) {
+// 未知档位是内部错：解码器只放行五个档位，第六个只能来自网关自己的 bug。
+func encodeReasoning(p map[string]any, r *canonical.Reasoning) error {
 	if r == nil || r.Effort == "" {
-		return
+		return nil
 	}
-	if r.Effort == canonical.EffortNone {
+	switch r.Effort {
+	case canonical.EffortNone:
 		p["enable_thinking"] = false
-		return
+	case canonical.EffortMinimal, canonical.EffortLow, canonical.EffortMedium, canonical.EffortHigh:
+		p["reasoning_effort"] = string(r.Effort)
+	default:
+		return canonical.Newf(canonical.ClassInternal,
+			"未知的 reasoning_effort 档位 %q", string(r.Effort))
 	}
-	p["reasoning_effort"] = string(r.Effort)
+	return nil
 }

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/yobo2u/omugw/internal/canonical"
+	"github.com/yobo2u/omugw/internal/protocol/openaichat"
 )
 
 // TestEncodeRequestEnvelope 钉死出站信封骨架：model / input.messages / parameters.result_format。
@@ -367,7 +368,12 @@ func TestEncodeRequestMultimodalDoorEncodesBlocks(t *testing.T) {
 			Parts: []canonical.Part{
 				canonical.Text("这是什么"),
 				canonical.ImageURL("https://example.com/a.png", "image/png"),
-				canonical.AudioData([]byte("RIFF"), canonical.AudioFmt{Encoding: "pcm16", SampleRate: 16000, Channels: 1}),
+				{Kind: canonical.PartMedia, Media: &canonical.Media{
+					Kind:     canonical.MediaAudio,
+					MIMEType: "audio/wav",
+					Data:     []byte("RIFF"),
+					Audio:    &canonical.AudioFmt{Encoding: "pcm16", SampleRate: 16000, Channels: 1},
+				}},
 			},
 		}},
 	}
@@ -394,13 +400,80 @@ func TestEncodeRequestMultimodalDoorEncodesBlocks(t *testing.T) {
 	if m.Content[1]["image"] != "https://example.com/a.png" {
 		t.Errorf("URL 图片应原样透传（网关不代下载），实际 %v", m.Content[1])
 	}
-	if got := m.Content[2]["audio"]; got != "data:audio/pcm16;base64,UklGRg==" {
+	if got := m.Content[2]["audio"]; got != "data:audio/wav;base64,UklGRg==" {
 		t.Errorf("内联音频应编成 data URI，实际 %q", got)
 	}
 	for i, b := range m.Content {
 		if len(b) != 1 {
 			t.Errorf("内容块 %d 必须是单键形态，实际 %v", i, b)
 		}
+	}
+}
+
+// TestEncodeRequestMultimodalDoorArrayIsUserOnly 钉死块数组只用在 user 这一格。
+//
+// Native 线格式里 system 与 assistant 的 content 是字符串，只有 user 收块数组。
+// 把 system 也编成数组，上游读不出系统人格却照常作答——请求 200，人格没了，
+// 而这种失败在响应里看不见任何痕迹。
+func TestEncodeRequestMultimodalDoorArrayIsUserOnly(t *testing.T) {
+	canon := &canonical.Request{
+		Model:  "logical",
+		System: []canonical.Part{canonical.Text("you are helpful")},
+		Messages: []canonical.Message{
+			canonical.UserText("这是什么"),
+			canonical.AssistantText("是一只猫"),
+		},
+	}
+	body, err := EncodeRequest(canon, ChatSampling{}, DoorMultimodalGeneration, "qwen3-vl-plus")
+	if err != nil {
+		t.Fatal(err)
+	}
+	msgs := encodedMessages(t, body)
+	want := []string{
+		`{"role":"system","content":"you are helpful"}`,
+		`{"role":"user","content":[{"text":"这是什么"}]}`,
+		`{"role":"assistant","content":"是一只猫"}`,
+	}
+	if len(msgs) != len(want) {
+		t.Fatalf("应有 system/user/assistant 三条消息，实际 %d", len(msgs))
+	}
+	for i, w := range want {
+		if string(msgs[i]) != w {
+			t.Errorf("messages[%d] = %s，期望 %s", i, msgs[i], w)
+		}
+	}
+}
+
+// TestEncodeRequestMultimodalDoorRejectsMediaOutsideUser 钉死非 user 槽位遇媒体 fail-closed。
+//
+// system/assistant 的 content 只能是字符串，媒体块在那里没有落点。塞进去
+// 上游要么拒整轮、要么当成没看见——宁可显式报错，也不发一条语义残缺的请求。
+func TestEncodeRequestMultimodalDoorRejectsMediaOutsideUser(t *testing.T) {
+	image := canonical.ImageURL("https://example.com/a.png", "image/png")
+	cases := map[string]*canonical.Request{
+		"system 携带媒体": {
+			Model:    "logical",
+			System:   []canonical.Part{image},
+			Messages: []canonical.Message{canonical.UserText("这是什么")},
+		},
+		"assistant 携带媒体": {
+			Model: "logical",
+			Messages: []canonical.Message{
+				canonical.UserText("这是什么"),
+				{Role: canonical.RoleAssistant, Parts: []canonical.Part{image}},
+			},
+		},
+	}
+	for name, canon := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := EncodeRequest(canon, ChatSampling{}, DoorMultimodalGeneration, "qwen3-vl-plus")
+			if err == nil {
+				t.Fatal("非 user 槽位的媒体应报错，不得静默编成上游读不出的块数组")
+			}
+			if cerr := canonical.AsError(err); cerr.Class != canonical.ClassBadRequest {
+				t.Errorf("应为 bad_request，实际 %s", cerr.Class)
+			}
+		})
 	}
 }
 
@@ -428,11 +501,47 @@ func TestEncodeRequestMultimodalInlineImageBecomesDataURI(t *testing.T) {
 	}
 }
 
-// TestEncodeRequestRejectsFileRefAndMediaFile 钉死两条不可搬运的媒体形态。
+// TestEncodeRequestInlineMediaWithoutMIMEFails 钉死内联负载缺 MIME 时 fail-closed。
+//
+// 缺 MIME 拼出来的是 "data:;base64,..."——一个语法合法却没有类型的 data URI，
+// 上游无从判断解码方式，整块负载被当成不认识的字符串丢掉，而请求仍是 200。
+// 编码器也不得替客户端猜一个 MIME：猜错等于凭空造了一个关于负载的事实。
+func TestEncodeRequestInlineMediaWithoutMIMEFails(t *testing.T) {
+	cases := map[string]*canonical.Media{
+		"内联图片缺 MIME": {Kind: canonical.MediaImage, Data: []byte{0x89, 0x50}},
+		"内联音频缺 MIME": {
+			Kind:  canonical.MediaAudio,
+			Data:  []byte("RIFF"),
+			Audio: &canonical.AudioFmt{Encoding: "pcm16", SampleRate: 16000, Channels: 1},
+		},
+	}
+	for name, media := range cases {
+		t.Run(name, func(t *testing.T) {
+			canon := &canonical.Request{
+				Model: "logical",
+				Messages: []canonical.Message{{
+					Role:  canonical.RoleUser,
+					Parts: []canonical.Part{{Kind: canonical.PartMedia, Media: media}},
+				}},
+			}
+			_, err := EncodeRequest(canon, ChatSampling{}, DoorMultimodalGeneration, "qwen3-vl-plus")
+			if err == nil {
+				t.Fatal("内联负载缺 MIME 应报错，不得发出无类型的 data URI，也不得猜一个 MIME")
+			}
+			if cerr := canonical.AsError(err); cerr.Class != canonical.ClassBadRequest {
+				t.Errorf("客户端提交的负载不完整，应为 bad_request，实际 %s", cerr.Class)
+			}
+		})
+	}
+}
+
+// TestEncodeRequestRejectsUnlandableMedia 钉死三条落不了地的媒体形态一律 422。
 //
 // FileRef 绑定具体 Provider，跨 Provider 搬运是把不可控成本转嫁给网关；
-// Native 内容块词表到 video 为止，根本没有通用 file 块的落点。
-func TestEncodeRequestRejectsFileRefAndMediaFile(t *testing.T) {
+// file 在 Native 的内容块词表里没有落点；video 这条路根本不存在——Chat 侧
+// 表达不出视频输入，本路径也把它声明为不可能，上游支持视频不是在这里编码它的
+// 授权。三者都编不出去，静默丢掉会让模型看不见负载却照常作答。
+func TestEncodeRequestRejectsUnlandableMedia(t *testing.T) {
 	cases := map[string]canonical.Part{
 		"跨 Provider 的 FileRef": {
 			Kind: canonical.PartMedia,
@@ -449,6 +558,13 @@ func TestEncodeRequestRejectsFileRefAndMediaFile(t *testing.T) {
 				Data:     []byte("%PDF"),
 			},
 		},
+		"本路径不存在的 video 媒体": {
+			Kind: canonical.PartMedia,
+			Media: &canonical.Media{
+				Kind: canonical.MediaVideo,
+				URL:  "https://example.com/a.mp4",
+			},
+		},
 	}
 	for name, part := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -456,8 +572,12 @@ func TestEncodeRequestRejectsFileRefAndMediaFile(t *testing.T) {
 				Model:    "logical",
 				Messages: []canonical.Message{{Role: canonical.RoleUser, Parts: []canonical.Part{part}}},
 			}
-			if _, err := EncodeRequest(canon, ChatSampling{}, DoorMultimodalGeneration, "qwen3-vl-plus"); err == nil {
+			_, err := EncodeRequest(canon, ChatSampling{}, DoorMultimodalGeneration, "qwen3-vl-plus")
+			if err == nil {
 				t.Fatal("应显式报错，不得静默丢弃")
+			}
+			if cerr := canonical.AsError(err); cerr.Class != canonical.ClassUnsupported {
+				t.Errorf("这条路承载不了该负载，应为 unsupported，实际 %s", cerr.Class)
 			}
 		})
 	}
@@ -865,7 +985,38 @@ func TestEncodeRequestFailsClosed(t *testing.T) {
 		}
 	})
 
+	t.Run("Canonical 自校验失败", func(t *testing.T) {
+		// 解码器产出的 Canonical 必然自洽，这里再失败说明是网关内部 bug，
+		// 报成 400 会让客户端去改一个本来就对的请求。
+		canon := textCanon()
+		canon.Model = ""
+		_, err := EncodeRequest(canon, ChatSampling{}, DoorTextGeneration, "qwen-plus")
+		if err == nil {
+			t.Fatal("Canonical 自校验失败应报错")
+		}
+		if cerr := canonical.AsError(err); cerr.Class != canonical.ClassInternal {
+			t.Errorf("应为 internal，实际 %s", cerr.Class)
+		}
+	})
+
+	t.Run("一条消息都没编出来", func(t *testing.T) {
+		// 空 messages 编出去是 "messages":null 或 []，上游拿不到任何对话内容。
+		// 客户端能造出这种形态（见 TestEncodeRequestEmptyAfterChatDecodeIsBadRequest），
+		// 所以是 400 不是 500。
+		_, err := EncodeRequest(&canonical.Request{Model: "logical"},
+			ChatSampling{}, DoorTextGeneration, "qwen-plus")
+		if err == nil {
+			t.Fatal("零条消息应报错，不得发出 messages:null")
+		}
+		if cerr := canonical.AsError(err); cerr.Class != canonical.ClassBadRequest {
+			t.Errorf("应为 bad_request，实际 %s", cerr.Class)
+		}
+	})
+
 	t.Run("媒体同时给了两种承载形态", func(t *testing.T) {
+		// 拦截点必须是入口那道 Canonical 自校验，不是媒体编码里的重复校验——
+		// 断言 internal 就是在钉这件事：这种 Part 解码器造不出来，能出现说明
+		// 网关内部拼错了。若哪天入口校验被拿掉，这里会退化成 bad_request 而报警。
 		canon := &canonical.Request{
 			Model: "logical",
 			Messages: []canonical.Message{{
@@ -880,10 +1031,72 @@ func TestEncodeRequestFailsClosed(t *testing.T) {
 				}},
 			}},
 		}
-		if _, err := EncodeRequest(canon, ChatSampling{}, DoorMultimodalGeneration, "qwen3-vl-plus"); err == nil {
+		_, err := EncodeRequest(canon, ChatSampling{}, DoorMultimodalGeneration, "qwen3-vl-plus")
+		if err == nil {
 			t.Fatal("URL 与内联字节互斥，应报错")
 		}
+		if cerr := canonical.AsError(err); cerr.Class != canonical.ClassInternal {
+			t.Errorf("应在入口 Canonical 自校验处拦下并记为 internal，实际 %s", cerr.Class)
+		}
 	})
+}
+
+// TestEncodeRequestEmptyAfterChatDecodeIsBadRequest 钉死「客户端能造出零条消息」这一事实。
+//
+// 这条线格式请求 Chat 解码器是收的：messages 数组非空过得了空数组检查，而
+// content:"" 解出零个 Part，system 角色又不进 Messages——落地就是 System 与
+// Messages 双空的 Canonical，Validate 只查自洽性、不查非空，拦不住。
+// 所以零条消息是客户端可达形态，必须报 400 让客户端改请求；报 500 等于把
+// 客户端的输入问题记成网关故障，真正的告警会被这类噪声淹掉。
+func TestEncodeRequestEmptyAfterChatDecodeIsBadRequest(t *testing.T) {
+	decoded, err := openaichat.Decode([]byte(`{"model":"m","messages":[{"role":"system","content":""}]}`))
+	if err != nil {
+		t.Fatalf("Chat 解码器接受这条请求，解码不应失败：%v", err)
+	}
+	if len(decoded.Request.System) != 0 || len(decoded.Request.Messages) != 0 {
+		t.Fatalf("前提已变：解码结果应是 System/Messages 双空，实际 system=%d messages=%d",
+			len(decoded.Request.System), len(decoded.Request.Messages))
+	}
+
+	_, err = EncodeRequest(&decoded.Request, ChatSampling{}, DoorTextGeneration, "qwen-plus")
+	if err == nil {
+		t.Fatal("零条消息应报错，不得发出 messages:null")
+	}
+	if cerr := canonical.AsError(err); cerr.Class != canonical.ClassBadRequest {
+		t.Errorf("客户端可达的形态应为 bad_request，实际 %s", cerr.Class)
+	}
+}
+
+// TestEncodeRequestUnknownEnumsAreInternal 钉死三个枚举的未知取值一律 500。
+//
+// Chat 解码器已经把这三个字段的取值挡在前面了，能走到编码器的未知值只可能来自
+// 网关自身的 bug。此时既不能原样发（上游拒整轮）也不能悄悄省略（客户端点名的
+// 约束凭空消失，请求照样 200）——只有 500 能让这个内部 bug 被看见。
+func TestEncodeRequestUnknownEnumsAreInternal(t *testing.T) {
+	cases := map[string]func(*canonical.Request){
+		"未知 tool_choice 模式": func(c *canonical.Request) {
+			c.ToolChoice = &canonical.ToolChoice{Mode: canonical.ToolChoiceMode("maybe")}
+		},
+		"未知 reasoning 档位": func(c *canonical.Request) {
+			c.Reasoning = &canonical.Reasoning{Effort: canonical.ReasoningEffort("extreme")}
+		},
+		"未知 response_format 形态": func(c *canonical.Request) {
+			c.ResponseFormat = &canonical.ResponseFormat{Kind: canonical.ResponseFormatKind("yaml")}
+		},
+	}
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			canon := textCanon()
+			mutate(canon)
+			_, err := EncodeRequest(canon, ChatSampling{}, DoorTextGeneration, "qwen-plus")
+			if err == nil {
+				t.Fatal("未知枚举值应报错，不得原样发出或静默省略")
+			}
+			if cerr := canonical.AsError(err); cerr.Class != canonical.ClassInternal {
+				t.Errorf("解码器已挡在前面，走到这里是网关内部 bug，应为 internal，实际 %s", cerr.Class)
+			}
+		})
+	}
 }
 
 // TestEncodeRequestIgnoresExtensions 钉死异构编码不读 Extensions。
