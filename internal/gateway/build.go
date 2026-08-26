@@ -14,6 +14,7 @@ import (
 	"github.com/yobo2u/omugw/internal/protocol/dashscopewire"
 	"github.com/yobo2u/omugw/internal/provider"
 	"github.com/yobo2u/omugw/internal/provider/dashscopecompat"
+	dsnativeprovider "github.com/yobo2u/omugw/internal/provider/dashscopenative"
 	"github.com/yobo2u/omugw/internal/provider/passthrough"
 	"github.com/yobo2u/omugw/internal/router"
 	"github.com/yobo2u/omugw/internal/transport/httpx"
@@ -80,8 +81,9 @@ func Build(cfg config.Config, m *degrade.Matrix, metrics *obs.Metrics, log *slog
 		case degrade.ProviderOpenAICompat:
 			provs[p.Endpoint] = passthrough.New(kind, "/v1/responses", client, nil)
 		case degrade.ProviderDashScopeNative:
-			// 直通路径随请求走（handler 会注入实际路径），这里只是兜底默认值。
-			provs[p.Endpoint] = passthrough.New(kind, dashscopenative.TextGenerationPath, client, nil)
+			// Composite：Native 入站复用内部 passthrough（入站门即出站端点），
+			// Chat 入站走 translator（门取自 target.NativeEndpoint）。
+			provs[p.Endpoint] = dsnativeprovider.New(client, nil)
 		case degrade.ProviderDashScopeCompatible:
 			// wire-compatible 而语义异构：请求仍走 Chat wire，路径由 handler 注入
 			// /v1/chat/completions，适配器自带同名兜底默认值。
@@ -106,6 +108,9 @@ func Build(cfg config.Config, m *degrade.Matrix, metrics *obs.Metrics, log *slog
 				BaseURL:        ep.BaseURL,
 				UpstreamModel:  t.UpstreamModel,
 				CredentialPool: ep.CredentialPool,
+				// 门原样搬运，绝不从模型名或请求内容推断：门是部署事实，
+				// 猜错的表现是打到另一扇门后一个语焉不详的上游 400。
+				NativeEndpoint: t.NativeEndpoint,
 			})
 		}
 		rules = append(rules, router.Rule{Match: mspec.Match, Targets: targets})

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -508,4 +509,285 @@ func TestHealthOnlyModeSkipsDoorReconciliation(t *testing.T) {
 		slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
 		t.Fatalf("仅健康检查形态不该因为矩阵开着门而启动失败: %v", err)
 	}
+}
+
+// nativeUpstreamRecorder 记录假上游收到了什么。
+//
+// 互斥保护不是形式：httptest 的处理器跑在服务端 goroutine 上，断言跑在测试
+// goroutine 上，裸字段读写是数据竞争——-race 下会红，不加锁时只是碰运气。
+type nativeUpstreamRecorder struct {
+	mu    sync.Mutex
+	calls int
+	path  string
+	body  []byte
+	sse   string
+}
+
+func (rec *nativeUpstreamRecorder) record(r *http.Request) {
+	body, _ := io.ReadAll(r.Body)
+	rec.mu.Lock()
+	defer rec.mu.Unlock()
+	rec.calls++
+	rec.path = r.URL.Path
+	rec.body = body
+	rec.sse = r.Header.Get(dashscopenative.SSEHeader)
+}
+
+func (rec *nativeUpstreamRecorder) snapshot() (calls int, path string, body []byte, sse string) {
+	rec.mu.Lock()
+	defer rec.mu.Unlock()
+	return rec.calls, rec.path, append([]byte(nil), rec.body...), rec.sse
+}
+
+// nativeUpstream 起一个记录请求并回放固定响应体的假 DashScope 上游。
+func nativeUpstream(t *testing.T, respBody string) (*httptest.Server, *nativeUpstreamRecorder) {
+	t.Helper()
+	rec := &nativeUpstreamRecorder{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rec.record(r)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, respBody)
+	}))
+	t.Cleanup(srv.Close)
+	return srv, rec
+}
+
+// nativeGatewayConfig 组装一份最小可用的 dashscope.native 配置。
+//
+// 从 config.Default() 起手而不是裸 Config 字面量：这份配置还要交给
+// config.Validate 走真实启动闸门，缺 server.addr / log / limits 会先被别的
+// 校验拦下，测不到 native_endpoint 那一条。
+func nativeGatewayConfig(upstreamURL, door string) config.Config {
+	cfg := config.Default()
+	cfg.Auth = config.Auth{Keys: []config.AuthKey{{ID: "test", Key: "sk-test-1234567890"}}}
+	cfg.Credentials = map[string][]config.CredentialSpec{"pool1": {{ID: "1", Secret: "sec1"}}}
+	cfg.Providers = []config.ProviderSpec{
+		{Endpoint: "ep1", Kind: "dashscope.native", BaseURL: upstreamURL, CredentialPool: "pool1"},
+	}
+	cfg.Models = []config.ModelSpec{{Match: "*", Targets: []config.TargetSpec{
+		{Endpoint: "ep1", UpstreamModel: "test-model", NativeEndpoint: door},
+	}}}
+	cfg.Timeouts = config.Timeouts{
+		Connect: time.Second, FirstByte: 2 * time.Second, Total: 5 * time.Second, Idle: time.Second,
+	}
+	return cfg
+}
+
+// chatToNativeMatrix 造一份把 openai.chat → dashscope.native 兑现在 Chat 门上的矩阵。
+//
+// 生产矩阵（Phase1）此刻还没兑现这条异构路径——那是后续任务的事，本任务不许
+// 提前投放。但装配对不对必须现在就能证：所以在测试里单独搭一份矩阵，只兑现本次
+// 请求真正用到的那一项能力（text_generation），其余照常不投放。
+//
+// 另外三条路径是为了满足启动期双向对账：build.go 固定注册四扇门，少开一扇
+// 就会以「注册了却没人兑现」拒绝启动，那与本测试要证的事无关。
+func chatToNativeMatrix(t *testing.T) *degrade.Matrix {
+	t.Helper()
+	m := degrade.NewMatrix()
+
+	if err := m.Add(degrade.NewRoute(degrade.ProtoOpenAIChat, degrade.ProviderDashScopeNative).
+		Pass(degrade.ExpressibleSet(degrade.ProtoOpenAIChat)...).
+		Redeem(degrade.EndpointOpenAIChat, canonical.CapTextGeneration).
+		Build()); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Add(degrade.NewRoute(degrade.ProtoOpenAIResponses, degrade.ProviderOpenAICompat).
+		MarkHomogeneous().
+		Pass(degrade.ExpressibleSet(degrade.ProtoOpenAIResponses)...).
+		Redeem(degrade.EndpointOpenAIResponses, canonical.CapTextGeneration).
+		Build()); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Add(degrade.NewRoute(degrade.ProtoDashScopeNative, degrade.ProviderDashScopeNative).
+		MarkHomogeneous().
+		Pass(degrade.ExpressibleSet(degrade.ProtoDashScopeNative)...).
+		Redeem(degrade.EndpointDashScopeTextGeneration, canonical.CapTextGeneration).
+		Redeem(degrade.EndpointDashScopeMultimodal, canonical.CapTextGeneration).
+		Build()); err != nil {
+		t.Fatal(err)
+	}
+	return m
+}
+
+// TestBuildNativeTranslatesChatInbound 钉死 Build 为 dashscope.native 装配的是
+// Composite 适配器，且把配置里的门接线到了 router.Target。
+//
+// 只断言「构造出来的对象类型对」是不够的——那种断言在装配退回 passthrough 时
+// 才红，而在门丢失时照绿。所以这里让一个真实的 Chat 请求走完 Mux：
+// 打到的必须是文本生成门的上游路径、发出去的必须是 Native 信封、
+// 回给客户端的必须是 chat.completion。三者任一不成立，装配就是错的：
+// 装成 passthrough 会把 Chat 字节原样打到 /v1/chat/completions；
+// 丢掉 NativeEndpoint 会让 Composite 拿到空门而报 500。
+func TestBuildNativeTranslatesChatInbound(t *testing.T) {
+	up, rec := nativeUpstream(t, `{"output":{"choices":[{"finish_reason":"stop",`+
+		`"message":{"role":"assistant","content":"你好"}}]},`+
+		`"usage":{"input_tokens":3,"output_tokens":2},"request_id":"req-build-1"}`)
+
+	cfg := nativeGatewayConfig(up.URL, "text-generation")
+	built, err := Build(cfg, chatToNativeMatrix(t), obs.NewMetrics(prometheus.NewRegistry()),
+		slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("构建失败: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, string(degrade.EndpointOpenAIChat),
+		strings.NewReader(`{"model":"m","messages":[{"role":"user","content":"你好"}]}`))
+	req.Header.Set("Authorization", "Bearer sk-test-1234567890")
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	built.Mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("状态码 = %d，期望 200: %s", w.Code, w.Body.String())
+	}
+
+	calls, path, body, sse := rec.snapshot()
+	if calls != 1 {
+		t.Fatalf("期望 1 次上游调用，实际 %d", calls)
+	}
+	if path != dashscopenative.TextGenerationPath {
+		t.Errorf("上游路径 = %q，期望文本生成门 %q——门没从配置接线到 Target，或装配的不是 Composite",
+			path, dashscopenative.TextGenerationPath)
+	}
+	if sse != "" {
+		t.Errorf("非流式请求不得声明 SSE，实际 %q", sse)
+	}
+
+	// 出站必须是 Native 信封而不是原样转发的 Chat 信封：passthrough 装配下
+	// 顶层是 messages，Composite 转换后才有 input.messages。
+	var sent struct {
+		Model string `json:"model"`
+		Input struct {
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		} `json:"input"`
+		Messages json.RawMessage `json:"messages"`
+	}
+	if err := json.Unmarshal(body, &sent); err != nil {
+		t.Fatalf("上游请求体不是 JSON: %v (%s)", err, body)
+	}
+	if len(sent.Messages) > 0 {
+		t.Errorf("上游收到的是 Chat 信封（顶层 messages），说明装配的仍是直通: %s", body)
+	}
+	if len(sent.Input.Messages) != 1 || sent.Input.Messages[0].Content != "你好" {
+		t.Errorf("上游未收到 Native input.messages: %s", body)
+	}
+	if sent.Model != "test-model" {
+		t.Errorf("上游模型名 = %q，期望改写成 test-model", sent.Model)
+	}
+
+	// 回给客户端的必须是重编码后的 chat.completion——直通会把 Native 原样吐回。
+	var got struct {
+		Object  string `json:"object"`
+		ID      string `json:"id"`
+		Model   string `json:"model"`
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("响应不是 JSON: %v (%s)", err, w.Body.String())
+	}
+	if got.Object != "chat.completion" {
+		t.Errorf("响应 object = %q，期望 chat.completion: %s", got.Object, w.Body.String())
+	}
+	if got.ID != "req-build-1" {
+		t.Errorf("响应 id = %q，期望取上游 request_id", got.ID)
+	}
+	if got.Model != "test-model" {
+		t.Errorf("响应 model = %q，期望上游模型名", got.Model)
+	}
+	if len(got.Choices) != 1 || got.Choices[0].Message.Content != "你好" {
+		t.Errorf("响应候选内容不对: %s", w.Body.String())
+	}
+}
+
+// TestBuildNativeKeepsNativeInboundPassthrough 钉死同源直通没有被 Composite 装配吃掉。
+//
+// Composite 的 Native 分支复用内部 passthrough：字节原样转发，出站端点由**入站门**
+// 决定而不是配置里的 native_endpoint。所以这里刻意把配置的门固定成 text-generation，
+// 却往多模态门打请求——若 Composite 错用了配置的门，多模态请求会被打到文本生成端点，
+// 而响应仍是 200，客户端看不出任何异常。
+func TestBuildNativeKeepsNativeInboundPassthrough(t *testing.T) {
+	const nativeResp = `{"output":{"text":"ok"},"usage":{"input_tokens":1,"output_tokens":1},` +
+		`"request_id":"req-native"}`
+
+	m, err := degrade.Phase1()
+	if err != nil {
+		t.Fatal(err)
+	}
+	up, rec := nativeUpstream(t, nativeResp)
+	built, err := Build(nativeGatewayConfig(up.URL, "text-generation"), m,
+		obs.NewMetrics(prometheus.NewRegistry()),
+		slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("构建失败: %v", err)
+	}
+
+	for _, door := range []string{
+		dashscopenative.TextGenerationPath,
+		dashscopenative.MultimodalGenerationPath,
+	} {
+		t.Run(door, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, door, strings.NewReader(
+				`{"model":"m","input":{"messages":[{"role":"user","content":"hello"}]}}`))
+			req.Header.Set("Authorization", "Bearer sk-test-1234567890")
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			built.Mux.ServeHTTP(w, req)
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("状态码 = %d，期望 200: %s", w.Code, w.Body.String())
+			}
+			_, path, body, _ := rec.snapshot()
+			if path != door {
+				t.Errorf("上游路径 = %q，期望入站门 %q", path, door)
+			}
+			// 请求体除模型名外原样：出现 parameters.result_format 就说明走了重编码。
+			if strings.Contains(string(body), "result_format") {
+				t.Errorf("同源直通不该重编码请求体: %s", body)
+			}
+			if !strings.Contains(string(body), `"input"`) {
+				t.Errorf("上游请求体丢了 input 段: %s", body)
+			}
+			if w.Body.String() != nativeResp {
+				t.Errorf("同源直通响应应逐字回放，实际 %s", w.Body.String())
+			}
+		})
+	}
+}
+
+// TestBuildNativeDoorIsNotSwallowed 钉死门的两道启动闸门都真的拦得住。
+//
+// 缺门归 config.Validate（启动路径 config.Load → Validate → gateway.Build 的第一道），
+// 不在 Build 里抄第二份；而**枚举写错**必须被装配这一侧咬住——router.Target 校验
+// 只有在 Build 把 NativeEndpoint 接线过去之后才看得见这个值。装配漏接线时，
+// 一个非法的门会被无声吞掉，网关照常启动，直到第一个请求打进来才炸。
+func TestBuildNativeDoorIsNotSwallowed(t *testing.T) {
+	t.Run("缺门由 config.Validate 拒绝", func(t *testing.T) {
+		cfg := nativeGatewayConfig("https://dashscope.example.com", "")
+		err := cfg.Validate()
+		if err == nil {
+			t.Fatal("dashscope.native target 缺 native_endpoint，启动校验必须失败")
+		}
+		if !strings.Contains(err.Error(), "native_endpoint") {
+			t.Errorf("错误应点名 native_endpoint: %v", err)
+		}
+	})
+
+	t.Run("非法枚举不被装配吞掉", func(t *testing.T) {
+		cfg := nativeGatewayConfig("https://dashscope.example.com", "embedding")
+		_, err := Build(cfg, chatToNativeMatrix(t), obs.NewMetrics(prometheus.NewRegistry()),
+			slog.New(slog.NewTextHandler(io.Discard, nil)))
+		if err == nil {
+			t.Fatal("非法的 native_endpoint 必须让启动失败——装配把它接线到 Target 才拦得住")
+		}
+		if !strings.Contains(err.Error(), "native_endpoint") {
+			t.Errorf("错误应点名 native_endpoint: %v", err)
+		}
+	})
 }

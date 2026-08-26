@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -17,8 +18,10 @@ import (
 	"github.com/yobo2u/omugw/internal/degrade"
 	"github.com/yobo2u/omugw/internal/obs"
 	"github.com/yobo2u/omugw/internal/protocol/dashscopenative"
+	"github.com/yobo2u/omugw/internal/protocol/openaichat"
 	"github.com/yobo2u/omugw/internal/provider"
 	"github.com/yobo2u/omugw/internal/provider/dashscopecompat"
+	dsnativeprovider "github.com/yobo2u/omugw/internal/provider/dashscopenative"
 	"github.com/yobo2u/omugw/internal/provider/passthrough"
 	"github.com/yobo2u/omugw/internal/router"
 	"github.com/yobo2u/omugw/internal/transport/httpx"
@@ -73,6 +76,14 @@ func dashScopeCompatFactory(_ degrade.Provider, client *httpx.Client) provider.P
 	return dashscopecompat.New(client, nil)
 }
 
+// dashScopeNativeFactory 构造 DashScope Native Composite 适配器。
+//
+// 与 build.go 用同一个构造函数：装配一旦在两处各写一份，harness 测过的就不是
+// 生产装出来的那个东西——线上装成直通而 harness 装着 Composite，测试照绿。
+func dashScopeNativeFactory(_ degrade.Provider, client *httpx.Client) provider.Provider {
+	return dsnativeprovider.New(client, nil)
+}
+
 // harnessConfig 是一套网关 harness 的完整装配声明。
 //
 // 装配一套网关本就是「入站门 + 出站协议族 + 处理器 + 闸门上限 + 适配器工厂」
@@ -84,6 +95,11 @@ type harnessConfig struct {
 	newHandler  func(Deps) *Handler
 	limits      config.Limits
 	factory     providerFactory
+
+	// nativeEndpoint 是 DashScope Native target 的门。零值即「不是 Native
+	// target」，与生产配置一致（config.Validate 只允许 Native kind 声明它），
+	// 因此既有 harness 无需改动。
+	nativeEndpoint string
 }
 
 // newHarness 是 Responses 入站的 harness。
@@ -138,6 +154,23 @@ func newChatDSCompatHarness(t *testing.T, ups ...*upstream) *harness {
 		newHandler:  NewChatHandler,
 		limits:      config.Default().Limits,
 		factory:     dashScopeCompatFactory,
+	}, ups...)
+}
+
+// newChatDSNativeHarness 是 Chat -> DashScope Native 异构路径的 harness。
+//
+// door 决定候选目标的门：纯文本用例用 text-generation，含媒体的用
+// multimodal-generation。门由调用点显式声明而不是从请求内容推断——那正是
+// 生产侧 config.Validate 守着的同一条规矩，harness 不该另立一套。
+func newChatDSNativeHarness(t *testing.T, door string, ups ...*upstream) *harness {
+	t.Helper()
+	return newHarnessFor(t, harnessConfig{
+		requestPath:    string(degrade.EndpointOpenAIChat),
+		kind:           degrade.ProviderDashScopeNative,
+		newHandler:     NewChatHandler,
+		limits:         config.Default().Limits,
+		factory:        dashScopeNativeFactory,
+		nativeEndpoint: door,
 	}, ups...)
 }
 
@@ -200,6 +233,7 @@ func newHarnessFor(t *testing.T, cfg harnessConfig, ups ...*upstream) *harness {
 			BaseURL:        u.srv.URL,
 			UpstreamModel:  "upstream-model",
 			CredentialPool: name,
+			NativeEndpoint: cfg.nativeEndpoint,
 		})
 		pool, err := credential.NewPool(name,
 			[]credential.Credential{{ID: "k1", Secret: "sk-" + name}},
@@ -267,4 +301,132 @@ func jsonUpstream(t *testing.T, body string) *upstream {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, body)
 	})
+}
+
+// callThroughHarness 拿 harness 自己装出来的路由、凭据池与适配器打一次上游。
+//
+// 走这三样而不是现搭一个 Target，是本测试的全部意义所在：要证的正是
+// newHarnessFor 装配出来的东西对不对，自己造一份 Target 就等于把被测对象
+// 换成了测试代码里的副本，怎么写都绿。
+//
+// 绕开 Handler.serve 则是另一回事：矩阵此刻还没兑现 openai.chat →
+// dashscope.native（那是任务 18 的事），走完整链路只会停在 501 端点闸门，
+// 测不到装配。等转正再验，harness 已经被三个任务当地基用了。
+func callThroughHarness(t *testing.T, hs *harness, body string) (*httpx.Response, error) {
+	t.Helper()
+
+	targets, err := hs.h.deps.Router.Resolve("m")
+	if err != nil {
+		t.Fatalf("harness 的路由解不出模型: %v", err)
+	}
+	if len(targets) != 1 {
+		t.Fatalf("期望 1 个候选，实际 %d", len(targets))
+	}
+	target := targets[0]
+
+	prov, ok := hs.h.deps.Providers[target.Endpoint]
+	if !ok {
+		t.Fatalf("harness 没为 endpoint %q 装配适配器", target.Endpoint)
+	}
+	pool, ok := hs.h.deps.Pools[target.CredentialPool]
+	if !ok {
+		t.Fatalf("harness 没为 %q 装配凭据池", target.CredentialPool)
+	}
+	lease, err := pool.Acquire(nil)
+	if err != nil {
+		t.Fatalf("取凭据失败: %v", err)
+	}
+	defer lease.Succeed()
+
+	decoded, err := openaichat.Decode([]byte(body))
+	if err != nil {
+		t.Fatalf("请求体解码失败: %v", err)
+	}
+
+	return prov.Call(t.Context(), provider.Request{
+		Target:     target,
+		Credential: lease.Credential,
+		Raw:        []byte(body),
+		Canonical:  &decoded.Request,
+		Stream:     decoded.Request.Stream,
+		Inbound:    degrade.Inbound{Protocol: degrade.ProtoOpenAIChat, Endpoint: degrade.EndpointOpenAIChat},
+		Header:     http.Header{},
+	})
+}
+
+// TestChatDSNativeHarnessCarriesDoor 钉死 harness 真的把门送进了 router.Target。
+//
+// 这个 harness 是任务 15/16/19 的测试基建，先落地、后被用。而「能编译」证明不了
+// 它可用：门忘了填进 Target，Composite 拿到空门，那三个任务的测试会一起红在一个
+// 与它们无关的地方；更糟的是填成固定值——多模态用例被打到文本生成端点却照样 200，
+// 图像块在上游被当成读不懂的内容丢掉，响应里看不出任何痕迹。
+//
+// 所以两扇门各走一遍真实 Composite：假上游逐字对账 URL 路径与出站信封，
+// 响应还得是重编码后的 chat.completion——那是「装的确实是 Composite 而不是直通」
+// 的唯一硬证据。
+func TestChatDSNativeHarnessCarriesDoor(t *testing.T) {
+	cases := []struct {
+		door string
+		path string
+		body string
+	}{
+		{
+			door: "text-generation",
+			path: dashscopenative.TextGenerationPath,
+			body: `{"model":"m","messages":[{"role":"user","content":"你好"}]}`,
+		},
+		{
+			door: "multimodal-generation",
+			path: dashscopenative.MultimodalGenerationPath,
+			body: `{"model":"m","messages":[{"role":"user","content":[` +
+				`{"type":"text","text":"看图"},` +
+				`{"type":"image_url","image_url":{"url":"https://example.com/a.png"}}]}]}`,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.door, func(t *testing.T) {
+			var (
+				mu      sync.Mutex
+				gotPath string
+				gotBody []byte
+			)
+			up := newUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+				body, _ := io.ReadAll(r.Body)
+				mu.Lock()
+				gotPath, gotBody = r.URL.Path, body
+				mu.Unlock()
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, `{"output":{"choices":[{"finish_reason":"stop",`+
+					`"message":{"role":"assistant","content":"好"}}]},"request_id":"req-h"}`)
+			})
+
+			hs := newChatDSNativeHarness(t, tc.door, up)
+			resp, err := callThroughHarness(t, hs, tc.body)
+			if err != nil {
+				t.Fatalf("Composite 调用失败（门没接线时这里就是空门 500）: %v", err)
+			}
+			defer resp.Body.Close()
+
+			mu.Lock()
+			path, sent := gotPath, append([]byte(nil), gotBody...)
+			mu.Unlock()
+
+			if path != tc.path {
+				t.Errorf("上游路径 = %q，期望 %q——harness 送进 Target 的门不对", path, tc.path)
+			}
+			if !strings.Contains(string(sent), `"input"`) ||
+				!strings.Contains(string(sent), "result_format") {
+				t.Errorf("上游收到的不是 Native 出站信封: %s", sent)
+			}
+
+			out, err := io.ReadAll(resp.Body)
+			if err != nil {
+				t.Fatalf("读响应失败: %v", err)
+			}
+			if !strings.Contains(string(out), `"chat.completion"`) {
+				t.Errorf("响应不是重编码后的 chat.completion，装的可能不是 Composite: %s", out)
+			}
+		})
+	}
 }
