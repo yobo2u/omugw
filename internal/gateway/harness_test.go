@@ -175,6 +175,11 @@ func newChatDSNativeHarness(t *testing.T, door string, ups ...*upstream) *harnes
 }
 
 // newDashScopeNativeHarness 是 DashScope Native 入站的 harness。
+//
+// 尽管同源直通（passthrough）路由时只看 Inbound.Endpoint 而忽略 Target.NativeEndpoint，
+// 但网关在分派前会统一对 DashScope Native 候选执行媒体过滤。如果这里不给一个合法的门
+// （如 multimodal-generation），带媒体的 Native fixture 测试就会在过滤阶段被拦截并返回 422。
+// 纯文本请求则不受影响，会保留所有门。
 func newDashScopeNativeHarness(t *testing.T, implemented bool, ups ...*upstream) *harness {
 	t.Helper()
 	kind := degrade.ProviderDashScopeNative
@@ -182,11 +187,12 @@ func newDashScopeNativeHarness(t *testing.T, implemented bool, ups ...*upstream)
 		kind = degrade.ProviderDashScopeCompatible
 	}
 	return newHarnessFor(t, harnessConfig{
-		requestPath: dashscopenative.TextGenerationPath,
-		kind:        kind,
-		newHandler:  NewDashScopeNativeHandler,
-		limits:      config.Default().Limits,
-		factory:     passthroughFactory,
+		requestPath:    dashscopenative.TextGenerationPath,
+		kind:           kind,
+		newHandler:     NewDashScopeNativeHandler,
+		limits:         config.Default().Limits,
+		factory:        passthroughFactory,
+		nativeEndpoint: "multimodal-generation",
 	}, ups...)
 }
 
@@ -194,14 +200,17 @@ func newDashScopeNativeHarness(t *testing.T, implemented bool, ups ...*upstream)
 // 但注入自定义 Limits——内联闸门先于矩阵裁决生效的性质要用一个小到会被
 // 击穿的上限来证明。不走 hs.h.deps.Limits 事后改写：那是绕过构造契约的后门，
 // 而这里要证的恰恰是「按配置构造出来的网关」在闸门顺序上的行为。
+//
+// 同样需要注入合法的 nativeEndpoint 以通过网关的媒体过滤。
 func newDashScopeNativeHarnessWithLimits(t *testing.T, limits config.Limits, ups ...*upstream) *harness {
 	t.Helper()
 	return newHarnessFor(t, harnessConfig{
-		requestPath: dashscopenative.TextGenerationPath,
-		kind:        degrade.ProviderDashScopeNative,
-		newHandler:  NewDashScopeNativeHandler,
-		limits:      limits,
-		factory:     passthroughFactory,
+		requestPath:    dashscopenative.TextGenerationPath,
+		kind:           degrade.ProviderDashScopeNative,
+		newHandler:     NewDashScopeNativeHandler,
+		limits:         limits,
+		factory:        passthroughFactory,
+		nativeEndpoint: "multimodal-generation",
 	}, ups...)
 }
 

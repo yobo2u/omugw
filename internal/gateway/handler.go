@@ -240,11 +240,22 @@ func (h *Handler) serve(w *tracked, r *http.Request) (outcome, outbound string, 
 
 	h.observeVerdict(kind, verdict)
 
+	candidates := router.OfKind(targets, kind)
+	if kind == degrade.ProviderDashScopeNative {
+		candidates = filterNativeTargets(candidates, decoded.Capabilities())
+		if len(candidates) == 0 {
+			return "unsupported", outbound, canonical.Newf(
+				canonical.ClassUnsupported,
+				"模型路由没有可承载该媒体的 DashScope Native 门",
+			)
+		}
+	}
+
 	return h.dispatch(w, r, dispatchInput{
 		caller:  caller,
 		raw:     raw,
 		decoded: decoded,
-		targets: router.OfKind(targets, kind),
+		targets: candidates,
 		kind:    kind,
 		inbound: inbound,
 		headers: verdictHeaders(verdict),
