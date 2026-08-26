@@ -12,6 +12,7 @@ import (
 	"github.com/yobo2u/omugw/internal/canonical"
 	"github.com/yobo2u/omugw/internal/degrade"
 	nativewire "github.com/yobo2u/omugw/internal/protocol/dashscopenative"
+	"github.com/yobo2u/omugw/internal/protocol/openaichat"
 	"github.com/yobo2u/omugw/internal/provider"
 	"github.com/yobo2u/omugw/internal/provider/passthrough"
 	"github.com/yobo2u/omugw/internal/transport/httpx"
@@ -39,13 +40,27 @@ func New(c *httpx.Client, now func() time.Time) *Provider {
 // Kind 返回协议族。
 func (p *Provider) Kind() degrade.Provider { return degrade.ProviderDashScopeNative }
 
-// Call 先钉死已完整实现的 Native 同源分支；Chat 分支要等非流式与流式
-// translator 都落地后再由任务 13 原子接入，避免提交临时 501 桩。
+// Call 按入站协议分派：Native 同源直通，Chat 走完整重编码，其余 fail-closed。
 func (p *Provider) Call(ctx context.Context, req provider.Request) (*httpx.Response, error) {
 	switch req.Inbound.Protocol {
 	case degrade.ProtoDashScopeNative:
 		// 同源直通：入站门即出站端点，字节原样转发。
 		return p.passthrough.Call(ctx, req)
+	case degrade.ProtoOpenAIChat:
+		// 投影先行：Canonical 承载不了的采样选项只有它解得出来，
+		// 而 422 判定要靠它区分「未提交」与「显式提交了落不了地的值」。
+		proj, err := openaichat.Project(req.Raw)
+		if err != nil {
+			return nil, err
+		}
+		// 无落点字段一律在出门前拒绝：发出去等于让客户端以为它生效了。
+		if err := rejectUnmappable(proj, req.Canonical); err != nil {
+			return nil, err
+		}
+		if req.Stream {
+			return p.translateStream(ctx, req, proj)
+		}
+		return p.translateNonStream(ctx, req, proj)
 	default:
 		// fail-closed：未登记的入站坐标一律拒绝，不猜实现。
 		return nil, canonical.Newf(canonical.ClassUnsupported,
