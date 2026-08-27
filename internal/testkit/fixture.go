@@ -52,9 +52,10 @@ type Response struct {
 // 异构/协议兼容路径的 fixture 必须显式配置，防止转换逻辑发错端点或遗漏关键字段导致测试伪绿。
 // Body 字段供后续在一致性断言中进行语义比对。
 type UpstreamExpectation struct {
-	Method string          `json:"method"`
-	Path   string          `json:"path"`
-	Body   json.RawMessage `json:"body"`
+	Method  string            `json:"method"`
+	Path    string            `json:"path"`
+	Headers map[string]string `json:"headers,omitempty"`
+	Body    json.RawMessage   `json:"body"`
 }
 
 // SSEBody 是录制下来的事件流。
@@ -164,6 +165,17 @@ func Save(path string, f Fixture) error {
 	return os.WriteFile(path, append(raw, '\n'), 0o644)
 }
 
+// validateSecretHeaders 检查请求头字典中的敏感字段是否已彻底脱敏。
+// 录制到 fixture 中的请求头若包含未脱敏凭据，宁可在此报错拦截，也不得入库。
+func validateSecretHeaders(fixtureName, headerKind string, headers map[string]string) error {
+	for k, v := range headers {
+		if secretHeaders[strings.ToLower(k)] && v != "<redacted>" {
+			return fmt.Errorf("fixture %q 的 %s %q 未脱敏", fixtureName, headerKind, k)
+		}
+	}
+	return nil
+}
+
 // Validate 检查 fixture 自身的一致性，并做一次兜底的泄密检查。
 func (f Fixture) Validate() error {
 	if f.Name == "" {
@@ -185,12 +197,13 @@ func (f Fixture) Validate() error {
 		if len(f.Upstream.Body) == 0 {
 			return fmt.Errorf("fixture %q 的 upstream 缺少 body", f.Name)
 		}
+		if err := validateSecretHeaders(f.Name, "upstream 请求头", f.Upstream.Headers); err != nil {
+			return err
+		}
 	}
 	// 兜底：即使录制脚本忘了脱敏，这里也要拦下来。
-	for k, v := range f.Request.Headers {
-		if secretHeaders[strings.ToLower(k)] && v != "<redacted>" {
-			return fmt.Errorf("fixture %q 的请求头 %q 未脱敏", f.Name, k)
-		}
+	if err := validateSecretHeaders(f.Name, "请求头", f.Request.Headers); err != nil {
+		return err
 	}
 	if f.Response.SSE != nil {
 		total := 0
