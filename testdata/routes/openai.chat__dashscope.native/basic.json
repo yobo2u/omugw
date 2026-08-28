@@ -1,0 +1,84 @@
+{
+  "name": "openai.chat__dashscope.native/basic",
+  "note": "text_generation 非流式基础文本生成",
+  "request": {
+    "method": "POST",
+    "path": "/v1/chat/completions",
+    "headers": {
+      "authorization": "\u003credacted\u003e",
+      "content-type": "application/json"
+    },
+    "body": {
+      "model": "omugw-record-client-model",
+      "messages": [
+        {
+          "role": "system",
+          "content": "你是一个严谨的中文助手，回答尽量简短。"
+        },
+        {
+          "role": "user",
+          "content": "用一句话介绍杭州。"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "output": {
+        "choices": [
+          {
+            "message": {
+              "content": "杭州是浙江省省会，以西湖美景、丝绸文化和数字经济闻名的千年古都与现代创新之城。",
+              "role": "assistant"
+            },
+            "finish_reason": "stop"
+          }
+        ]
+      },
+      "usage": {
+        "total_tokens": 53,
+        "output_tokens": 23,
+        "input_tokens": 30,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "request_id": "48ad73ab-4616-944f-949e-b13c98074f2c"
+    }
+  },
+  "upstream": {
+    "method": "POST",
+    "path": "/api/v1/services/aigc/text-generation/generation",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip",
+      "authorization": "\u003credacted\u003e",
+      "content-length": "256",
+      "content-type": "application/json",
+      "user-agent": "Go-http-client/1.1"
+    },
+    "body": {
+      "model": "qwen-plus",
+      "input": {
+        "messages": [
+          {
+            "role": "system",
+            "content": "你是一个严谨的中文助手，回答尽量简短。"
+          },
+          {
+            "role": "user",
+            "content": "用一句话介绍杭州。"
+          }
+        ]
+      },
+      "parameters": {
+        "parallel_tool_calls": true,
+        "result_format": "message"
+      }
+    }
+  }
+}
