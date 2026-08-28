@@ -67,6 +67,44 @@ func TestPartialGatewayConfigIsRejected(t *testing.T) {
 	}
 }
 
+// TestBaseURLContractIsEnforced 固化 base_url 的契约：只允许「scheme + host +
+// 可选路径前缀」。带 query 或 fragment 时，出站追加端点路径会被吞进 query 或
+// fragment，请求打不到真实端点——启动看着成功，运行时才表现为 404 或鉴权失败。
+func TestBaseURLContractIsEnforced(t *testing.T) {
+	for name, baseURL := range map[string]string{
+		"带 query":    "https://dashscope.aliyuncs.com/compatible-mode/v1?trace=1",
+		"带 fragment": "https://dashscope.aliyuncs.com/compatible-mode/v1#frag",
+		"缺少 scheme":  "dashscope.aliyuncs.com/compatible-mode/v1",
+		"缺少 host":    "https:///compatible-mode/v1",
+		"不是合法 URL":   "https://exa mple.com",
+		"非 http 协议":  "ftp://dashscope.aliyuncs.com/v1",
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := fullGateway()
+			c.Providers[0].BaseURL = baseURL
+
+			err := c.Validate()
+			if err == nil {
+				t.Fatalf("base_url %q 应当在启动时被拒绝", baseURL)
+			}
+			if !strings.Contains(err.Error(), "openai") {
+				t.Errorf("错误应点名出问题的 provider，实际: %v", err)
+			}
+		})
+	}
+}
+
+// TestBaseURLAcceptsOfficialPathPrefix：官方 base_url 自带 /compatible-mode/v1
+// 路径前缀，这是合法形态，不能被上面的契约误伤。
+func TestBaseURLAcceptsOfficialPathPrefix(t *testing.T) {
+	c := fullGateway()
+	c.Providers[0].BaseURL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+
+	if err := c.Validate(); err != nil {
+		t.Fatalf("官方带路径前缀的 base_url 应当合法: %v", err)
+	}
+}
+
 // TestDanglingReferencesAreCaughtAtStartup 固化「交叉引用在启动时炸掉」。
 //
 // 一个指向不存在 endpoint 的模型规则，在启动时是一行配置错误，
@@ -157,6 +195,54 @@ func TestConvStoreDefaultsToDisabled(t *testing.T) {
 	if Default().ConvStore.Enabled {
 		t.Error("会话存储必须默认关闭")
 	}
+}
+
+// TestNativeEndpointValidation 钉死 native_endpoint 的三条启动期校验。
+//
+// 门是部署事实：漏声明会让 Provider 在运行时对着两个 Native 上游路径二选一，
+// 只能靠模型名或本次请求是否含媒体去猜——猜错的表现是打到错误端点后返回一个
+// 语焉不详的上游 400，而不是一行启动期配置错误。
+func TestNativeEndpointValidation(t *testing.T) {
+	// 构造一份最小合法配置：一个 dashscope.native provider + 一个指向它的 target。
+	base := func(nativeEndpoint string) Config {
+		c := fullGateway()
+		c.Providers[0].Kind = "dashscope.native"
+		c.Providers[0].BaseURL = "https://dashscope.aliyuncs.com"
+		c.Models[0].Targets[0].NativeEndpoint = nativeEndpoint
+		return c
+	}
+
+	t.Run("native kind 缺 native_endpoint 应失败", func(t *testing.T) {
+		c := base("")
+		if err := c.validateGateway(); err == nil {
+			t.Fatal("dashscope.native target 必须声明 native_endpoint")
+		}
+	})
+	t.Run("非 native kind 带 native_endpoint 应失败", func(t *testing.T) {
+		c := base("text-generation")
+		c.Providers[0].Kind = "openai.compat"
+		if err := c.validateGateway(); err == nil {
+			t.Fatal("非 dashscope.native target 不得声明 native_endpoint")
+		}
+	})
+	t.Run("未知枚举应失败", func(t *testing.T) {
+		c := base("embedding")
+		if err := c.validateGateway(); err == nil {
+			t.Fatal("未知 native_endpoint 枚举必须在启动期拒绝")
+		}
+	})
+	t.Run("合法枚举应通过", func(t *testing.T) {
+		c := base("text-generation")
+		if err := c.validateGateway(); err != nil {
+			t.Fatalf("text-generation 应合法: %v", err)
+		}
+	})
+	t.Run("多模态门应通过", func(t *testing.T) {
+		c := base("multimodal-generation")
+		if err := c.validateGateway(); err != nil {
+			t.Fatalf("multimodal-generation 应合法: %v", err)
+		}
+	})
 }
 
 func TestConvStoreValidationOnlyAppliesWhenEnabled(t *testing.T) {

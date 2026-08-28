@@ -87,10 +87,10 @@ func (p *Provider) Call(ctx context.Context, req provider.Request) (*httpx.Respo
 	return resp, nil
 }
 
-// pathFor 优先用请求携带的路径，留空退回本适配器唯一的端点。
+// pathFor 优先用入站坐标携带的门路径，留空退回本适配器唯一的端点。
 func (p *Provider) pathFor(req provider.Request) string {
-	if req.Path != "" {
-		return req.Path
+	if req.Inbound.Endpoint != "" {
+		return string(req.Inbound.Endpoint)
 	}
 	return ChatCompletionsPath
 }

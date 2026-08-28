@@ -38,8 +38,10 @@
 ## ANTI-PATTERNS
 
 - **不要**给新协议只写 `*wire` 错误包就以为接完了——请求/响应/流三段都要有。
-- **不要**在错误信封里泄漏上游原始响应体（`passthrough` 里有体积上限，见
-  `TestOversizedErrorBodyIsCapped`）。
+- **不要**在错误信封里泄漏上游原始响应体。体积上限是各 HTTP 适配器
+  `decodeError` 里的 `maxErrorBody`（`passthrough` / `dashscopecompat` 各一份
+  64 KiB），由各包的 `TestDecodeErrorCapsReadVolumeAt64KiB` 钉住读取量；
+  `TestOversizedErrorBodyIsCapped` 与共享契约套件只守「分类不因体不可解析而退化」。
 - **不要**在 `Decode` 里做能力裁决；它只负责报告用到了哪些能力，裁决归 `degrade`。
 
 ## ADDING A PROTOCOL

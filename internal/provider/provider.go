@@ -30,17 +30,24 @@ type Request struct {
 	// Stream 表示客户端要的是流式响应。
 	Stream bool
 
-	// Path 是上游端点路径，例如 "/v1/responses" 或 "/v1/chat/completions"。
+	// Inbound 钉住这次上游调用对应的入站坐标：从哪个协议进来、敲的哪扇门。
 	//
-	// 由网关按入站协议设定：同源快通道下网关对上游说的就是客户端那套线格式，
-	// 同一个 openai.compat 出站既要能打到 Responses 端点也要能打到 Chat 端点，
-	// 所以路径必须随请求走，而不能在装配适配器时写死。留空时适配器退回自身默认。
-	Path string
+	// 矩阵与 Provider 消费同一份入站坐标，避免把裸路径暗当协议标签。同源直通
+	// 用它取上游端点路径（入站门即出站端点）；异构适配器用它分派实现。
+	// 门留零值时适配器退回自身默认路径。
+	Inbound degrade.Inbound
 
 	// Header 是客户端原始请求头。同源直通要把协议相关的头（如 DashScope 的
 	// X-DashScope-WorkSpace 租户头）原样带走，否则请求会落到错误的租户。
 	// 适配器只转发白名单内的头，Authorization 永远由网关自己的凭据覆盖。
 	Header http.Header
+
+	// OnDashScopeUsage 是 DashScope Native 专用的请求级用量回调。
+	//
+	// 只有 ProviderDashScopeNative 分支注入，其他 Provider 必须为 nil。Native
+	// 每帧携带累计 usage，回调被同步调用、后值覆盖前值。这是已接受的 Provider
+	// 专用耦合，刻意不推广成通用 usage seam。
+	OnDashScopeUsage func(canonical.Usage)
 }
 
 // Provider 是一个出站适配器。

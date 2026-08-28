@@ -37,6 +37,10 @@ type Target struct {
 
 	// CredentialPool 指向 internal/credential 里的哪个池。
 	CredentialPool string
+
+	// NativeEndpoint 是 DashScope Native target 的门，text-generation 或
+	// multimodal-generation。Provider 严格用它选上游路径，不猜测。
+	NativeEndpoint string
 }
 
 // String 便于日志输出。
@@ -141,6 +145,13 @@ func (t Target) validate() error {
 	}
 	if t.CredentialPool == "" {
 		return fmt.Errorf("缺少 credential_pool")
+	}
+	// 空值放行：「Native 必填、非 Native 必空」要看 Provider kind 与配置全貌，
+	// 归 config.validateGateway。抄一份到这里会让同一条规则有两个事实来源，
+	// 两边迟早说法不一。路由只拦一件事——写了却写错的枚举。
+	if t.NativeEndpoint != "" &&
+		t.NativeEndpoint != "text-generation" && t.NativeEndpoint != "multimodal-generation" {
+		return fmt.Errorf("native_endpoint %q 非法", t.NativeEndpoint)
 	}
 	return nil
 }

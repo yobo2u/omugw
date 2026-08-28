@@ -7,7 +7,7 @@ import "testing"
 
 // searchInput 固定住与搜索无关的输入，让每个用例的字面量里只剩下区分它的请求体。
 func searchInput(raw string) callInput {
-	return callInput{raw: raw, upstreamModel: "m", path: ChatCompletionsPath}
+	return callInput{raw: raw, upstreamModel: "m", inboundEndpoint: ChatCompletionsPath}
 }
 
 // TestNoSearchNoEnableSearch：客户端没要搜索时不得替它开启。

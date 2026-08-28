@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -343,6 +344,54 @@ func TestFixtureUpstreamExpectationValidation(t *testing.T) {
 		}
 		if !strings.Contains(err.Error(), "body") {
 			t.Errorf("错误信息应提及 body，实际: %v", err)
+		}
+	})
+
+	t.Run("with headers sanitized", func(t *testing.T) {
+		f := base
+		f.Upstream = &UpstreamExpectation{
+			Method: "POST",
+			Path:   "/api/v1/services/aigc/text-generation/generation",
+			Headers: map[string]string{
+				"authorization":   "<redacted>",
+				"x-dashscope-sse": "enable",
+			},
+			Body: json.RawMessage(`{"model":"qwen-plus"}`),
+		}
+		if err := f.Validate(); err != nil {
+			t.Fatalf("脱敏后的 upstream headers 应校验通过, 实际: %v", err)
+		}
+
+		path := filepath.Join(t.TempDir(), "upstream_headers.json")
+		if err := Save(path, f); err != nil {
+			t.Fatalf("Save fixture 失败: %v", err)
+		}
+		loaded := Load(t, path)
+		if loaded.Upstream == nil || len(loaded.Upstream.Headers) != 2 {
+			t.Fatalf("Load 后的 upstream.headers 丢失或长度不符: %+v", loaded.Upstream)
+		}
+		if loaded.Upstream.Headers["authorization"] != "<redacted>" || loaded.Upstream.Headers["x-dashscope-sse"] != "enable" {
+			t.Errorf("Load 后的 upstream.headers 与预期不一致: %+v", loaded.Upstream.Headers)
+		}
+	})
+
+	t.Run("with raw secret in upstream headers", func(t *testing.T) {
+		f := base
+		f.Upstream = &UpstreamExpectation{
+			Method: "POST",
+			Path:   "/api/v1/services/aigc/text-generation/generation",
+			Headers: map[string]string{
+				"Authorization": "Bearer sk-raw-secret",
+			},
+			Body: json.RawMessage(`{"model":"qwen-plus"}`),
+		}
+		err := f.Validate()
+		if err == nil {
+			t.Fatal("未脱敏的 upstream Authorization 应当被拦截")
+		}
+		msg := err.Error()
+		if !strings.Contains(msg, "upstream") || !strings.Contains(strings.ToLower(msg), "authorization") || !strings.Contains(msg, "未脱敏") {
+			t.Errorf("错误信息应明确指出 upstream authorization 未脱敏，实际: %v", err)
 		}
 	})
 }

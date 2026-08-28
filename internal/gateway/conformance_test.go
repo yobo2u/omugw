@@ -74,9 +74,10 @@ func TestChatRouteConformance(t *testing.T) {
 			rec := hs.do(t, string(body), true)
 
 			// harness 的 provider 默认路径是 /v1/responses；只有 handler 把
-			// Path 注入成 chat 端点，上游才会收到正确路径。这是 Path 注入的实证。
+			// 入站坐标的门注入成 chat 端点，上游才会收到正确路径。
+			// 这是 Inbound.Endpoint 注入的实证。
 			if gotPath != "/v1/chat/completions" {
-				t.Errorf("上游收到路径 %q，期望 /v1/chat/completions（Path 注入未生效）", gotPath)
+				t.Errorf("上游收到路径 %q，期望 /v1/chat/completions（入站坐标注入未生效）", gotPath)
 			}
 
 			golden := filepath.Join(chatRouteFixtures, "golden", caseName(f.Name)+".txt")
@@ -159,7 +160,7 @@ func TestDashScopeNativeRouteConformance(t *testing.T) {
 				t.Errorf("上游收到 method %q，期望 %q", gotMethod, method)
 			}
 			if gotPath != path {
-				t.Errorf("上游收到路径 %q，期望 %q（Path 注入未生效或被篡改）", gotPath, path)
+				t.Errorf("上游收到路径 %q，期望 %q（入站坐标注入未生效或被篡改）", gotPath, path)
 			}
 
 			if auth := gotHeader.Get("Authorization"); auth != "Bearer sk-a" {

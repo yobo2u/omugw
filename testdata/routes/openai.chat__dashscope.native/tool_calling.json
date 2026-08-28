@@ -1,0 +1,243 @@
+{
+  "name": "openai.chat__dashscope.native/tool_calling",
+  "note": "tool_calling 工具声明、历史、调用与跨帧 arguments",
+  "request": {
+    "method": "POST",
+    "path": "/v1/chat/completions",
+    "headers": {
+      "authorization": "\u003credacted\u003e",
+      "content-type": "application/json"
+    },
+    "body": {
+      "model": "omugw-record-client-model",
+      "stream": true,
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "get_weather",
+            "description": "查询指定城市未来若干天的天气",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "city": {
+                  "type": "string",
+                  "description": "城市中文名"
+                },
+                "unit": {
+                  "type": "string",
+                  "enum": [
+                    "celsius",
+                    "fahrenheit"
+                  ]
+                },
+                "days": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 7
+                },
+                "include_hourly": {
+                  "type": "boolean"
+                },
+                "note": {
+                  "type": "string",
+                  "description": "附加说明，可以很长"
+                }
+              },
+              "required": [
+                "city",
+                "unit",
+                "days"
+              ]
+            }
+          }
+        }
+      ],
+      "tool_choice": "auto",
+      "messages": [
+        {
+          "role": "user",
+          "content": "杭州今天天气怎么样？"
+        },
+        {
+          "role": "assistant",
+          "content": null,
+          "tool_calls": [
+            {
+              "id": "call_smoke_0001",
+              "type": "function",
+              "function": {
+                "name": "get_weather",
+                "arguments": "{\"city\":\"杭州\",\"unit\":\"celsius\",\"days\":1}"
+              }
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "call_smoke_0001",
+          "content": "{\"city\":\"杭州\",\"temp_c\":21,\"condition\":\"多云\"}"
+        },
+        {
+          "role": "user",
+          "content": "再帮我查一次：城市杭州，单位摄氏度，未来三天，需要逐小时数据，并在备注里写明这是给周末骑行行程做参考的天气查询。"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/event-stream;charset=UTF-8"
+    },
+    "sse": {
+      "events": [
+        {
+          "event": "result",
+          "data": "{\"output\":{\"choices\":[{\"message\":{\"content\":\"\",\"tool_calls\":[{\"index\":0,\"id\":\"call_cc4459d940f84bbeb7edf3\",\"type\":\"function\",\"function\":{\"name\":\"get_weather\",\"arguments\":\"{\\\"city\\\": \\\"\"}}],\"role\":\"assistant\"},\"index\":0,\"finish_reason\":\"null\"}]},\"usage\":{\"total_tokens\":357,\"output_tokens\":16,\"input_tokens\":341,\"prompt_tokens_details\":{\"cached_tokens\":0}},\"request_id\":\"ddf98694-bada-9e48-b2a4-94b2d2896af8\"}",
+          "id": "1"
+        },
+        {
+          "event": "result",
+          "data": "{\"output\":{\"choices\":[{\"message\":{\"content\":\"\",\"tool_calls\":[{\"index\":0,\"id\":\"\",\"type\":\"function\",\"function\":{\"arguments\":\"杭州\\\", \\\"unit\\\": \\\"\"}}],\"role\":\"assistant\"},\"index\":0,\"finish_reason\":\"null\"}]},\"usage\":{\"total_tokens\":363,\"output_tokens\":22,\"input_tokens\":341,\"prompt_tokens_details\":{\"cached_tokens\":0}},\"request_id\":\"ddf98694-bada-9e48-b2a4-94b2d2896af8\"}",
+          "id": "2"
+        },
+        {
+          "event": "result",
+          "data": "{\"output\":{\"choices\":[{\"message\":{\"content\":\"\",\"tool_calls\":[{\"index\":0,\"id\":\"\",\"type\":\"function\",\"function\":{\"arguments\":\"celsius\\\", \\\"days\\\":\"}}],\"role\":\"assistant\"},\"index\":0,\"finish_reason\":\"null\"}]},\"usage\":{\"total_tokens\":369,\"output_tokens\":28,\"input_tokens\":341,\"prompt_tokens_details\":{\"cached_tokens\":0}},\"request_id\":\"ddf98694-bada-9e48-b2a4-94b2d2896af8\"}",
+          "id": "3"
+        },
+        {
+          "event": "result",
+          "data": "{\"output\":{\"choices\":[{\"message\":{\"content\":\"\",\"tool_calls\":[{\"index\":0,\"id\":\"\",\"type\":\"function\",\"function\":{\"arguments\":\" 3, \\\"include_hour\"}}],\"role\":\"assistant\"},\"index\":0,\"finish_reason\":\"null\"}]},\"usage\":{\"total_tokens\":375,\"output_tokens\":34,\"input_tokens\":341,\"prompt_tokens_details\":{\"cached_tokens\":0}},\"request_id\":\"ddf98694-bada-9e48-b2a4-94b2d2896af8\"}",
+          "id": "4"
+        },
+        {
+          "event": "result",
+          "data": "{\"output\":{\"choices\":[{\"message\":{\"content\":\"\",\"tool_calls\":[{\"index\":0,\"id\":\"\",\"type\":\"function\",\"function\":{\"arguments\":\"ly\\\": true, \\\"note\"}}],\"role\":\"assistant\"},\"index\":0,\"finish_reason\":\"null\"}]},\"usage\":{\"total_tokens\":381,\"output_tokens\":40,\"input_tokens\":341,\"prompt_tokens_details\":{\"cached_tokens\":0}},\"request_id\":\"ddf98694-bada-9e48-b2a4-94b2d2896af8\"}",
+          "id": "5"
+        },
+        {
+          "event": "result",
+          "data": "{\"output\":{\"choices\":[{\"message\":{\"content\":\"\",\"tool_calls\":[{\"index\":0,\"id\":\"\",\"type\":\"function\",\"function\":{\"arguments\":\"\\\": \\\"这是给周末骑行\"}}],\"role\":\"assistant\"},\"index\":0,\"finish_reason\":\"null\"}]},\"usage\":{\"total_tokens\":387,\"output_tokens\":46,\"input_tokens\":341,\"prompt_tokens_details\":{\"cached_tokens\":0}},\"request_id\":\"ddf98694-bada-9e48-b2a4-94b2d2896af8\"}",
+          "id": "6"
+        },
+        {
+          "event": "result",
+          "data": "{\"output\":{\"choices\":[{\"message\":{\"content\":\"\",\"tool_calls\":[{\"index\":0,\"id\":\"\",\"type\":\"function\",\"function\":{\"arguments\":\"行程做参考的天气查询\"}}],\"role\":\"assistant\"},\"index\":0,\"finish_reason\":\"null\"}]},\"usage\":{\"total_tokens\":393,\"output_tokens\":52,\"input_tokens\":341,\"prompt_tokens_details\":{\"cached_tokens\":0}},\"request_id\":\"ddf98694-bada-9e48-b2a4-94b2d2896af8\"}",
+          "id": "7"
+        },
+        {
+          "event": "result",
+          "data": "{\"output\":{\"choices\":[{\"message\":{\"content\":\"\",\"tool_calls\":[{\"index\":0,\"id\":\"\",\"type\":\"function\",\"function\":{\"arguments\":\"\\\"}\"}}],\"role\":\"assistant\"},\"index\":0,\"finish_reason\":\"tool_calls\"}]},\"usage\":{\"total_tokens\":395,\"output_tokens\":54,\"input_tokens\":341,\"prompt_tokens_details\":{\"cached_tokens\":0}},\"request_id\":\"ddf98694-bada-9e48-b2a4-94b2d2896af8\"}",
+          "id": "8"
+        }
+      ],
+      "frames": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ]
+    }
+  },
+  "upstream": {
+    "method": "POST",
+    "path": "/api/v1/services/aigc/text-generation/generation",
+    "headers": {
+      "accept": "text/event-stream",
+      "accept-encoding": "gzip",
+      "authorization": "\u003credacted\u003e",
+      "content-length": "1203",
+      "content-type": "application/json",
+      "user-agent": "Go-http-client/1.1",
+      "x-dashscope-sse": "enable"
+    },
+    "body": {
+      "model": "qwen-plus",
+      "input": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "杭州今天天气怎么样？"
+          },
+          {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_smoke_0001",
+                "type": "function",
+                "function": {
+                  "name": "get_weather",
+                  "arguments": "{\"city\":\"杭州\",\"unit\":\"celsius\",\"days\":1}"
+                }
+              }
+            ]
+          },
+          {
+            "role": "tool",
+            "content": "{\"city\":\"杭州\",\"temp_c\":21,\"condition\":\"多云\"}",
+            "tool_call_id": "call_smoke_0001"
+          },
+          {
+            "role": "user",
+            "content": "再帮我查一次：城市杭州，单位摄氏度，未来三天，需要逐小时数据，并在备注里写明这是给周末骑行行程做参考的天气查询。"
+          }
+        ]
+      },
+      "parameters": {
+        "incremental_output": true,
+        "parallel_tool_calls": true,
+        "result_format": "message",
+        "tool_choice": "auto",
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "get_weather",
+              "description": "查询指定城市未来若干天的天气",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "city": {
+                    "type": "string",
+                    "description": "城市中文名"
+                  },
+                  "unit": {
+                    "type": "string",
+                    "enum": [
+                      "celsius",
+                      "fahrenheit"
+                    ]
+                  },
+                  "days": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 7
+                  },
+                  "include_hourly": {
+                    "type": "boolean"
+                  },
+                  "note": {
+                    "type": "string",
+                    "description": "附加说明，可以很长"
+                  }
+                },
+                "required": [
+                  "city",
+                  "unit",
+                  "days"
+                ]
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

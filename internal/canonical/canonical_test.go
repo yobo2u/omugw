@@ -282,3 +282,45 @@ func TestRequestValidateRejectsBadCacheBreakpoint(t *testing.T) {
 		t.Fatal("越界的缓存断点应当校验失败")
 	}
 }
+
+// TestEffortNoneDoesNotReportReasoning 固化「显式关闭思考时不应报告推理能力」。
+//
+// 客户端显式传 reasoning_effort="none" 时，Canonical 结构体会保留该意图（Reasoning != nil, Effort=EffortNone），
+// 但 UsedCapabilities 不得报告 CapReasoning，否则会触发矩阵对未支持推理能力的路径误拦截（422/501）。
+func TestEffortNoneDoesNotReportReasoning(t *testing.T) {
+	r := &Request{
+		Model: "m",
+		Reasoning: &Reasoning{
+			Effort: EffortNone,
+		},
+	}
+
+	for _, c := range r.UsedCapabilities() {
+		if c == CapReasoning {
+			t.Errorf("EffortNone 不得报告 %q 能力", CapReasoning)
+		}
+	}
+}
+
+// TestEffortNonNoneReportsReasoning 确保非 none 的推理档位仍会正常报告 CapReasoning。
+func TestEffortNonNoneReportsReasoning(t *testing.T) {
+	for _, effort := range []ReasoningEffort{EffortMinimal, EffortLow, EffortMedium, EffortHigh} {
+		r := &Request{
+			Model: "m",
+			Reasoning: &Reasoning{
+				Effort: effort,
+			},
+		}
+
+		var hasReasoning bool
+		for _, c := range r.UsedCapabilities() {
+			if c == CapReasoning {
+				hasReasoning = true
+				break
+			}
+		}
+		if !hasReasoning {
+			t.Errorf("档位 %q 应当报告 %q 能力", effort, CapReasoning)
+		}
+	}
+}

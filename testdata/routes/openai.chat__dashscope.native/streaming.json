@@ -1,0 +1,174 @@
+{
+  "name": "openai.chat__dashscope.native/streaming",
+  "note": "streaming 流式生成（Native SSE 转 Chat SSE，包含 usage 与 [DONE]）",
+  "request": {
+    "method": "POST",
+    "path": "/v1/chat/completions",
+    "headers": {
+      "authorization": "\u003credacted\u003e",
+      "content-type": "application/json"
+    },
+    "body": {
+      "model": "omugw-record-client-model",
+      "stream": true,
+      "stream_options": {
+        "include_usage": true
+      },
+      "messages": [
+        {
+          "role": "user",
+          "content": "用一句话介绍杭州。"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/event-stream;charset=UTF-8"
+    },
+    "sse": {
+      "events": [
+        {
+          "event": "result",
+          "data": "{\"output\":{\"choices\":[{\"message\":{\"content\":\"杭州\",\"role\":\"assistant\"},\"finish_reason\":\"null\"}]},\"usage\":{\"total_tokens\":14,\"output_tokens\":1,\"input_tokens\":13,\"prompt_tokens_details\":{\"cached_tokens\":0}},\"request_id\":\"47ca32fe-9736-9785-acca-2e266dc9f2fa\"}",
+          "id": "1"
+        },
+        {
+          "event": "result",
+          "data": "{\"output\":{\"choices\":[{\"message\":{\"content\":\"是\",\"role\":\"assistant\"},\"finish_reason\":\"null\"}]},\"usage\":{\"total_tokens\":15,\"output_tokens\":2,\"input_tokens\":13,\"prompt_tokens_details\":{\"cached_tokens\":0}},\"request_id\":\"47ca32fe-9736-9785-acca-2e266dc9f2fa\"}",
+          "id": "2"
+        },
+        {
+          "event": "result",
+          "data": "{\"output\":{\"choices\":[{\"message\":{\"content\":\"浙江省\",\"role\":\"assistant\"},\"finish_reason\":\"null\"}]},\"usage\":{\"total_tokens\":16,\"output_tokens\":3,\"input_tokens\":13,\"prompt_tokens_details\":{\"cached_tokens\":0}},\"request_id\":\"47ca32fe-9736-9785-acca-2e266dc9f2fa\"}",
+          "id": "3"
+        },
+        {
+          "event": "result",
+          "data": "{\"output\":{\"choices\":[{\"message\":{\"content\":\"省\",\"role\":\"assistant\"},\"finish_reason\":\"null\"}]},\"usage\":{\"total_tokens\":17,\"output_tokens\":4,\"input_tokens\":13,\"prompt_tokens_details\":{\"cached_tokens\":0}},\"request_id\":\"47ca32fe-9736-9785-acca-2e266dc9f2fa\"}",
+          "id": "4"
+        },
+        {
+          "event": "result",
+          "data": "{\"output\":{\"choices\":[{\"message\":{\"content\":\"会，一座融合\",\"role\":\"assistant\"},\"finish_reason\":\"null\"}]},\"usage\":{\"total_tokens\":21,\"output_tokens\":8,\"input_tokens\":13,\"prompt_tokens_details\":{\"cached_tokens\":0}},\"request_id\":\"47ca32fe-9736-9785-acca-2e266dc9f2fa\"}",
+          "id": "5"
+        },
+        {
+          "event": "result",
+          "data": "{\"output\":{\"choices\":[{\"message\":{\"content\":\"千年古都底蕴\",\"role\":\"assistant\"},\"finish_reason\":\"null\"}]},\"usage\":{\"total_tokens\":25,\"output_tokens\":12,\"input_tokens\":13,\"prompt_tokens_details\":{\"cached_tokens\":0}},\"request_id\":\"47ca32fe-9736-9785-acca-2e266dc9f2fa\"}",
+          "id": "6"
+        },
+        {
+          "event": "result",
+          "data": "{\"output\":{\"choices\":[{\"message\":{\"content\":\"（如西湖、\",\"role\":\"assistant\"},\"finish_reason\":\"null\"}]},\"usage\":{\"total_tokens\":29,\"output_tokens\":16,\"input_tokens\":13,\"prompt_tokens_details\":{\"cached_tokens\":0}},\"request_id\":\"47ca32fe-9736-9785-acca-2e266dc9f2fa\"}",
+          "id": "7"
+        },
+        {
+          "event": "result",
+          "data": "{\"output\":{\"choices\":[{\"message\":{\"content\":\"灵隐寺、\",\"role\":\"assistant\"},\"finish_reason\":\"null\"}]},\"usage\":{\"total_tokens\":33,\"output_tokens\":20,\"input_tokens\":13,\"prompt_tokens_details\":{\"cached_tokens\":0}},\"request_id\":\"47ca32fe-9736-9785-acca-2e266dc9f2fa\"}",
+          "id": "8"
+        },
+        {
+          "event": "result",
+          "data": "{\"output\":{\"choices\":[{\"message\":{\"content\":\"京杭大运河）与\",\"role\":\"assistant\"},\"finish_reason\":\"null\"}]},\"usage\":{\"total_tokens\":39,\"output_tokens\":26,\"input_tokens\":13,\"prompt_tokens_details\":{\"cached_tokens\":0}},\"request_id\":\"47ca32fe-9736-9785-acca-2e266dc9f2fa\"}",
+          "id": "9"
+        },
+        {
+          "event": "result",
+          "data": "{\"output\":{\"choices\":[{\"message\":{\"content\":\"现代数字经济活力（\",\"role\":\"assistant\"},\"finish_reason\":\"null\"}]},\"usage\":{\"total_tokens\":43,\"output_tokens\":30,\"input_tokens\":13,\"prompt_tokens_details\":{\"cached_tokens\":0}},\"request_id\":\"47ca32fe-9736-9785-acca-2e266dc9f2fa\"}",
+          "id": "10"
+        },
+        {
+          "event": "result",
+          "data": "{\"output\":{\"choices\":[{\"message\":{\"content\":\"阿里巴巴总部所在地、“\",\"role\":\"assistant\"},\"finish_reason\":\"null\"}]},\"usage\":{\"total_tokens\":47,\"output_tokens\":34,\"input_tokens\":13,\"prompt_tokens_details\":{\"cached_tokens\":0}},\"request_id\":\"47ca32fe-9736-9785-acca-2e266dc9f2fa\"}",
+          "id": "11"
+        },
+        {
+          "event": "result",
+          "data": "{\"output\":{\"choices\":[{\"message\":{\"content\":\"中国硅谷”未来\",\"role\":\"assistant\"},\"finish_reason\":\"null\"}]},\"usage\":{\"total_tokens\":51,\"output_tokens\":38,\"input_tokens\":13,\"prompt_tokens_details\":{\"cached_tokens\":0}},\"request_id\":\"47ca32fe-9736-9785-acca-2e266dc9f2fa\"}",
+          "id": "12"
+        },
+        {
+          "event": "result",
+          "data": "{\"output\":{\"choices\":[{\"message\":{\"content\":\"科技城）的山水\",\"role\":\"assistant\"},\"finish_reason\":\"null\"}]},\"usage\":{\"total_tokens\":56,\"output_tokens\":43,\"input_tokens\":13,\"prompt_tokens_details\":{\"cached_tokens\":0}},\"request_id\":\"47ca32fe-9736-9785-acca-2e266dc9f2fa\"}",
+          "id": "13"
+        },
+        {
+          "event": "result",
+          "data": "{\"output\":{\"choices\":[{\"message\":{\"content\":\"人文名城，\",\"role\":\"assistant\"},\"finish_reason\":\"null\"}]},\"usage\":{\"total_tokens\":60,\"output_tokens\":47,\"input_tokens\":13,\"prompt_tokens_details\":{\"cached_tokens\":0}},\"request_id\":\"47ca32fe-9736-9785-acca-2e266dc9f2fa\"}",
+          "id": "14"
+        },
+        {
+          "event": "result",
+          "data": "{\"output\":{\"choices\":[{\"message\":{\"content\":\"素有“人间\",\"role\":\"assistant\"},\"finish_reason\":\"null\"}]},\"usage\":{\"total_tokens\":64,\"output_tokens\":51,\"input_tokens\":13,\"prompt_tokens_details\":{\"cached_tokens\":0}},\"request_id\":\"47ca32fe-9736-9785-acca-2e266dc9f2fa\"}",
+          "id": "15"
+        },
+        {
+          "event": "result",
+          "data": "{\"output\":{\"choices\":[{\"message\":{\"content\":\"天堂”之美誉\",\"role\":\"assistant\"},\"finish_reason\":\"null\"}]},\"usage\":{\"total_tokens\":68,\"output_tokens\":55,\"input_tokens\":13,\"prompt_tokens_details\":{\"cached_tokens\":0}},\"request_id\":\"47ca32fe-9736-9785-acca-2e266dc9f2fa\"}",
+          "id": "16"
+        },
+        {
+          "event": "result",
+          "data": "{\"output\":{\"choices\":[{\"message\":{\"content\":\"。\",\"role\":\"assistant\"},\"finish_reason\":\"null\"}]},\"usage\":{\"total_tokens\":69,\"output_tokens\":56,\"input_tokens\":13,\"prompt_tokens_details\":{\"cached_tokens\":0}},\"request_id\":\"47ca32fe-9736-9785-acca-2e266dc9f2fa\"}",
+          "id": "17"
+        },
+        {
+          "event": "result",
+          "data": "{\"output\":{\"choices\":[{\"message\":{\"content\":\"\",\"role\":\"assistant\"},\"finish_reason\":\"stop\"}]},\"usage\":{\"total_tokens\":69,\"output_tokens\":56,\"input_tokens\":13,\"prompt_tokens_details\":{\"cached_tokens\":0}},\"request_id\":\"47ca32fe-9736-9785-acca-2e266dc9f2fa\"}",
+          "id": "18"
+        }
+      ],
+      "frames": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ]
+    }
+  },
+  "upstream": {
+    "method": "POST",
+    "path": "/api/v1/services/aigc/text-generation/generation",
+    "headers": {
+      "accept": "text/event-stream",
+      "accept-encoding": "gzip",
+      "authorization": "\u003credacted\u003e",
+      "content-length": "194",
+      "content-type": "application/json",
+      "user-agent": "Go-http-client/1.1",
+      "x-dashscope-sse": "enable"
+    },
+    "body": {
+      "model": "qwen-plus",
+      "input": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "用一句话介绍杭州。"
+          }
+        ]
+      },
+      "parameters": {
+        "incremental_output": true,
+        "parallel_tool_calls": true,
+        "result_format": "message"
+      }
+    }
+  }
+}

@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -59,6 +60,11 @@ type ModelSpec struct {
 type TargetSpec struct {
 	Endpoint      string `yaml:"endpoint"`
 	UpstreamModel string `yaml:"upstream_model"`
+
+	// NativeEndpoint 声明该 target 的 DashScope Native 门，枚举仅
+	// text-generation / multimodal-generation。只有 kind == dashscope.native
+	// 的 target 才填；门是部署事实，不按模型名或本次请求是否含媒体推断。
+	NativeEndpoint string `yaml:"native_endpoint"`
 }
 
 // ConvStore 是网关侧会话存储的配置。
@@ -85,6 +91,32 @@ func DefaultConvStore() ConvStore {
 		MaxMessages:   1000,
 		GCInterval:    5 * time.Minute,
 	}
+}
+
+// validateBaseURL 强制 base_url 的契约：scheme + host + 可选路径前缀。
+//
+// 出站适配器把端点路径追加在 base_url 之后。带 query 或 fragment 时，追加的
+// 路径会落进 query 或 fragment 里（`...?trace=1/v1/chat/completions`），请求
+// 打不到真实端点——启动看着成功，运行时才表现为 404 或鉴权失败。在这里拒绝，
+// 是把一个查半天的运行时故障换成一行启动期配置错误。
+func validateBaseURL(p ProviderSpec) error {
+	u, err := url.Parse(p.BaseURL)
+	if err != nil {
+		return fmt.Errorf("config: provider %q 的 base_url %q 不是合法 URL: %w",
+			p.Endpoint, p.BaseURL, err)
+	}
+	switch {
+	case u.Scheme != "http" && u.Scheme != "https":
+		return fmt.Errorf("config: provider %q 的 base_url 必须是 http 或 https，实际 %q",
+			p.Endpoint, p.BaseURL)
+	case u.Host == "":
+		return fmt.Errorf("config: provider %q 的 base_url 缺少主机名: %q", p.Endpoint, p.BaseURL)
+	case u.RawQuery != "" || u.ForceQuery:
+		return fmt.Errorf("config: provider %q 的 base_url 不能带查询参数: %q", p.Endpoint, p.BaseURL)
+	case u.Fragment != "":
+		return fmt.Errorf("config: provider %q 的 base_url 不能带 fragment: %q", p.Endpoint, p.BaseURL)
+	}
+	return nil
 }
 
 // validateGateway 做网关配置的交叉引用校验。
@@ -129,6 +161,9 @@ func (c Config) validateGateway() error {
 		case p.CredentialPool == "":
 			return fmt.Errorf("config: provider %q 缺少 credential_pool", p.Endpoint)
 		}
+		if err := validateBaseURL(p); err != nil {
+			return err
+		}
 		if _, dup := endpoints[p.Endpoint]; dup {
 			return fmt.Errorf("config: 重复的 provider endpoint %q", p.Endpoint)
 		}
@@ -159,6 +194,26 @@ func (c Config) validateGateway() error {
 			}
 			if t.UpstreamModel == "" {
 				return fmt.Errorf("config: 规则 %q 的候选 %q 缺少 upstream_model", m.Match, t.Endpoint)
+			}
+
+			// native_endpoint 与 Provider kind 的归属必须在启动期对齐。
+			//
+			// 漏声明的话，Native 出站只能靠模型名或本次请求是否含媒体去猜该打
+			// 文本生成门还是多模态生成门——猜错的表现是一个语焉不详的上游 400，
+			// 而不是一行配置错误。反过来，非 Native 的 target 带着这个字段，
+			// 说明作者以为它生效了，实际上被无声忽略。
+			kind := endpoints[t.Endpoint].Kind
+			switch {
+			case kind == "dashscope.native" && t.NativeEndpoint == "":
+				return fmt.Errorf("config: 规则 %q 的候选 %q 是 dashscope.native，必须声明 native_endpoint",
+					m.Match, t.Endpoint)
+			case kind != "dashscope.native" && t.NativeEndpoint != "":
+				return fmt.Errorf("config: 规则 %q 的候选 %q 非 dashscope.native，不得声明 native_endpoint",
+					m.Match, t.Endpoint)
+			case kind == "dashscope.native" &&
+				t.NativeEndpoint != "text-generation" && t.NativeEndpoint != "multimodal-generation":
+				return fmt.Errorf("config: 规则 %q 的候选 %q native_endpoint %q 非法（仅 text-generation / multimodal-generation）",
+					m.Match, t.Endpoint, t.NativeEndpoint)
 			}
 		}
 	}

@@ -219,13 +219,16 @@ func (h *Handler) serve(w *tracked, r *http.Request) (outcome, outbound string, 
 		return "bad_request", outbound, err
 	}
 
+	// 入站坐标只算一次，矩阵与 Provider 共用同一份：分别算两次，日后任一侧的
+	// 取法改了，裁决依据与实际打出去的门就会悄悄分家——那种错在响应里看不出来。
+	inbound := degrade.Inbound{
+		Protocol: h.in.protocol,
+		Endpoint: degrade.Endpoint(h.in.upstreamPath(r)),
+	}
+
 	// 路由给出候选，矩阵按入站坐标（协议 + 门）与能力裁决。两者分工，不互相包含。
 	kind, verdict, err := h.deps.Matrix.BestOutbound(
-		degrade.Inbound{
-			Protocol: h.in.protocol,
-			Endpoint: degrade.Endpoint(h.in.upstreamPath(r)),
-		},
-		router.Kinds(targets), decoded.Capabilities())
+		inbound, router.Kinds(targets), decoded.Capabilities())
 	if err != nil {
 		if canonical.AsError(err).Class == canonical.ClassNotImplemented {
 			h.deps.Metrics.ObserveNotImplemented(string(h.in.protocol), "planned")
@@ -237,12 +240,24 @@ func (h *Handler) serve(w *tracked, r *http.Request) (outcome, outbound string, 
 
 	h.observeVerdict(kind, verdict)
 
+	candidates := router.OfKind(targets, kind)
+	if kind == degrade.ProviderDashScopeNative {
+		candidates = filterNativeTargets(candidates, decoded.Capabilities())
+		if len(candidates) == 0 {
+			return "unsupported", outbound, canonical.Newf(
+				canonical.ClassUnsupported,
+				"模型路由没有可承载该媒体的 DashScope Native 门",
+			)
+		}
+	}
+
 	return h.dispatch(w, r, dispatchInput{
 		caller:  caller,
 		raw:     raw,
 		decoded: decoded,
-		targets: router.OfKind(targets, kind),
+		targets: candidates,
 		kind:    kind,
+		inbound: inbound,
 		headers: verdictHeaders(verdict),
 	})
 }
@@ -253,6 +268,10 @@ type dispatchInput struct {
 	decoded *decodedRequest
 	targets []router.Target
 	kind    degrade.Provider
+
+	// inbound 是 serve 裁决时用的那一份入站坐标，原样交给 Provider。
+	inbound degrade.Inbound
+
 	headers map[string]string
 }
 
@@ -286,14 +305,30 @@ func (h *Handler) dispatch(w *tracked, r *http.Request, in dispatchInput) (strin
 			}
 			tried[lease.Credential.ID] = true
 
+			// DashScope 专用 usage 回调，**只为 Native 注入**，其他 Provider 一律 nil。
+			//
+			// 三个变量都声明在这一次具体尝试之内，不提到循环外：提出去之后，一次
+			// 失败尝试回调过的用量会活到下一次尝试——那次尝试可能换了凭据、甚至
+			// 换了上游，它的账上却挂着上一条链路的数字。两条路都返回 200，多出来
+			// 的那笔账在响应里看不出任何痕迹。
+			//
+			// 回调与 relay 同 goroutine 同步执行，不需要锁。
+			var dsUsage canonical.Usage
+			var hasDSUsage bool
+			var onDSUsage func(canonical.Usage)
+			if in.kind == degrade.ProviderDashScopeNative {
+				onDSUsage = func(u canonical.Usage) { dsUsage, hasDSUsage = u, true }
+			}
+
 			resp, err := prov.Call(r.Context(), provider.Request{
-				Target:     target,
-				Credential: lease.Credential,
-				Raw:        in.raw,
-				Canonical:  &in.decoded.Request,
-				Stream:     in.decoded.Request.Stream,
-				Path:       h.in.upstreamPath(r),
-				Header:     r.Header,
+				Target:           target,
+				Credential:       lease.Credential,
+				Raw:              in.raw,
+				Canonical:        &in.decoded.Request,
+				Stream:           in.decoded.Request.Stream,
+				Inbound:          in.inbound,
+				Header:           r.Header,
+				OnDashScopeUsage: onDSUsage,
 			})
 			if err != nil {
 				lease.Fail(err)
@@ -324,6 +359,21 @@ func (h *Handler) dispatch(w *tracked, r *http.Request, in dispatchInput) (strin
 			).Observe(resp.Latency.Seconds())
 
 			usage, rerr := h.relay(w, resp, in)
+
+			// 用量优先级：relay 给出的结果永远优先，回调只在它交白卷时补位。
+			//
+			// 两个前提缺一不可。**relay 无错误返回**：流中断时 usage 已被 relay
+			// 刻意抹成不可知——上游不会再送 usage，回调里躺着的是中断前那半截
+			// 数字，拿它记账等于把一次残缺的调用按完整的收费。**relay 未取得
+			// 用量**：Chat 响应体或 include_usage chunk 里的数字是按入站协议解出
+			// 来的权威值，用回调覆盖它就是让出站适配器改写记账口径。
+			//
+			// 补位这一档不是可有可无的：客户端没要 include_usage 时，转换后的
+			// Chat 流不带 usage chunk，而 Native 每帧都携带累计用量——没有回调，
+			// 这次调用在账上就是免费的。
+			if rerr == nil && usage.Fidelity == canonical.FidelityUnavailable && hasDSUsage {
+				usage = dsUsage
+			}
 			h.deps.Metrics.ObserveUsage(string(in.kind), usage)
 
 			if rerr != nil {

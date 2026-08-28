@@ -204,6 +204,27 @@ func TestModelsOnlyListsExact(t *testing.T) {
 	}
 }
 
+// TestTargetNativeEndpointValidate 钉死路由侧对 native_endpoint 的枚举校验。
+//
+// 路由只管枚举合法性，不管「Native 必填、非 Native 必空」——那条归属规则要
+// 看 Provider kind 与配置全貌，归 config.validateGateway。这里放行空值，是因为
+// 把归属校验抄一份到路由层，等于让同一条规则有两个事实来源。
+func TestTargetNativeEndpointValidate(t *testing.T) {
+	mk := func(ep string) Target {
+		return Target{Kind: degrade.ProviderDashScopeNative, Endpoint: "e",
+			BaseURL: "https://x", UpstreamModel: "m", CredentialPool: "p", NativeEndpoint: ep}
+	}
+	if err := mk("text-generation").validate(); err != nil {
+		t.Fatalf("text-generation 应合法: %v", err)
+	}
+	if err := mk("multimodal-generation").validate(); err != nil {
+		t.Fatalf("multimodal-generation 应合法: %v", err)
+	}
+	if err := mk("embedding").validate(); err == nil {
+		t.Fatal("未知 native_endpoint 应被拒绝")
+	}
+}
+
 func TestEmptyModelIsRejected(t *testing.T) {
 	r := mustNew(t, Rule{Match: "*", Targets: []Target{target(degrade.ProviderOpenAICompat, "x", "y")}})
 
