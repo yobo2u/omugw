@@ -1,0 +1,116 @@
+{
+  "name": "openai.chat__dashscope.native/vision_input",
+  "note": "vision_input 图像输入（URL/Data URI）",
+  "request": {
+    "method": "POST",
+    "path": "/v1/chat/completions",
+    "headers": {
+      "authorization": "\u003credacted\u003e",
+      "content-type": "application/json"
+    },
+    "body": {
+      "model": "omugw-record-client-model",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "这两张图分别是什么？"
+            },
+            {
+              "type": "image_url",
+              "image_url": {
+                "url": "https://dashscope.oss-cn-beijing.aliyuncs.com/images/dog_and_girl.jpeg"
+              }
+            },
+            {
+              "type": "image_url",
+              "image_url": {
+                "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAF0lEQVR4nGJiIBGMahjVMIw1AAIAAP//NyAAIT+Rv2wAAAAASUVORK5CYII="
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "output": {
+        "choices": [
+          {
+            "message": {
+              "content": [
+                {
+                  "text": "第一张图展示了一位女性和一只狗在海滩上互动的温馨场景。女性坐在沙滩上，穿着格子衬衫和黑色裤子，面带微笑，正与一只金毛犬进行“握手”动作。狗戴着彩色项圈，前爪抬起，与女性的手相触，显得十分友好和亲密。背景是夕阳下的海面，波浪轻轻拍打着沙滩，整个画面充满了温暖、宁静和和谐的氛围。\n\n第二张图是一片纯黑色的画面，没有任何可见的内容或细节。这可能是一张空白图像、加载失败的图片，或者故意留白的设计。由于没有可识别的元素，无法判断其具体含义或用途。"
+                }
+              ],
+              "reasoning_content": "",
+              "role": "assistant"
+            },
+            "finish_reason": "stop"
+          }
+        ]
+      },
+      "usage": {
+        "input_tokens_details": {
+          "image_tokens": 1255,
+          "text_tokens": 14
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "total_tokens": 1412,
+        "output_tokens": 143,
+        "input_tokens": 1269,
+        "output_tokens_details": {
+          "text_tokens": 143
+        },
+        "image_tokens": 1255
+      },
+      "request_id": "771dcec2-beba-9fa2-bc76-ff8181e1be25"
+    }
+  },
+  "upstream": {
+    "method": "POST",
+    "path": "/api/v1/services/aigc/multimodal-generation/generation",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip",
+      "authorization": "\u003credacted\u003e",
+      "content-length": "410",
+      "content-type": "application/json",
+      "user-agent": "Go-http-client/1.1"
+    },
+    "body": {
+      "model": "qwen-vl-max",
+      "input": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "text": "这两张图分别是什么？"
+              },
+              {
+                "image": "https://dashscope.oss-cn-beijing.aliyuncs.com/images/dog_and_girl.jpeg"
+              },
+              {
+                "image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAF0lEQVR4nGJiIBGMahjVMIw1AAIAAP//NyAAIT+Rv2wAAAAASUVORK5CYII="
+              }
+            ]
+          }
+        ]
+      },
+      "parameters": {
+        "parallel_tool_calls": true,
+        "result_format": "message"
+      }
+    }
+  }
+}
