@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/yobo2u/omugw/internal/degrade"
+	nativewire "github.com/yobo2u/omugw/internal/protocol/dashscopenative"
 )
 
 // record 控制是否向真实 DashScope 发送请求并落盘 fixture。
@@ -98,5 +99,52 @@ func TestRecordChatDSNative(t *testing.T) {
 			f := buildRecordedFixture(c, req.Header, clientBody, snap)
 			saveRecordedFixture(t, outDir, f, !t.Failed())
 		})
+	}
+}
+
+// TestRecordChatDSNativeAudioInputStays501 是录制会话的 live 负例：
+// 真实凭据在手，audio_input 请求也必须被矩阵闸门以 501 拦下——
+// 录制代理一次请求都不该收到，任何音频模型（qwen-audio-turbo 等）
+// 自始至终不会被调用。
+//
+// 保留成独立探针而不是 recordCases 条目：它证明的是「闸门关着」，
+// 应落盘的证据恰恰是上游调用为零——放进 recordCases 会要求产出一份
+// audio_input fixture，而本期名单里没有它。
+//
+// 门选 multimodal-generation（audio_input 若被兑现该走的门），模型角色
+// 刻意选文本：本探针不得调用任何音频模型，而矩阵会在模型被问到之前拦下请求。
+func TestRecordChatDSNativeAudioInputStays501(t *testing.T) {
+	if !*record {
+		t.Skip("跳过 live 探针：未指定 -record 标志")
+	}
+	if os.Getenv("OMUGW_SMOKE") != "1" {
+		t.Skip("跳过 live 探针：未设置 OMUGW_SMOKE=1 环境变量")
+	}
+	apiKey := strings.TrimSpace(os.Getenv("DASHSCOPE_API_KEY"))
+	if apiKey == "" {
+		t.Skip("跳过 live 探针：未设置 DASHSCOPE_API_KEY 环境变量")
+	}
+
+	baseURL := recordBaseURL(t)
+	proxy, state := newRecordingProxy(t, baseURL)
+	built := buildRecordingGateway(t, proxy.URL, nativewire.DoorMultimodalGeneration,
+		modelForRole(modelRoleText), apiKey)
+
+	req := httptest.NewRequest(http.MethodPost, string(degrade.EndpointOpenAIChat),
+		bytes.NewReader(bodyAudioInput(recordClientModel)))
+	req.Header.Set("Authorization", "Bearer "+testGatewayAuthKey)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	built.Mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotImplemented {
+		t.Fatalf("状态码 = %d，期望 501: %s", rec.Code, rec.Body.String())
+	}
+	if snap := state.Snapshot(); snap.Requests != 0 {
+		t.Fatalf("live 探针触达上游 %d 次——audio_input 必须在矩阵裁决阶段被拦下", snap.Requests)
+	}
+	if !strings.Contains(rec.Body.String(), "audio_input") {
+		t.Errorf("501 错误应点名 audio_input，证明它来自矩阵裁决而非上游错误: %s", rec.Body.String())
 	}
 }
