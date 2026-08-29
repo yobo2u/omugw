@@ -6,8 +6,12 @@ import (
 	nativewire "github.com/yobo2u/omugw/internal/protocol/dashscopenative"
 )
 
-// recordCases 是 Chat -> DashScope Native 路径必须交付举证的 13 个测试用例元数据表。
+// recordCases 是 Chat -> DashScope Native 路径本期必须交付举证的 12 个测试用例元数据表。
 // 降级用例（expectDegraded=true）必须包含显式降级举证。
+//
+// audio_input 不在本表：设计处置仍是 PASS，但 qwen-audio-turbo 免费额度耗尽、
+// 没有真实 fixture——无证据不兑现（ADR-0001）。未来恢复投放的条件见
+// 2026-08-30 部分投放设计的「后续恢复条件」。
 var recordCases = []caseMeta{
 	{
 		name:           "basic",
@@ -44,15 +48,6 @@ var recordCases = []caseMeta{
 		expectDegraded: false,
 		note:           "vision_input 图像输入（URL/Data URI）",
 		body:           bodyVisionInput,
-	},
-	{
-		name:           "audio_input",
-		door:           nativewire.DoorMultimodalGeneration,
-		modelRole:      modelRoleAudio,
-		stream:         false,
-		expectDegraded: false,
-		note:           "audio_input 音频输入",
-		body:           bodyAudioInput,
 	},
 	{
 		name:           "reasoning",

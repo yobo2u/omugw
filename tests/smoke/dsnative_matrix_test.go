@@ -18,9 +18,11 @@ const (
 
 // recordMatrix 构造录制脚手架专用的降级矩阵。
 //
-// 生产矩阵（Phase1）中 openai.chat → dashscope.native 仍为 PLANNED。
+// 生产矩阵（Phase1）中 openai.chat → dashscope.native 在任务 18 兑现前仍是 PLANNED。
 // 录制器在此构建独立测试矩阵，严格镜像 Phase1 对 Chat 能力的处置声明，
-// 并在 Chat 门兑现 9 项已交付能力；同时填充其余三扇已注册门以满足启动期对账。
+// 并在 Chat 门兑现与生产完全一致的 8 项能力；同时填充其余三扇已注册门以满足
+// 启动期对账。audio_input 的设计处置仍是 PASS，但本期没有真实 fixture、
+// 不兑现——脚手架替生产兑现任何能力，都会成为产出生产用不了的证据的后门。
 func recordMatrix(t testing.TB) *degrade.Matrix {
 	t.Helper()
 	m := degrade.NewMatrix()
@@ -50,7 +52,6 @@ func recordMatrix(t testing.TB) *degrade.Matrix {
 			canonical.CapStructuredOutput,
 			canonical.CapReasoning,
 			canonical.CapVisionInput,
-			canonical.CapAudioInput,
 			canonical.CapWebSearch,
 		)
 

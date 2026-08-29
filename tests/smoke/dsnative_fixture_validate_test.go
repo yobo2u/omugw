@@ -19,7 +19,7 @@ import (
 
 // TestRecordedFixturesAreValid 校验录制产出的 fixture 是否合法且完备。
 //
-// 只在目录整个不存在时跳过（尚未录制）。目录一旦出现，就必须是十三份一个不多
+// 只在目录整个不存在时跳过（尚未录制）。目录一旦出现，就必须是十二份一个不多
 // 一个不少的完整证据——「录到一半」在回放侧看起来与「本来就只有这些」毫无区别。
 func TestRecordedFixturesAreValid(t *testing.T) {
 	dir := filepath.Clean(fixtureDir)

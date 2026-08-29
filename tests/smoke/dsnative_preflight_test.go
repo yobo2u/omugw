@@ -88,7 +88,7 @@ func newPreflightUpstream(t testing.TB, stream bool, events []testkit.SSEEvent, 
 	return srv, ch
 }
 
-// TestPreflightCaseBodiesMapToNativeUpstream 把 13 份客户端请求体逐一送过真实
+// TestPreflightCaseBodiesMapToNativeUpstream 把 12 份客户端请求体逐一送过真实
 // 网关，断言它们既过得了编码期，也映射成了预期的 Native 出站体。
 //
 // 假上游的响应只求「够转换器走完」，不代表任何真实模型的能力支持——见本节顶部。

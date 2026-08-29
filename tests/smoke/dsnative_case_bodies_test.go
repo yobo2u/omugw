@@ -40,7 +40,8 @@ const (
 	tinyWAVBase64 = "UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA="
 )
 
-// 13 份客户端请求体。每一份只做一件事：把该用例声称的那项能力真正用上，
+// 12 份举证请求体，另加一份音频负例请求体（bodyAudioInput，仅供 501 探针使用，
+// 不进 recordCases）。每一份只做一件事：把该用例声称的那项能力真正用上，
 // 且不夹带任何在 DashScope Native 无落点的字段（frequency_penalty / logit_bias /
 // service_tier / store / user / metadata / audio）——夹带一个就会在出门前被
 // rejectUnmappable 拦成 422，录到的将是网关的拒绝而不是上游的能力。

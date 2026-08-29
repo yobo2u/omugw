@@ -16,12 +16,15 @@ type modelRole string
 const (
 	modelRoleText     modelRole = "text"
 	modelRoleVL       modelRole = "vl"
-	modelRoleAudio    modelRole = "audio"
 	modelRoleCombined modelRole = "combined"
 )
 
 // modelForRole 解析指定模型角色的模型名，优先从环境变量读取，缺省使用设计默认模型。
 // 对未知或不可能的角色返回空字符串，由上层调用方进行显式断言或校验。
+//
+// 本期没有任何音频角色：qwen-audio-turbo 免费额度耗尽，Qwen-Omni 只走 OpenAI
+// 兼容线格式。在这张表里留下一个音频模型名，等于给一个永远不会成功的调用
+// 留了个账单入口。
 func modelForRole(role modelRole) string {
 	switch role {
 	case modelRoleText:
@@ -34,11 +37,6 @@ func modelForRole(role modelRole) string {
 			return v
 		}
 		return "qwen-vl-max"
-	case modelRoleAudio:
-		if v := strings.TrimSpace(os.Getenv("OMUGW_SMOKE_MODEL_AUDIO")); v != "" {
-			return v
-		}
-		return "qwen-audio-turbo"
 	case modelRoleCombined:
 		if v := strings.TrimSpace(os.Getenv("OMUGW_SMOKE_MODEL_COMBINED")); v != "" {
 			return v

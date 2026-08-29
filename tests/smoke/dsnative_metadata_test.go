@@ -8,15 +8,22 @@ import (
 	"testing"
 )
 
-// TestRecordCaseMetadataIsComplete 校验 13 个用例的元数据自洽：名字唯一、
+// TestRecordCaseMetadataIsComplete 校验 12 个用例的元数据自洽：名字唯一、
 // 模型角色解析得出非空模型、门有对应上游路径、请求体构造器存在且产出的
 // JSON 合法且与 stream 标志一致。
 //
 // 这些都是录制器接线前就该成立的事实。一个解析成空串的模型角色、或一份
 // 语法就不合法的请求体，要等到真实调用时才失败——而那时账已经付过了。
 func TestRecordCaseMetadataIsComplete(t *testing.T) {
-	if len(recordCases) != 13 {
-		t.Fatalf("用例数 = %d，期望 13——矩阵不得因为本地映射难做就少一格", len(recordCases))
+	if len(recordCases) != 12 {
+		t.Fatalf("用例数 = %d，期望恰好 12——audio_input 退出本期举证（无真实 fixture），"+
+			"其余格子一项都不许少", len(recordCases))
+	}
+	for _, c := range recordCases {
+		if c.name == "audio_input" {
+			t.Fatal("audio_input 不得出现在本期 recordCases——" +
+				"qwen-audio-turbo 额度耗尽，无证据不兑现（ADR-0001）")
+		}
 	}
 
 	seen := make(map[string]bool, len(recordCases))
