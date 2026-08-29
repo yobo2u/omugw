@@ -1,0 +1,197 @@
+{
+  "name": "openai.chat__dashscope.native/combined",
+  "note": "combined 多能力组合（vision + tools + web_search + structured_output 证明可组合）",
+  "request": {
+    "method": "POST",
+    "path": "/v1/chat/completions",
+    "headers": {
+      "authorization": "\u003credacted\u003e",
+      "content-type": "application/json"
+    },
+    "body": {
+      "model": "omugw-record-client-model",
+      "web_search_options": {
+        "search_context_size": "medium"
+      },
+      "response_format": {
+        "type": "json_schema",
+        "json_schema": {
+          "name": "image_report",
+          "strict": true,
+          "schema": {
+            "type": "object",
+            "properties": {
+              "summary": {
+                "type": "string"
+              },
+              "needs_tool": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "summary",
+              "needs_tool"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "get_weather",
+            "description": "查询指定城市的天气",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "city": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "city"
+              ]
+            }
+          }
+        }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "看图并结合最新资讯，必要时调用工具，最后按 schema 输出。"
+            },
+            {
+              "type": "image_url",
+              "image_url": {
+                "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAF0lEQVR4nGJiIBGMahjVMIw1AAIAAP//NyAAIT+Rv2wAAAAASUVORK5CYII="
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "output": {
+        "choices": [
+          {
+            "message": {
+              "content": [
+                {
+                  "text": "{\n  \"needs_tool\": false,\n  \"summary\": \"无法获取图片内容，因此无法结合最新资讯进行分析。\"\n}"
+                }
+              ],
+              "reasoning_content": "",
+              "role": "assistant"
+            },
+            "finish_reason": "stop"
+          }
+        ]
+      },
+      "usage": {
+        "input_tokens_details": {
+          "image_tokens": 6,
+          "text_tokens": 223
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "total_tokens": 258,
+        "output_tokens": 29,
+        "input_tokens": 229,
+        "output_tokens_details": {
+          "text_tokens": 29
+        },
+        "image_tokens": 6
+      },
+      "request_id": "2233e215-24f2-9312-8af6-e1351bf94c03"
+    }
+  },
+  "upstream": {
+    "method": "POST",
+    "path": "/api/v1/services/aigc/multimodal-generation/generation",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip",
+      "authorization": "\u003credacted\u003e",
+      "content-length": "857",
+      "content-type": "application/json",
+      "user-agent": "Go-http-client/1.1"
+    },
+    "body": {
+      "model": "qwen-vl-max",
+      "input": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "text": "看图并结合最新资讯，必要时调用工具，最后按 schema 输出。"
+              },
+              {
+                "image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAF0lEQVR4nGJiIBGMahjVMIw1AAIAAP//NyAAIT+Rv2wAAAAASUVORK5CYII="
+              }
+            ]
+          }
+        ]
+      },
+      "parameters": {
+        "enable_search": true,
+        "parallel_tool_calls": true,
+        "response_format": {
+          "type": "json_schema",
+          "json_schema": {
+            "name": "image_report",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "summary": {
+                  "type": "string"
+                },
+                "needs_tool": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "summary",
+                "needs_tool"
+              ],
+              "additionalProperties": false
+            },
+            "strict": true
+          }
+        },
+        "result_format": "message",
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "get_weather",
+              "description": "查询指定城市的天气",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "city": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "city"
+                ]
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}
