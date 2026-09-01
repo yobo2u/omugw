@@ -1,0 +1,174 @@
+{
+  "name": "openai.chat__dashscope.native/parallel_tool_calls",
+  "note": "parallel_tool_calls 并行工具调用降级（显式字段映射与降级头）",
+  "request": {
+    "method": "POST",
+    "path": "/v1/chat/completions",
+    "headers": {
+      "authorization": "\u003credacted\u003e",
+      "content-type": "application/json"
+    },
+    "body": {
+      "model": "omugw-record-client-model",
+      "parallel_tool_calls": true,
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "get_weather",
+            "description": "查询指定城市的天气",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "city": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "city"
+              ]
+            }
+          }
+        },
+        {
+          "type": "function",
+          "function": {
+            "name": "get_time",
+            "description": "查询指定城市的当前时间",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "city": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "city"
+              ]
+            }
+          }
+        }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "同时告诉我杭州的天气和当前时间。"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "output": {
+        "choices": [
+          {
+            "message": {
+              "content": "",
+              "tool_calls": [
+                {
+                  "index": 0,
+                  "id": "call_18e8a08bdb6f4af1b15ddb",
+                  "type": "function",
+                  "function": {
+                    "name": "get_weather",
+                    "arguments": "{\"city\": \"杭州\"}"
+                  }
+                },
+                {
+                  "index": 1,
+                  "id": "call_1da6fdf753374c91b352ee",
+                  "type": "function",
+                  "function": {
+                    "name": "get_time",
+                    "arguments": "{\"city\": \"杭州\"}"
+                  }
+                }
+              ],
+              "role": "assistant"
+            },
+            "index": 0,
+            "finish_reason": "tool_calls"
+          }
+        ]
+      },
+      "usage": {
+        "total_tokens": 247,
+        "output_tokens": 39,
+        "input_tokens": 208,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "request_id": "4aa31f69-830a-99c3-8843-83aa55854039"
+    }
+  },
+  "upstream": {
+    "method": "POST",
+    "path": "/api/v1/services/aigc/text-generation/generation",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip",
+      "authorization": "\u003credacted\u003e",
+      "content-length": "580",
+      "content-type": "application/json",
+      "user-agent": "Go-http-client/1.1"
+    },
+    "body": {
+      "model": "qwen-plus",
+      "input": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "同时告诉我杭州的天气和当前时间。"
+          }
+        ]
+      },
+      "parameters": {
+        "parallel_tool_calls": true,
+        "result_format": "message",
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "get_weather",
+              "description": "查询指定城市的天气",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "city": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "city"
+                ]
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "get_time",
+              "description": "查询指定城市的当前时间",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "city": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "city"
+                ]
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}
