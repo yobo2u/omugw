@@ -1,0 +1,86 @@
+{
+  "name": "openai.chat__dashscope.native/web_search",
+  "note": "web_search 联网搜索降级（options 转 enable_search 与降级头）",
+  "request": {
+    "method": "POST",
+    "path": "/v1/chat/completions",
+    "headers": {
+      "authorization": "\u003credacted\u003e",
+      "content-type": "application/json"
+    },
+    "body": {
+      "model": "omugw-record-client-model",
+      "web_search_options": {
+        "search_context_size": "medium"
+      },
+      "messages": [
+        {
+          "role": "user",
+          "content": "杭州今天有什么新闻？"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "output": {
+        "choices": [
+          {
+            "message": {
+              "content": "根据最新的资料，截至2026年8月30日（星期日），杭州的新闻动态包括：\n\n- **天气情况**：杭州市气象台在8月29日20时10分发布的市区天气预报指出，今天夜里杭州将多云到阴；明天（8月30日）多云到阴，上午局部有阵雨，中午到夜里有阵雨或雷雨，有雷雨时短时雨量中到大。东北风3~4级。明天白天最高气温预计为32度，早晨最低气温27度，平均相对湿度75%。\n\n- **林业有害生物防控专项行动**：为亚运会“保驾护航”，杭州正在开展林业有害生物防控专项行动，该行动将持续至2026年8月23日之后，意味着这项工作仍在进行中，以确保亚运会期间的生态环境安全。\n\n- **第五届数贸会**：虽然具体日期未提及，但有消息称9月23日将在杭州举行第五届数贸会，目前正对看点进行剧透，这表明杭州正积极筹备这一重要活动。\n\n- **人工智能创新发展**：刘捷专题研究了人工智能创新发展工作，并强调要推动人工智能创新发展高地建设不断取得新突破，显示杭州在高科技领域的发展势头强劲。\n\n以上信息综合了天气预报、政府行动以及即将举行的大型活动等多方面的内容，反映了杭州当前的社会经济和自然环境状况。",
+              "role": "assistant"
+            },
+            "finish_reason": "stop"
+          }
+        ]
+      },
+      "usage": {
+        "total_tokens": 3260,
+        "output_tokens": 300,
+        "input_tokens": 2960,
+        "plugins": {
+          "search": {
+            "count": 1,
+            "strategy": "turbo"
+          }
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "request_id": "4b37b000-470a-9de2-876f-cdd7798c1d97"
+    }
+  },
+  "upstream": {
+    "method": "POST",
+    "path": "/api/v1/services/aigc/text-generation/generation",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip",
+      "authorization": "\u003credacted\u003e",
+      "content-length": "192",
+      "content-type": "application/json",
+      "user-agent": "Go-http-client/1.1"
+    },
+    "body": {
+      "model": "qwen-plus",
+      "input": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "杭州今天有什么新闻？"
+          }
+        ]
+      },
+      "parameters": {
+        "enable_search": true,
+        "parallel_tool_calls": true,
+        "result_format": "message"
+      }
+    }
+  }
+}
