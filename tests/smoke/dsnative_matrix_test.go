@@ -18,7 +18,6 @@ const (
 
 // recordMatrix 构造录制脚手架专用的降级矩阵。
 //
-// 生产矩阵（Phase1）中 openai.chat → dashscope.native 在任务 18 兑现前仍是 PLANNED。
 // 录制器在此构建独立测试矩阵，严格镜像 Phase1 对 Chat 能力的处置声明，
 // 并在 Chat 门兑现与生产完全一致的 8 项能力；同时填充其余三扇已注册门以满足
 // 启动期对账。audio_input 的设计处置仍是 PASS，但本期没有真实 fixture、
@@ -36,7 +35,9 @@ func recordMatrix(t testing.TB) *degrade.Matrix {
 			canonical.CapAudioInput,
 			canonical.CapReasoning,
 		).
-		Degrade("DashScope Native 的并行工具调用行为由上游模型决定，无显式开关可映射",
+		Degrade("DashScope Native 有显式 parallel_tool_calls 开关，但模型支持面与并行行为 "+
+			"不具路径级全局保证；客户端未提交该字段时网关按 OpenAI 默认显式注入 true"+
+			"（Native 默认 false，不注入会静默变成串行）",
 			canonical.CapParallelToolCalls).
 		Degrade("DashScope Native 支持 response_format=json_object，无 strict schema 校验",
 			canonical.CapStructuredOutput).
