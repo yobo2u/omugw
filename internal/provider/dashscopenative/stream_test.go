@@ -19,6 +19,7 @@ import (
 	"github.com/yobo2u/omugw/internal/canonical"
 	"github.com/yobo2u/omugw/internal/config"
 	nativewire "github.com/yobo2u/omugw/internal/protocol/dashscopenative"
+	"github.com/yobo2u/omugw/internal/protocol/openaichat"
 	"github.com/yobo2u/omugw/internal/provider"
 	"github.com/yobo2u/omugw/internal/transport/httpx"
 	"github.com/yobo2u/omugw/internal/transport/sse"
@@ -158,6 +159,18 @@ func streamChatRequestN(t *testing.T, baseURL string, n int) provider.Request {
 	t.Helper()
 	return streamChatRequestRaw(t, baseURL, fmt.Sprintf(
 		`{"model":"m","messages":[{"role":"user","content":"hi"}],"stream":true,"n":%d}`, n))
+}
+
+// callTranslateStream 直接调用 translateStream 绕过公开 Call 的 rejectUnmappable 前置规则。
+// 尽管当前公开入口拦截 stream+n>1，内部多候选状态机与校验机制仍作为深度防御保留，
+// 并为未来重新开放提供测试覆盖，本 helper 供此类内部防御用例直测流式转换器。
+func callTranslateStream(t *testing.T, p *Provider, req provider.Request) (*httpx.Response, error) {
+	t.Helper()
+	proj, err := openaichat.Project(req.Raw)
+	if err != nil {
+		t.Fatalf("openaichat.Project 失败: %v", err)
+	}
+	return p.translateStream(context.Background(), req, proj)
 }
 
 // streamChatRequestRaw 按给定 Chat 线格式构造流式出站请求，Raw 与 Canonical 同源。
@@ -646,6 +659,86 @@ func TestStreamFirstFrameFailsInCall(t *testing.T) {
 	}
 }
 
+// TestStreamFirstFrameCandidateCountMismatchFailsInCall 钉死上游首帧候选数与期望不符时在 Call 内报错，
+// 防止上游在特定参数下静默将 n 压回 1 或返回多余候选导致语义丢失被误判为成功。
+func TestStreamFirstFrameCandidateCountMismatchFailsInCall(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		want int
+		got  int
+	}{
+		{name: "上游少回", want: 2, got: 1},
+		{name: "上游多回", want: 1, got: 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			choices := strings.Repeat(`{"finish_reason":"stop","message":{"role":"assistant","content":"A"}},`, tc.got)
+			choices = strings.TrimSuffix(choices, ",")
+			up := newNativeSSEUpstream(t, []string{
+				`{"output":{"choices":[` + choices + `]},"request_id":"r-mismatch"}`,
+			})
+			defer up.Close()
+
+			p, _ := newClockedProvider(t)
+			resp, err := callTranslateStream(t, p, streamChatRequestN(t, up.URL, tc.want))
+			if err == nil {
+				t.Fatalf("请求 %d 个候选而上游首帧返回 %d 个时必须报错", tc.want, tc.got)
+			}
+			if resp != nil {
+				t.Errorf("候选数不符时不得返回响应，实际 %+v", resp)
+			}
+			if cerr := canonical.AsError(err); cerr.Class != canonical.ClassUpstreamUnavailable {
+				t.Errorf("候选数不符应分类为 upstream_unavailable，实际 %v", cerr)
+			}
+		})
+	}
+}
+
+// TestStreamFirstFrameZeroCandidatesWithZeroNRejectedInCall 钉死即便 n=0，首帧空 choices 也必须在 Call 内报错且关闭上游，
+// 防止空 choices 被透传至首字节后导致无法 failover。
+func TestStreamFirstFrameZeroCandidatesWithZeroNRejectedInCall(t *testing.T) {
+	closed := make(chan struct{})
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		f, ok := w.(http.Flusher)
+		if !ok {
+			t.Error("httptest 的 ResponseWriter 应支持 Flush")
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		if _, err := io.WriteString(w, "event:result\n:HTTP_STATUS/200\ndata:{\"output\":{\"choices\":[]},\"request_id\":\"r-zero\"}\n\n"); err != nil {
+			t.Errorf("写出 SSE 帧失败: %v", err)
+			return
+		}
+		f.Flush()
+		select {
+		case <-r.Context().Done():
+			close(closed)
+		case <-time.After(30 * time.Second):
+		}
+	}))
+	defer up.Close()
+
+	p, _ := newClockedProvider(t)
+	resp, err := p.Call(context.Background(), streamChatRequestN(t, up.URL, 0))
+	if err == nil {
+		t.Fatal("首帧零候选必须在 Call 内报错")
+	}
+	if resp != nil {
+		t.Errorf("首帧零候选不得返回响应，实际 %+v", resp)
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			t.Errorf("关闭意外返回的响应体失败: %v", closeErr)
+		}
+	}
+	if cerr := canonical.AsError(err); cerr.Class != canonical.ClassUpstreamUnavailable {
+		t.Errorf("首帧零候选应分类为 upstream_unavailable，实际 %v", cerr)
+	}
+	select {
+	case <-closed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("首帧零候选报错后必须立即关闭上游 body，实际连接仍挂着")
+	}
+}
+
 // TestStreamFirstFrameFailureClosesUpstream 钉死首帧失败时上游连接被立即关闭。
 //
 // 漏关会把连接钉在池子里，故障上游因此一路把连接池吃干净，症状却只是
@@ -990,7 +1083,7 @@ func TestStreamMultiCandidate(t *testing.T) {
 	defer up.Close()
 
 	p, _ := newClockedProvider(t)
-	resp, err := p.Call(context.Background(), streamChatRequestN(t, up.URL, 2))
+	resp, err := callTranslateStream(t, p, streamChatRequestN(t, up.URL, 2))
 	if err != nil {
 		t.Fatalf("多候选流式转换应成功: %v", err)
 	}
@@ -1057,7 +1150,7 @@ func TestStreamPartialFinishHasNoDone(t *testing.T) {
 	defer up.Close()
 
 	p, _ := newClockedProvider(t)
-	resp, err := p.Call(context.Background(), streamChatRequestN(t, up.URL, 2))
+	resp, err := callTranslateStream(t, p, streamChatRequestN(t, up.URL, 2))
 	if err != nil {
 		t.Fatalf("流式转换应成功: %v", err)
 	}
@@ -1108,7 +1201,7 @@ func TestStreamCandidateCountChangeIsError(t *testing.T) {
 			defer up.Close()
 
 			p, _ := newClockedProvider(t)
-			resp, err := p.Call(context.Background(), streamChatRequestN(t, up.URL, 2))
+			resp, err := callTranslateStream(t, p, streamChatRequestN(t, up.URL, 2))
 			if err != nil {
 				t.Fatalf("首帧正常，Call 应成功: %v", err)
 			}
@@ -1755,14 +1848,14 @@ func TestStreamFinishedCandidatePayloadIsError(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			second := `{"output":{"choices":[
-			   {"finish_reason":"null","message":{"role":"assistant","content":"A2"}},` +
+			second := `{"output":{"choices":[` +
+				`{"finish_reason":"null","message":{"role":"assistant","content":"A2"}},` +
 				tc.payload + `]},"request_id":"r"}`
 			up := newNativeSSEUpstream(t, []string{head, second})
 			defer up.Close()
 
 			p, _ := newClockedProvider(t)
-			resp, err := p.Call(context.Background(), streamChatRequestN(t, up.URL, 2))
+			resp, err := callTranslateStream(t, p, streamChatRequestN(t, up.URL, 2))
 			if err != nil {
 				t.Fatalf("首帧正常，Call 应成功: %v", err)
 			}
@@ -1823,7 +1916,7 @@ func TestStreamFinishedCandidateEmptyPlaceholderIsFine(t *testing.T) {
 	defer up.Close()
 
 	p, _ := newClockedProvider(t)
-	resp, err := p.Call(context.Background(), streamChatRequestN(t, up.URL, 2))
+	resp, err := callTranslateStream(t, p, streamChatRequestN(t, up.URL, 2))
 	if err != nil {
 		t.Fatalf("流式转换应成功: %v", err)
 	}

@@ -14,9 +14,10 @@ import (
 type modelRole string
 
 const (
-	modelRoleText     modelRole = "text"
-	modelRoleVL       modelRole = "vl"
-	modelRoleCombined modelRole = "combined"
+	modelRoleText      modelRole = "text"
+	modelRoleVL        modelRole = "vl"
+	modelRoleCombined  modelRole = "combined"
+	modelRoleReasoning modelRole = "reasoning"
 )
 
 // modelForRole 解析指定模型角色的模型名，优先从环境变量读取，缺省使用设计默认模型。
@@ -42,6 +43,11 @@ func modelForRole(role modelRole) string {
 			return v
 		}
 		return "qwen-vl-max"
+	case modelRoleReasoning:
+		if v := strings.TrimSpace(os.Getenv("OMUGW_SMOKE_MODEL_REASONING")); v != "" {
+			return v
+		}
+		return "glm-5.2"
 	default:
 		return ""
 	}

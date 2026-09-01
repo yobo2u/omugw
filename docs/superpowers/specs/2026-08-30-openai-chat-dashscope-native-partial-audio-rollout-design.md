@@ -1,7 +1,7 @@
 # OpenAI Chat → DashScope Native 音频能力部分投放设计
 
 **日期**：2026-08-30  
-**状态**：待书面复核  
+**状态**：已批准（11 份 fixture 契约与 stream=true 搭 n>1 的处置已经人工确认）<br>
 **范围**：修订 `openai.chat → dashscope.native` 波次 4 的证据门与兑现集合
 
 ## 背景
@@ -60,7 +60,7 @@ ADR-0001 的“先有真实证据，后兑现能力”。
 
 ## 真实证据门
 
-严格 fixture 名单从 13 份收窄为恰好 12 份：
+严格 fixture 名单从 13 份收窄为恰好 11 份：
 
 - `basic.json`
 - `streaming.json`
@@ -72,11 +72,19 @@ ADR-0001 的“先有真实证据，后兑现能力”。
 - `web_search.json`
 - `combined.json`
 - `multi_candidate_nonstream.json`
-- `multi_candidate_stream.json`
 - `parallel_tool_calls_default.json`
 
-`audio_input.json` 不在本期名单中。严格校验仍需双向对账，不能接受缺文件、多文件、
-非 fixture 条目、未脱敏凭据、非法 SSE frame 或不完整 upstream 断言。
+两份退出名单的用例各有其理由：
+
+- `audio_input.json`：设计处置仍是 PASS，但 `qwen-audio-turbo` 免费额度耗尽、
+  无真实可录模型——无证据不兑现（ADR-0001）。
+- `multi_candidate_stream.json`：本期不承诺流式多候选。`stream=true` 搭 `n>1`
+  的请求在触达上游前就被出站守卫拒成 422，给它留一个录制格子，等于让录制器
+  去打一个网关自己都不会放行的请求——录不出任何证据，却先把这项能力写进了
+  名单。非流式多候选不受影响，`multi_candidate_nonstream.json` 仍在名单中。
+
+严格校验仍需双向对账，不能接受缺文件、多文件、非 fixture 条目、未脱敏凭据、
+非法 SSE frame 或不完整 upstream 断言。
 
 录制仍逐项 fail-fast。`combined.json` 必须由一个真实模型在同一次请求中证明 vision、
 tools、web search 与 structured output 可组合；如果没有单一真实模型支撑，任务 17
@@ -89,17 +97,32 @@ tools、web search 与 structured output 可组合；如果没有单一真实模
 - 只使用上述 8 项已兑现能力的请求可进入 Provider；
 - 含 `audio_input` 的请求在矩阵裁决阶段返回 501；
 - 501 响应不得触达上游，测试必须断言上游调用次数为零；
-- `file_input` 与 `audio_output` 继续按设计返回 422，不受本次修订影响。
+- `file_input` 与 `audio_output` 继续按设计返回 422，不受本次修订影响；
+- `stream=true` 搭 `n>1` 的请求由 Provider 出站守卫在触达上游前返回 422，
+  OpenAI 线格式信封为 `invalid_request_error` / `unsupported_capability`，
+  `param` 点名 `n`，上游零调用。DashScope Native 流式无法返回多候选，放过去
+  只会被上游静默压回 n=1，候选丢失而客户端无感；与其录一份掩盖丢失的证据，
+  不如在出门前显式拒绝；
+- 非流式 `n>1` 不受该守卫影响，照常放行，由 `multi_candidate_nonstream.json`
+  举证；`n>1` 搭 `tools` 仍按既有规则拒绝（Native 带 tools 时同样把 n 压回 1）。
 
 已经实现的 Native 音频编解码代码保留。删除它会把“当前缺少投放证据”误写成
 “协议无法表达”，并增加将来恢复投放时的无关返工。
+
+同理，流式转换器内部的首帧候选数精确对账与多候选状态机不因出站守卫而拆除：
+守卫是策略，状态机是机制，策略将来若重新开放（例如上游支持流式多候选），
+机制必须原样可用。这些内部防御由绕过守卫直调转换器的测试继续覆盖，作为
+纵深防御保留。
 
 ## 实施影响
 
 ### 任务 17
 
-- 从真实录制用例与严格 fixture 名单中移除 `audio_input`；
-- 录制并验证剩余 12 份 fixture；
+- 从真实录制用例与严格 fixture 名单中移除 `audio_input` 与
+  `multi_candidate_stream`；
+- 出站守卫拦截 `stream=true` 搭 `n>1`（上游前 422，零调用），流式转换器内部
+  的候选数对账与状态机作为纵深防御保留；
+- 录制并验证剩余 11 份 fixture；
 - 不发起 Qwen-Omni Native 试探调用。
 
 ### 任务 18
@@ -112,10 +135,13 @@ tools、web search 与 structured output 可组合；如果没有单一真实模
 
 ### 任务 19
 
-- conformance 回放覆盖全部 12 份 fixture；
+- conformance 回放覆盖全部 11 份 fixture；
 - 新增 `audio_input` 未投放负例：返回 501，错误分类为 `not_implemented`，上游零调用；
+- 流式多候选的处置由既有回归钉住：`stream=true` 搭 `n>1` 在触达上游前返回 422
+  （`invalid_request_error` / `unsupported_capability`、`param=n`），上游零调用；
+  非流式 `n>1` 照常放行，由 `multi_candidate_nonstream` 回放举证；
 - `file_input`、`audio_output` 的既有 422 负例保持不变；
-- golden 数量与 12 份 fixture 双向一致。
+- golden 数量与 11 份 fixture 双向一致。
 
 任务 18 开始后仍须连续完成任务 19，ADR-0001 窗口不变：真实证据先落地，随后兑现，
 立即补齐回放并关闭窗口。
@@ -124,13 +150,16 @@ tools、web search 与 structured output 可组合；如果没有单一真实模
 
 实现完成至少通过：
 
-1. 严格 12-file fixture 校验；
+1. 严格 11-file fixture 校验；
 2. 8 项兑现集合、分数与 `Gated()` 聚焦测试；
 3. `audio_input` 501 且上游零调用负例；
-4. 全部 conformance/golden 回放；
-5. `make matrix-update` 后的人工 diff 审阅；
-6. `make check`；
-7. 有真实凭据时执行剩余真实 smoke，且不得调用已知额度耗尽的音频模型。
+4. `stream=true` 搭 `n>1` 的上游前 422 回归：Provider 层与网关层各一条测试，
+   断言状态码、`invalid_request_error` / `unsupported_capability` / `param=n`
+   信封与上游零调用；非流式 `n>1` 放行不回退；
+5. 全部 conformance/golden 回放；
+6. `make matrix-update` 后的人工 diff 审阅；
+7. `make check`；
+8. 有真实凭据时执行剩余真实 smoke，且不得调用已知额度耗尽的音频模型。
 
 ## 后续恢复条件
 

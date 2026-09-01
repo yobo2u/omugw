@@ -45,13 +45,13 @@ func rejectUnmappable(proj *openaichat.Projection, req *canonical.Request) error
 		return unsupported("reasoning_effort")
 	}
 
-	// 拦截带 tools 时的多重生成，防止 Native 静默将 n 强制回落为 1 导致候选丢失。
-	if nGreaterThanOne && hasTools {
+	// 拦截流式下的多重生成，防止上游静默将 n 压回 1 导致候选丢失。
+	if nGreaterThanOne && req.Stream {
 		return unsupported("n")
 	}
 
-	// 拦截思考模式下的多重生成，防止未文档化的强制回落，fail-closed。
-	if nGreaterThanOne && activeReasoning {
+	// 拦截带 tools 时的多重生成，防止 Native 静默将 n 强制回落为 1 导致候选丢失。
+	if nGreaterThanOne && hasTools {
 		return unsupported("n")
 	}
 

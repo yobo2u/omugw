@@ -88,10 +88,15 @@ func (p *Provider) translateStream(ctx context.Context, req provider.Request, pr
 		return nil, closeAfterFailure(httpResp.Body, streamError(err))
 	}
 	// 零候选一律拒收：Chat 侧空 choices 是合法形态，客户端会当成「模型什么都
-	// 没说」而正常收下一个 200——真实原因就此消失，也换不到另一个凭据重试。
-	if len(first.Choices) == 0 {
+	// 没说」而正常收下一个 200——真实原因就此消失，且流进入 relay 后已过首字节无法 failover。
+	// 同时候选数必须与请求一致，防止上游静默把 n 压回 1 导致语义丢失。
+	wantChoices := 1
+	if proj.N != nil {
+		wantChoices = *proj.N
+	}
+	if len(first.Choices) == 0 || len(first.Choices) != wantChoices {
 		return nil, closeAfterFailure(httpResp.Body, canonical.Newf(canonical.ClassUpstreamUnavailable,
-			"上游首帧没有任何候选（request_id=%q）", first.RequestID))
+			"上游首帧候选数为 %d，期望 %d（request_id=%q）", len(first.Choices), wantChoices, first.RequestID))
 	}
 
 	httpResp.Body = &transformReader{

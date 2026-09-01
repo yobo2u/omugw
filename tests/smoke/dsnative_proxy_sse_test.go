@@ -3,6 +3,7 @@
 package smoke_test
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,6 +17,18 @@ import (
 	"github.com/yobo2u/omugw/internal/testkit"
 	"github.com/yobo2u/omugw/internal/transport/sse"
 )
+
+type readErrorAfterBytes struct {
+	data *strings.Reader
+	err  error
+}
+
+func (r *readErrorAfterBytes) Read(p []byte) (int, error) {
+	if r.data.Len() > 0 {
+		return r.data.Read(p)
+	}
+	return 0, r.err
+}
 
 // TestRecordingProxyRelaysSSEEventByEvent 验证流式路径：事件逐条转发，
 // 帧边界按事件登记，而不是按底层字节块。
@@ -149,4 +162,60 @@ func TestRecordingProxyRelaysSSEEventByEvent(t *testing.T) {
 	if got := snap.Upstream.Headers[strings.ToLower(nativewire.SSEHeader)]; got != "enable" {
 		t.Errorf("快照 upstream.headers[%s] = %q，期望 enable", strings.ToLower(nativewire.SSEHeader), got)
 	}
+}
+
+// TestRecordingProxyDistinguishesConsumerCancellation 防止网关主动拒收上游首帧时，
+// 录制代理用连锁产生的 context.Canceled 覆盖真正的网关错误。
+func TestRecordingProxyDistinguishesConsumerCancellation(t *testing.T) {
+	event := "event: result\ndata: {\"output\":{\"choices\":[{}]}}\n\n"
+
+	t.Run("下游已取消", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://origin.test", nil)
+		if err != nil {
+			t.Fatalf("构造请求失败: %v", err)
+		}
+		resp := &http.Response{
+			StatusCode: http.StatusOK,
+			Request:    req,
+			Body: io.NopCloser(&readErrorAfterBytes{
+				data: strings.NewReader(event),
+				err:  context.Canceled,
+			}),
+		}
+		state := &recordingState{}
+
+		relayRecordedSSE(httptest.NewRecorder(), resp, state)
+
+		snap := state.Snapshot()
+		if snap.Err != nil {
+			t.Fatalf("下游主动取消不应记成录制代理错误: %v", snap.Err)
+		}
+		if snap.Response.SSE == nil || len(snap.Response.SSE.Events) != 1 {
+			t.Fatalf("取消前已收到的事件必须保留: %+v", snap.Response.SSE)
+		}
+	})
+
+	t.Run("下游仍活跃", func(t *testing.T) {
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, "http://origin.test", nil)
+		if err != nil {
+			t.Fatalf("构造请求失败: %v", err)
+		}
+		resp := &http.Response{
+			StatusCode: http.StatusOK,
+			Request:    req,
+			Body: io.NopCloser(&readErrorAfterBytes{
+				data: strings.NewReader(event),
+				err:  context.Canceled,
+			}),
+		}
+		state := &recordingState{}
+
+		relayRecordedSSE(httptest.NewRecorder(), resp, state)
+
+		if snap := state.Snapshot(); snap.Err == nil {
+			t.Fatal("下游仍活跃时的 context.Canceled 必须保留为录制代理错误")
+		}
+	})
 }

@@ -69,7 +69,7 @@ func TestRecordChatDSNative(t *testing.T) {
 	baseURL := recordBaseURL(t)
 	outDir := filepath.Clean(fixtureDir)
 
-	// 逐用例开子测试：单条用例失败不该带走其余十二条已经花钱打出来的证据，
+	// 逐用例开子测试：单条用例失败不该带走其余十条已经花钱打出来的证据，
 	// 重录一条也不必把整批重打一遍（`-run TestRecordChatDSNative/basic`）。
 	for _, c := range recordCases {
 		t.Run(c.name, func(t *testing.T) {

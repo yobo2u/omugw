@@ -24,7 +24,7 @@ import (
 //
 // 它不产生任何 ADR-0001 意义上的证据——假源站的响应是手写的。它防的是另一件
 // 事：录制器本身的 bug（断言写反、fixture 拼错、失败仍落盘）不该等到花着钱
-// 打真实上游、且十二份证据已经写进仓库之后才被发现。
+// 打真实上游、且十一份证据已经写进仓库之后才被发现。
 // ============================================================================
 
 // stubOriginConfig 描述本地假源站要回什么。
@@ -105,10 +105,10 @@ func runStubRecording(t *testing.T, c caseMeta, model string) (
 	return rec, state.Snapshot(), req.Header, clientBody
 }
 
-// TestRecorderAssemblesValidFixtureForEveryCase 把十二个用例的装配链路在本地
+// TestRecorderAssemblesValidFixtureForEveryCase 把十一个用例的装配链路在本地
 // 跑一遍：断言全通过、fixture 拼装合法、落盘产物能被严格校验器接受。
 //
-// 覆盖全部十二个用例而不是挑两个：真正会写错的恰恰是那几个形态特殊的
+// 覆盖全部十一个用例而不是挑两个：真正会写错的恰恰是那几个形态特殊的
 // （多模态门、n=2、跨帧工具参数），只跑 basic 与 streaming 等于把它们放过。
 func TestRecorderAssemblesValidFixtureForEveryCase(t *testing.T) {
 	for _, c := range recordCases {

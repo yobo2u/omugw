@@ -577,7 +577,7 @@ func nativeGatewayConfig(upstreamURL, door string) config.Config {
 //
 // 生产矩阵（Phase1）此刻还没兑现这条异构路径——那是后续任务的事，本任务不许
 // 提前投放。但装配对不对必须现在就能证：所以在测试里单独搭一份矩阵，只兑现本次
-// 请求真正用到的那一项能力（text_generation），其余照常不投放。
+// 请求真正用到的能力（text_generation 与 streaming），其余照常不投放。
 //
 // 另外三条路径是为了满足启动期双向对账：build.go 固定注册四扇门，少开一扇
 // 就会以「注册了却没人兑现」拒绝启动，那与本测试要证的事无关。
@@ -587,7 +587,7 @@ func chatToNativeMatrix(t *testing.T) *degrade.Matrix {
 
 	if err := m.Add(degrade.NewRoute(degrade.ProtoOpenAIChat, degrade.ProviderDashScopeNative).
 		Pass(degrade.ExpressibleSet(degrade.ProtoOpenAIChat)...).
-		Redeem(degrade.EndpointOpenAIChat, canonical.CapTextGeneration).
+		Redeem(degrade.EndpointOpenAIChat, canonical.CapTextGeneration, canonical.CapStreaming).
 		Build()); err != nil {
 		t.Fatal(err)
 	}
@@ -703,6 +703,58 @@ func TestBuildNativeTranslatesChatInbound(t *testing.T) {
 	}
 	if len(got.Choices) != 1 || got.Choices[0].Message.Content != "你好" {
 		t.Errorf("响应候选内容不对: %s", w.Body.String())
+	}
+}
+
+// TestBuildNativeRejectsStreamWithMultipleCandidates 防的是「流式下请求多候选（stream=true, n>1）在 DashScope Native 语义静默丢失」。
+//
+// DashScope Native 在流式传输下无法返回多候选（会静默退化回 n=1 导致候选丢失），
+// 适配器在出站守卫阶段必须直接以 422 拒绝请求，且错误信封需点名 code=unsupported_capability 与 param=n，
+// 并保证上游零调用（零字节出门）。
+func TestBuildNativeRejectsStreamWithMultipleCandidates(t *testing.T) {
+	up, rec := nativeUpstream(t, `{}`)
+
+	cfg := nativeGatewayConfig(up.URL, "text-generation")
+	built, err := Build(cfg, chatToNativeMatrix(t), obs.NewMetrics(prometheus.NewRegistry()),
+		slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("构建失败: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, string(degrade.EndpointOpenAIChat),
+		strings.NewReader(`{"model":"m","messages":[{"role":"user","content":"你好"}],"stream":true,"n":2}`))
+	req.Header.Set("Authorization", "Bearer sk-test-1234567890")
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	built.Mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("状态码 = %d，期望 422: %s", w.Code, w.Body.String())
+	}
+
+	calls, _, _, _ := rec.snapshot()
+	if calls != 0 {
+		t.Errorf("上游被调用了 %d 次，期望 0 次（422 应在出站前被拦截）", calls)
+	}
+
+	var errResp struct {
+		Error struct {
+			Type  string `json:"type"`
+			Param string `json:"param"`
+			Code  string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &errResp); err != nil {
+		t.Fatalf("解析 OpenAI 错误信封失败: %v (%s)", err, w.Body.String())
+	}
+	if errResp.Error.Type != "invalid_request_error" {
+		t.Errorf("error.type = %q，期望 invalid_request_error", errResp.Error.Type)
+	}
+	if errResp.Error.Code != "unsupported_capability" {
+		t.Errorf("error.code = %q，期望 unsupported_capability", errResp.Error.Code)
+	}
+	if errResp.Error.Param != "n" {
+		t.Errorf("error.param = %q，期望 n", errResp.Error.Param)
 	}
 }
 
