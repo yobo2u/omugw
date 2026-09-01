@@ -1,0 +1,21 @@
+status: OK
+Content-Type: text/event-stream
+---
+data: {"id":"ddf98694-bada-9e48-b2a4-94b2d2896af8","object":"chat.completion.chunk","created":1755216000,"model":"qwen-plus","choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"call_cc4459d940f84bbeb7edf3","type":"function","function":{"name":"get_weather","arguments":"{\"city\": \""}}]},"finish_reason":null}]}
+
+data: {"id":"ddf98694-bada-9e48-b2a4-94b2d2896af8","object":"chat.completion.chunk","created":1755216000,"model":"qwen-plus","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"杭州\", \"unit\": \""}}]},"finish_reason":null}]}
+
+data: {"id":"ddf98694-bada-9e48-b2a4-94b2d2896af8","object":"chat.completion.chunk","created":1755216000,"model":"qwen-plus","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"celsius\", \"days\":"}}]},"finish_reason":null}]}
+
+data: {"id":"ddf98694-bada-9e48-b2a4-94b2d2896af8","object":"chat.completion.chunk","created":1755216000,"model":"qwen-plus","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":" 3, \"include_hour"}}]},"finish_reason":null}]}
+
+data: {"id":"ddf98694-bada-9e48-b2a4-94b2d2896af8","object":"chat.completion.chunk","created":1755216000,"model":"qwen-plus","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"ly\": true, \"note"}}]},"finish_reason":null}]}
+
+data: {"id":"ddf98694-bada-9e48-b2a4-94b2d2896af8","object":"chat.completion.chunk","created":1755216000,"model":"qwen-plus","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\": \"这是给周末骑行"}}]},"finish_reason":null}]}
+
+data: {"id":"ddf98694-bada-9e48-b2a4-94b2d2896af8","object":"chat.completion.chunk","created":1755216000,"model":"qwen-plus","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"行程做参考的天气查询"}}]},"finish_reason":null}]}
+
+data: {"id":"ddf98694-bada-9e48-b2a4-94b2d2896af8","object":"chat.completion.chunk","created":1755216000,"model":"qwen-plus","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"}"}}]},"finish_reason":"tool_calls"}]}
+
+data: [DONE]
+

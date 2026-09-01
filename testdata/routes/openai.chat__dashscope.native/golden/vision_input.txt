@@ -1,0 +1,4 @@
+status: OK
+Content-Type: application/json
+---
+{"id":"771dcec2-beba-9fa2-bc76-ff8181e1be25","object":"chat.completion","created":1755216000,"model":"qwen-vl-max","choices":[{"index":0,"message":{"role":"assistant","content":"第一张图展示了一位女性和一只狗在海滩上互动的温馨场景。女性坐在沙滩上，穿着格子衬衫和黑色裤子，面带微笑，正与一只金毛犬进行“握手”动作。狗戴着彩色项圈，前爪抬起，与女性的手相触，显得十分友好和亲密。背景是夕阳下的海面，波浪轻轻拍打着沙滩，整个画面充满了温暖、宁静和和谐的氛围。\n\n第二张图是一片纯黑色的画面，没有任何可见的内容或细节。这可能是一张空白图像、加载失败的图片，或者故意留白的设计。由于没有可识别的元素，无法判断其具体含义或用途。"},"finish_reason":"stop","logprobs":null}],"usage":{"prompt_tokens":1269,"completion_tokens":143,"total_tokens":1412}}

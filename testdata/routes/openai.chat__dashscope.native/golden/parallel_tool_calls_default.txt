@@ -1,0 +1,4 @@
+status: OK
+Content-Type: application/json
+---
+{"id":"debd37bf-3c76-99dc-8ba4-643f7084a425","object":"chat.completion","created":1755216000,"model":"qwen-plus","choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{"id":"call_b4fb708bbc4a4ddd821b8b","type":"function","function":{"name":"get_weather","arguments":"{\"city\": \"杭州\"}"}}]},"finish_reason":"tool_calls","logprobs":null}],"usage":{"prompt_tokens":149,"completion_tokens":19,"total_tokens":168}}
