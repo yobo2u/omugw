@@ -81,6 +81,25 @@ modules:
       不变量清单来自本仓库现有两个适配器测试的交集，API 形状按本仓库
       Go 惯例独立设计。未读取、未参考 enterprise/ 目录。
 
+  - path: internal/protocol/dashscopenative
+    implementation_type: clean-room
+    reference:
+      - name: 阿里云百炼 API 参考
+        kind: public-documentation
+        url: https://help.aliyun.com/zh/model-studio/
+      - name: DashScope 流式输出
+        kind: public-documentation
+        url: https://help.aliyun.com/zh/model-studio/stream
+    note: |
+      Native 出站请求编码与成功响应/事件解码，依据公开文档实现；
+      未文档化事项（裸 HTTP 顶层、两种 null、终止帧）以真实录制复核。
+
+  - path: internal/provider/dashscopenative
+    implementation_type: original
+    note: |
+      Chat 到 DashScope Native 的 Composite 出站适配器（非流式完整转换 +
+      同步 transforming reader），基于本仓库 Canonical 与降级矩阵自行设计。
+
 # 计划参考但尚未接入的上游。接入时必须逐条更新上面的 modules 列表。
 planned_upstreams:
   - name: CLIProxyAPI

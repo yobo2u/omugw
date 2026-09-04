@@ -123,7 +123,7 @@ make smoke         # 端到端冒烟，需 OMUGW_SMOKE=1 与真实凭据
 
 ## NOTES
 
-- **当前状态**：14 条路径已登记，4 条已通车（`openai.responses →
+- **当前状态**：14 条路径已登记，5 条已通车（`openai.responses →
   openai.compat`、`openai.chat → openai.compat`、`dashscope.native →
   dashscope.native`，均为同源直通；以及第一条异构路径 `openai.chat →
   dashscope.compatible`）。兑现粒度是**端点 × 能力**：OpenAI 两条直通在各自的
@@ -132,8 +132,13 @@ make smoke         # 端到端冒烟，需 OMUGW_SMOKE=1 与真实凭据
   而非同源——请求保持 Chat 线格式、只做定点修补（model 改写与
   web_search_options → enable_search），在 `/v1/chat/completions` 门兑现 9 项
   可交付能力（7 PASS + 2 DEGRADE），file_input / audio_output 维持 REJECT 422，
-  设计与可用均为 8/11 ≈ 0.727。其余 Native POST 端点由 `POST /api/v1/` 兜底
-  返回 DashScope 协议化 501。其余 10 条路径打过去仍是 501。
+  设计与可用均为 8/11 ≈ 0.727。Chat 到 DashScope Native 是首条请求与响应都完整
+  重编码的异构路径，在 `/v1/chat/completions` 门兑现 8 项能力（text_generation /
+  streaming / tool_calling / parallel_tool_calls / structured_output / reasoning /
+  vision_input / web_search）；`audio_input` 设计处置保持 PASS 但无真实证据、
+  本期不兑现，含它的请求由矩阵在触达上游前返回 501；门可用分 6.5/11 ≈ 0.591，
+  `Gated()` 为真，设计分 7.5/11 ≈ 0.682 不变。其余 Native POST 端点由
+  `POST /api/v1/` 兜底返回 DashScope 协议化 501。其余 9 条路径打过去仍是 501。
 - 配置的 `auth`/`credentials`/`providers`/`models` 四块**要么全配要么全不配**；
   全不配 = 只提供 `/healthz`（合法形态），配一半直接启动失败。
 - `convstore` 是内存态：单副本正确、重启丢失、多副本不共享。因此

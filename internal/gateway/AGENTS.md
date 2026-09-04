@@ -53,7 +53,10 @@ ServeHTTP (handler.go:175)  ← tracked 包装 ResponseWriter
 - 启动期对账按 `Inbound`（协议 + 端点），**不按裸路径**：同一段路径字符串在不同
   入站协议下是两扇不同的门；只比路径，一条路径兑现的门能替另一条路径注册的
   处理器顶账，两个方向的漂移一起判绿。
-- `Deps.Now` 可注入，测试用它控制时间。
+- `Deps.Now` 可注入，测试用它控制 handler 耗时/延迟计时。
+- Chat → Native 的测试 harness 向 `dashscopenativeprovider.New` 传入固定时钟
+  `harnessNow`（保证下游 golden 中 `created` 字段的稳定性，防动态时间戳导致断言抖动）；
+  生产装配传 `nil`（默认回退到 `time.Now`）。
 - 出参 `(outcome, outbound, err)` 中的 `outcome` 直接进 metrics 标签，
   新增分类要同步看 `obs.Metrics`。
 
