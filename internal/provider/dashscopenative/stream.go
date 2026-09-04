@@ -89,9 +89,10 @@ func (p *Provider) translateStream(ctx context.Context, req provider.Request, pr
 	}
 	// 零候选一律拒收：Chat 侧空 choices 是合法形态，客户端会当成「模型什么都
 	// 没说」而正常收下一个 200——真实原因就此消失，且流进入 relay 后已过首字节无法 failover。
-	// 同时候选数必须与请求一致，防止上游静默把 n 压回 1 导致语义丢失。
+	// 仅当显式请求多候选（n > 1）时才调高期望候选数，缺省/0/负数均保持默认的 1 个候选，
+	// 防止健康的上游单候选响应被误判为 upstream_unavailable 并触发无谓的 failover 与重复计费。
 	wantChoices := 1
-	if proj.N != nil {
+	if proj.N != nil && *proj.N > 1 {
 		wantChoices = *proj.N
 	}
 	if len(first.Choices) == 0 || len(first.Choices) != wantChoices {

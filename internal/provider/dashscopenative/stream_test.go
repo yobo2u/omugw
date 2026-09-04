@@ -739,6 +739,32 @@ func TestStreamFirstFrameZeroCandidatesWithZeroNRejectedInCall(t *testing.T) {
 	}
 }
 
+// TestStreamZeroNWithHealthyUpstreamSucceeds 钉死 n=0 且上游正常返回 1 个候选时流式调用成功，
+// 防止将 wantChoices 误设为 0 导致健康上游被误判为 upstream_unavailable 并触发无谓的 failover 与重复计费。
+func TestStreamZeroNWithHealthyUpstreamSucceeds(t *testing.T) {
+	up := newNativeSSEUpstream(t, []string{
+		`{"output":{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"ok"}}]},"request_id":"r-zero-n"}`,
+	})
+	defer up.Close()
+
+	p, _ := newClockedProvider(t)
+	resp, err := p.Call(context.Background(), streamChatRequestN(t, up.URL, 0))
+	if err != nil {
+		t.Fatalf("n=0 且上游返回 1 候选时流式调用应成功，实际报错: %v", err)
+	}
+	out := readAllStream(t, resp)
+	chunks, done := parseChatStream(t, out)
+	if !done {
+		t.Fatalf("应以 [DONE] 收尾: %s", out)
+	}
+	if len(chunks) != 1 {
+		t.Fatalf("应产出 1 条 chunk，实际 %d 条: %s", len(chunks), out)
+	}
+	if got := chunks[0].Choices[0].Delta.Content; got != "ok" {
+		t.Errorf("增量内容应为 ok，实际 %q", got)
+	}
+}
+
 // TestStreamFirstFrameFailureClosesUpstream 钉死首帧失败时上游连接被立即关闭。
 //
 // 漏关会把连接钉在池子里，故障上游因此一路把连接池吃干净，症状却只是
