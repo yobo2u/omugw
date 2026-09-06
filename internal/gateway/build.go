@@ -9,6 +9,7 @@ import (
 	"github.com/yobo2u/omugw/internal/config"
 	"github.com/yobo2u/omugw/internal/credential"
 	"github.com/yobo2u/omugw/internal/degrade"
+	"github.com/yobo2u/omugw/internal/discovery"
 	"github.com/yobo2u/omugw/internal/obs"
 	"github.com/yobo2u/omugw/internal/protocol/dashscopenative"
 	"github.com/yobo2u/omugw/internal/protocol/dashscopewire"
@@ -27,6 +28,12 @@ type Built struct {
 	// Routes 是已注册的转换路径数与已实现数，供启动日志使用。
 	Registered  int
 	Implemented int
+
+	// Discovery 在启用发现时非 nil，由 main 负责起它的后台刷新。
+	//
+	// 不在 Build 里直接起 goroutine：Build 没有进程生命周期的概念，
+	// 在这里起一个没人能停的后台任务，测试里每 Build 一次就漏一个。
+	Discovery *discovery.Refresher
 }
 
 // Build 从配置组装网关。
@@ -121,10 +128,23 @@ func Build(cfg config.Config, m *degrade.Matrix, metrics *obs.Metrics, log *slog
 		return nil, err
 	}
 
+	auth := NewAuthenticator(cfg.Auth.Keys)
+
+	// 发现只充实这扇门的清单，不进 Router——上游目录不等于本网关可调用的
+	// 集合（见 config.Discovery 与 internal/discovery 的包注释）。
+	var registry *discovery.Registry
+	if cfg.Discovery.Enabled {
+		registry = discovery.NewRegistry()
+		built.Discovery = discovery.NewRefresher(
+			registry, discoveryEndpoints(cfg, pools), discovery.Probers(),
+			client, cfg.Discovery, log)
+	}
+	mux.Handle("GET /v1/models", NewModelsHandler(auth, rt, registry))
+
 	deps := Deps{
 		Matrix:    m,
 		Router:    rt,
-		Auth:      NewAuthenticator(cfg.Auth.Keys),
+		Auth:      auth,
 		Limits:    cfg.Limits,
 		Metrics:   metrics,
 		Log:       log,
@@ -184,6 +204,23 @@ func Build(cfg config.Config, m *degrade.Matrix, metrics *obs.Metrics, log *slog
 	}
 
 	return built, nil
+}
+
+// discoveryEndpoints 把配置里的 provider 转成待探测的上游。
+//
+// 不在这里按协议族过滤：该跳过谁由 discovery.Probers() 那张表决定，
+// 两处各判一次早晚会判得不一样。
+func discoveryEndpoints(cfg config.Config, pools map[string]*credential.Pool) []discovery.Endpoint {
+	out := make([]discovery.Endpoint, 0, len(cfg.Providers))
+	for _, p := range cfg.Providers {
+		out = append(out, discovery.Endpoint{
+			Name:    p.Endpoint,
+			Kind:    degrade.Provider(p.Kind),
+			BaseURL: p.BaseURL,
+			Pool:    pools[p.CredentialPool],
+		})
+	}
+	return out
 }
 
 // door 是一行端点注册：一扇门的路径，加上把守它的处理器。
