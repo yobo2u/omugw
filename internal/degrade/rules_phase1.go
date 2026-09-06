@@ -126,14 +126,32 @@ func Phase1() (*Matrix, error) {
 			canonical.CapAudioInput,
 			canonical.CapReasoning,
 		).
-		Degrade("DashScope Native 的并行工具调用行为由上游模型决定，无显式开关可映射",
+		Degrade("DashScope Native 有显式 parallel_tool_calls 开关，但模型支持面与并行行为 "+
+			"不具路径级全局保证；客户端未提交该字段时网关按 OpenAI 默认显式注入 true"+
+			"（Native 默认 false，不注入会静默变成串行）",
 			canonical.CapParallelToolCalls).
 		Degrade("DashScope Native 支持 response_format=json_object，无 strict schema 校验",
 			canonical.CapStructuredOutput).
 		Degrade(noteSearchSwitch, canonical.CapWebSearch).
 		Reject(noteFileRefBound, canonical.CapFileInput).
 		Reject("音频输出需要 Qwen-Omni 的输出格式参数，Chat Completions 入站无法表达",
-			canonical.CapAudioOutput)
+			canonical.CapAudioOutput).
+		// 兑现门槛是端到端真实 fixture 通过（ADR-0001）：十一份用例在
+		// testdata/routes/openai.chat__dashscope.native/，回放与上游请求断言在
+		// internal/gateway/chat_dsnative_conformance_test.go。
+		// file_input / audio_output 是 REJECT，不在兑现之列；audio_input 设计处置
+		// 仍是 PASS，但 qwen-audio-turbo 免费额度耗尽、没有真实 fixture——
+		// 无证据不兑现，门保持 Gated，含它的请求由矩阵以 501 拦下。
+		Redeem(EndpointOpenAIChat,
+			canonical.CapTextGeneration,
+			canonical.CapStreaming,
+			canonical.CapToolCalling,
+			canonical.CapParallelToolCalls,
+			canonical.CapStructuredOutput,
+			canonical.CapReasoning,
+			canonical.CapVisionInput,
+			canonical.CapWebSearch,
+		)
 	if err := m.Add(chatToDSNative.Build()); err != nil {
 		return nil, err
 	}

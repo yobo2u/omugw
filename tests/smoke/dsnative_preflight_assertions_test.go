@@ -18,7 +18,12 @@ type preflightAssertion struct {
 // preflightAssertions 逐用例给出出站体的本质断言。
 //
 // 只断言「这项能力确实被搬过去了」，不逐字节比对整个信封：后者会把一次无关的
-// 字段顺序调整变成 13 处失败，而真正的映射漂移反而淹没在噪声里。
+// 字段顺序调整变成 11 处失败，而真正的映射漂移反而淹没在噪声里。
+//
+// 表里没有 audio_input：它退出了本期举证名单，TestPreflightCaseBodiesMapToNativeUpstream
+// 会把本表与 recordCases 双向对账，多一条同样是失败。生产音频编码的覆盖由协议层
+// 单测守住（internal/protocol/dashscopenative/encode_request_test.go 的 audio 用例），
+// 不随本条目删除而消失。
 func preflightAssertions() map[string]preflightAssertion {
 	oneCandidate := 1
 	twoCandidates := 2
@@ -102,17 +107,6 @@ func preflightAssertions() map[string]preflightAssertion {
 			}
 		}},
 
-		"audio_input": {candidates: oneCandidate, assert: func(t *testing.T, env outboundEnvelope, msgs []outboundMessage) {
-			blocks := contentBlocks(t, msgs[0])
-			if len(blocks) != 2 {
-				t.Fatalf("多模态 content 块数 = %d，期望 2（文本 + 音频）: %v", len(blocks), blocks)
-			}
-			// format 决定 MIME，猜一个等于凭空造事实：上游解不出来会静默丢负载。
-			if want := "data:audio/wav;base64," + tinyWAVBase64; blocks[1]["audio"] != want {
-				t.Errorf("音频块 = %q，期望 %q", blocks[1]["audio"], want)
-			}
-		}},
-
 		"reasoning": {candidates: oneCandidate, assert: func(t *testing.T, env outboundEnvelope, msgs []outboundMessage) {
 			// 编码器契约：none 走 enable_thinking:false，其余档位走 reasoning_effort。
 			// 两个字段互斥，同时发是自相矛盾的请求。
@@ -187,12 +181,6 @@ func preflightAssertions() map[string]preflightAssertion {
 		"multi_candidate_nonstream": {candidates: twoCandidates, assert: func(t *testing.T, env outboundEnvelope, msgs []outboundMessage) {
 			wantParam(t, env.Parameters, "n", 2)
 			// 带 tools 或 reasoning 时 Native 会把 n 压回 1，本用例必须都不带。
-			wantNoParam(t, env.Parameters, "tools")
-			wantNoParam(t, env.Parameters, "reasoning_effort")
-		}},
-
-		"multi_candidate_stream": {candidates: twoCandidates, assert: func(t *testing.T, env outboundEnvelope, msgs []outboundMessage) {
-			wantParam(t, env.Parameters, "n", 2)
 			wantNoParam(t, env.Parameters, "tools")
 			wantNoParam(t, env.Parameters, "reasoning_effort")
 		}},

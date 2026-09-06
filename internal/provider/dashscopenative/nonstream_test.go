@@ -182,6 +182,12 @@ const nativeBody = `{"output":{"choices":[{"finish_reason":"stop",` +
 	`"message":{"role":"assistant","content":"你好"}}]},` +
 	`"usage":{"input_tokens":5,"output_tokens":2,"total_tokens":7},"request_id":"req-abc"}`
 
+// nativeTwoChoicesBody 是两条候选测试共用的上游 Native 成功响应。
+const nativeTwoChoicesBody = `{"output":{"choices":[` +
+	`{"finish_reason":"stop","message":{"role":"assistant","content":"你好1"}},` +
+	`{"finish_reason":"stop","message":{"role":"assistant","content":"你好2"}}]},` +
+	`"usage":{"input_tokens":5,"output_tokens":4,"total_tokens":9},"request_id":"req-abc"}`
+
 // TestNonStreamTransform 钉死非流式在 Call 内完整转换：Native 进、chat.completion 出。
 func TestNonStreamTransform(t *testing.T) {
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -309,7 +315,7 @@ func TestNonStreamOutboundRequest(t *testing.T) {
 		}
 		gotBody = b
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, nativeBody)
+		_, _ = io.WriteString(w, nativeTwoChoicesBody)
 	}))
 	defer up.Close()
 
@@ -435,7 +441,7 @@ func TestNonStreamMultiChoice(t *testing.T) {
 	defer up.Close()
 
 	p, _ := newClockedProvider(t)
-	req := chatRequest(t, up.URL)
+	req := chatRequestWithBody(t, up.URL, `{"model":"m","messages":[{"role":"user","content":"hi"}],"n":2}`)
 	resp, err := p.translateNonStream(context.Background(), req, mustProject(t, req.Raw))
 	if err != nil {
 		t.Fatalf("非流式转换应成功: %v", err)
@@ -847,7 +853,13 @@ func TestNonStreamZeroChoicesFailsClosed(t *testing.T) {
 	// 字节来自上游，形态不符只能是上游或链路的问题；记成 bad_request 会把
 	// 客户端引去改一个本来合法的请求。
 	if cerr.Class != canonical.ClassUpstreamUnavailable {
-		t.Fatalf("应分类为 upstream_unavailable，实际 %v", cerr)
+		t.Fatalf("应分类为 upstream_unavailable，实际 %v", cerr.Class)
+	}
+	if cerr.HTTPStatus() != http.StatusBadGateway {
+		t.Errorf("HTTP 状态码应为 502 Bad Gateway，实际 %d", cerr.HTTPStatus())
+	}
+	if cerr.Retryable {
+		t.Errorf("零候选属于确定性格式违例，不可 failover 重试，实际 Retryable=true")
 	}
 	// request_id 必须点名：这类响应在上游日志里只能靠它捞回来。
 	if !strings.Contains(cerr.Message, "req-empty") {
@@ -885,5 +897,93 @@ func TestNonStreamMissingOutputFailsClosed(t *testing.T) {
 	}
 	if !strings.Contains(cerr.Message, "req-async") {
 		t.Errorf("错误必须带上 request_id 以便追踪，实际 %q", cerr.Message)
+	}
+}
+
+// TestNonStreamCandidateCountMismatch 钉死非流式候选条数不符（欠交付/过交付）一律 fail-closed 且不可重试。
+//
+// 上游实际返回的 choices 数组长度必须与客户端请求的 n（缺省为 1）严格相等：
+// 少给是上游吞了候选（客户端按 n 计费却拿不全），多给是上游越界注入（客户端可能未准备好多候选解析）。
+// 两者都是确定性响应契约违例，记为 upstream_unavailable 但不可重试（Retryable=false），
+// 错误信息必须同时点名期望条数、实际条数与 request_id，且不得触发用量回调。
+func TestNonStreamCandidateCountMismatch(t *testing.T) {
+	tests := []struct {
+		name         string
+		reqBody      string
+		upstreamBody string
+		wantReqID    string
+		wantExpected string
+		wantActual   string
+	}{
+		{
+			name:    "欠交付_请求2条上游给1条",
+			reqBody: `{"model":"m","messages":[{"role":"user","content":"hi"}],"n":2}`,
+			upstreamBody: `{"output":{"choices":[` +
+				`{"finish_reason":"stop","message":{"role":"assistant","content":"你好"}}]},` +
+				`"usage":{"input_tokens":5,"output_tokens":2},"request_id":"req-under"}`,
+			wantReqID:    "req-under",
+			wantExpected: "2",
+			wantActual:   "1",
+		},
+		{
+			name:    "过交付_默认1条上游给2条",
+			reqBody: `{"model":"m","messages":[{"role":"user","content":"hi"}]}`,
+			upstreamBody: `{"output":{"choices":[` +
+				`{"finish_reason":"stop","message":{"role":"assistant","content":"你好1"}},` +
+				`{"finish_reason":"stop","message":{"role":"assistant","content":"你好2"}}]},` +
+				`"usage":{"input_tokens":5,"output_tokens":4},"request_id":"req-over"}`,
+			wantReqID:    "req-over",
+			wantExpected: "1",
+			wantActual:   "2",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Given: 构造提供不匹配候选数量的上游 HTTP 服务与出站请求
+			up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, tc.upstreamBody)
+			}))
+			defer up.Close()
+
+			p, _ := newClockedProvider(t)
+			var usageCalls int
+			req := chatRequestWithBody(t, up.URL, tc.reqBody)
+			req.OnDashScopeUsage = func(canonical.Usage) { usageCalls++ }
+
+			// When: 通过公共入口 Provider.Call 发起非流式请求
+			resp, err := p.Call(context.Background(), req)
+
+			// Then: 必须拒收并返回 502/upstream_unavailable，不可重试，附带追踪信息且不用量回调
+			if err == nil {
+				t.Fatalf("候选条数不符时必须返回错误")
+			}
+			if resp != nil {
+				t.Errorf("失败时不得返回响应，实际 %+v", resp)
+			}
+			cerr := canonical.AsError(err)
+			if cerr.Class != canonical.ClassUpstreamUnavailable {
+				t.Errorf("错误分类应为 upstream_unavailable，实际 %v", cerr.Class)
+			}
+			if cerr.HTTPStatus() != http.StatusBadGateway {
+				t.Errorf("HTTP 状态码应为 502 Bad Gateway，实际 %d", cerr.HTTPStatus())
+			}
+			if cerr.Retryable {
+				t.Errorf("候选条数不符属于确定性响应违例，不可 failover 重试，实际 Retryable=true")
+			}
+			if !strings.Contains(cerr.Message, tc.wantReqID) {
+				t.Errorf("错误信息必须包含 request_id %q，实际 %q", tc.wantReqID, cerr.Message)
+			}
+			if !strings.Contains(cerr.Message, tc.wantExpected) {
+				t.Errorf("错误信息必须包含期望条数 %q，实际 %q", tc.wantExpected, cerr.Message)
+			}
+			if !strings.Contains(cerr.Message, tc.wantActual) {
+				t.Errorf("错误信息必须包含实际条数 %q，实际 %q", tc.wantActual, cerr.Message)
+			}
+			if usageCalls != 0 {
+				t.Errorf("失败时不应调用 usage 回调，实际调用 %d 次", usageCalls)
+			}
+		})
 	}
 }

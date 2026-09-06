@@ -40,7 +40,8 @@ const (
 	tinyWAVBase64 = "UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA="
 )
 
-// 13 份客户端请求体。每一份只做一件事：把该用例声称的那项能力真正用上，
+// 11 份举证请求体，另加一份音频负例请求体（bodyAudioInput，仅供 501 探针使用，
+// 不进 recordCases）。每一份只做一件事：把该用例声称的那项能力真正用上，
 // 且不夹带任何在 DashScope Native 无落点的字段（frequency_penalty / logit_bias /
 // service_tier / store / user / metadata / audio）——夹带一个就会在出门前被
 // rejectUnmappable 拦成 422，录到的将是网关的拒绝而不是上游的能力。
@@ -128,11 +129,10 @@ var (
 
 	// 多候选不带 tools、也不带 reasoning：Native 在这两种组合下会把 n 静默压回 1，
 	// 带上它们等于把「n 生效了吗」这个问题换成一个没有答案的问题。
+	//
+	// 只有非流式一份：本期 stream=true 搭 n>1 在出门前就被拒成 422，
+	// 留一份流式多候选请求体等于给一个永远发不出去的请求备着弹药。
 	bodyMultiCandidateNonStream = chatBody(`{"model":%s,"n":2,"messages":[` +
-		`{"role":"user","content":"给这家咖啡店起个名字。"}]}`)
-
-	bodyMultiCandidateStream = chatBody(`{"model":%s,"n":2,"stream":true,` +
-		`"stream_options":{"include_usage":true},"messages":[` +
 		`{"role":"user","content":"给这家咖啡店起个名字。"}]}`)
 
 	// 刻意不写 parallel_tool_calls：考的正是「客户端没提交时出站体是否被注入 true」。

@@ -19,7 +19,7 @@ import (
 
 // TestRecordedFixturesAreValid 校验录制产出的 fixture 是否合法且完备。
 //
-// 只在目录整个不存在时跳过（尚未录制）。目录一旦出现，就必须是十三份一个不多
+// 只在目录整个不存在时跳过（尚未录制）。目录一旦出现，就必须是十一份一个不多
 // 一个不少的完整证据——「录到一半」在回放侧看起来与「本来就只有这些」毫无区别。
 func TestRecordedFixturesAreValid(t *testing.T) {
 	dir := filepath.Clean(fixtureDir)
@@ -59,12 +59,18 @@ func loadRecordedFixtures(t *testing.T, dir string) map[string]testkit.Fixture {
 	byName := make(map[string]testkit.Fixture, len(recordCases))
 	got := make([]string, 0, len(entries))
 	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
-			// 多出来的非 fixture 文件同样要拦：一个手写进来的 .txt 说明
-			// 这个目录已经不只是录制产物了。
+		if e.IsDir() {
+			if e.Name() == "golden" {
+				continue
+			}
+			t.Errorf("fixture 目录混入了非预期目录 %q", e.Name())
+			continue
+		}
+		if !strings.HasSuffix(e.Name(), ".json") {
 			t.Errorf("fixture 目录混入了非 fixture 条目 %q", e.Name())
 			continue
 		}
+
 		name := strings.TrimSuffix(e.Name(), ".json")
 		got = append(got, name)
 		path := filepath.Join(dir, e.Name())

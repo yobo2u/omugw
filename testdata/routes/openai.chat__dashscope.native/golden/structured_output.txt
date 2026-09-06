@@ -1,0 +1,5 @@
+status: OK
+Content-Type: application/json
+X-Omugw-Degraded: structured_output=DashScope Native 支持 response_format=json_object，无 strict schema 校验
+---
+{"id":"b1a28234-0033-9ed0-88c7-4c7516696ad1","object":"chat.completion","created":1755216000,"model":"qwen-plus","choices":[{"index":0,"message":{"role":"assistant","content":"{\n  \"name\": \"杭州\",\n  \"population_million\": 12.5,\n  \"province\": \"浙江省\"\n  }"},"finish_reason":"stop","logprobs":null}],"usage":{"prompt_tokens":16,"completion_tokens":32,"total_tokens":48}}

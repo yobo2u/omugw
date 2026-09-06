@@ -108,7 +108,6 @@ type streamObservation struct {
 	toolArgFrags []string
 	finishReason string
 	reasoning    int
-	indexes      []int
 }
 
 // observeStream 把下游事件流解析成断言所需的观测量。
@@ -147,7 +146,6 @@ func observeStream(t *testing.T, rec *httptest.ResponseRecorder) streamObservati
 		}
 		obs.dataChunks++
 		for _, ch := range chunk.Choices {
-			obs.indexes = append(obs.indexes, ch.Index)
 			if ch.Delta.ReasoningContent != "" {
 				obs.reasoning++
 			}
@@ -208,7 +206,5 @@ func assertLiveStream(t *testing.T, c caseMeta, rec *httptest.ResponseRecorder) 
 		if obs.reasoning == 0 {
 			t.Error("下游流没有任何 chunk 带 reasoning_content，深度思考没有落到客户端")
 		}
-	case "multi_candidate_stream":
-		assertDistinctIndexes(t, "下游 chunk", obs.indexes)
 	}
 }

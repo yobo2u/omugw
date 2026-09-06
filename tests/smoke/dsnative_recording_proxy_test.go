@@ -274,7 +274,18 @@ func relayRecordedSSE(w http.ResponseWriter, resp *http.Response, state *recordi
 			}
 			return
 		}
+		if responseRequestEnded(resp, err) {
+			return
+		}
 		state.storeErr(fmt.Errorf("读取上游 SSE 失败: %w", err))
 		return
 	}
+}
+
+func responseRequestEnded(resp *http.Response, err error) bool {
+	if resp.Request == nil {
+		return false
+	}
+	ctxErr := resp.Request.Context().Err()
+	return ctxErr != nil && errors.Is(err, ctxErr)
 }

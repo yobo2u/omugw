@@ -1,0 +1,5 @@
+status: OK
+Content-Type: application/json
+X-Omugw-Degraded: parallel_tool_calls=DashScope Native 有显式 parallel_tool_calls 开关，但模型支持面与并行行为 不具路径级全局保证；客户端未提交该字段时网关按 OpenAI 默认显式注入 true（Native 默认 false，不注入会静默变成串行）
+---
+{"id":"4aa31f69-830a-99c3-8843-83aa55854039","object":"chat.completion","created":1755216000,"model":"qwen-plus","choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{"id":"call_18e8a08bdb6f4af1b15ddb","type":"function","function":{"name":"get_weather","arguments":"{\"city\": \"杭州\"}"}},{"id":"call_1da6fdf753374c91b352ee","type":"function","function":{"name":"get_time","arguments":"{\"city\": \"杭州\"}"}}]},"finish_reason":"tool_calls","logprobs":null}],"usage":{"prompt_tokens":208,"completion_tokens":39,"total_tokens":247}}

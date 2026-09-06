@@ -89,9 +89,16 @@ func TestRejectNGreaterThanOneWithTools(t *testing.T) {
 	assertUnsupported(t, err, "n")
 }
 
-// TestRejectNGreaterThanOneWithReasoning 钉死 n>1 + 非 none 推理即 422，防止未文档化的强制回落。
-func TestRejectNGreaterThanOneWithReasoning(t *testing.T) {
+// TestRejectStreamNGreaterThanOneWithReasoning 钉死流式 + n>1 在带 reasoning 组合下同样被拒（由通用的 stream+n>1 规则拦截）。
+func TestRejectStreamNGreaterThanOneWithReasoning(t *testing.T) {
 	proj, canon := mustInputs(t, `{"model":"m","messages":[{"role":"user","content":"hi"}],"n":2,"reasoning_effort":"low","stream":true}`)
+	err := rejectUnmappable(proj, canon)
+	assertUnsupported(t, err, "n")
+}
+
+// TestRejectStreamNGreaterThanOne 钉死流式 + n>1 即 422，防止上游静默将 n 压回 1 导致候选丢失。
+func TestRejectStreamNGreaterThanOne(t *testing.T) {
+	proj, canon := mustInputs(t, `{"model":"m","messages":[{"role":"user","content":"hi"}],"stream":true,"n":2}`)
 	err := rejectUnmappable(proj, canon)
 	assertUnsupported(t, err, "n")
 }

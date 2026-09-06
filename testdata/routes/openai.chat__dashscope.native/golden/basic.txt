@@ -1,0 +1,4 @@
+status: OK
+Content-Type: application/json
+---
+{"id":"48ad73ab-4616-944f-949e-b13c98074f2c","object":"chat.completion","created":1755216000,"model":"qwen-plus","choices":[{"index":0,"message":{"role":"assistant","content":"杭州是浙江省省会，以西湖美景、丝绸文化和数字经济闻名的千年古都与现代创新之城。"},"finish_reason":"stop","logprobs":null}],"usage":{"prompt_tokens":30,"completion_tokens":23,"total_tokens":53}}

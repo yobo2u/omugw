@@ -1,0 +1,5 @@
+status: OK
+Content-Type: application/json
+X-Omugw-Degraded: structured_output=DashScope Native 支持 response_format=json_object，无 strict schema 校验; web_search=DashScope 的 enable_search 是布尔开关，承载不了 OpenAI web_search 工具的参数，仅开关本身被映射
+---
+{"id":"2233e215-24f2-9312-8af6-e1351bf94c03","object":"chat.completion","created":1755216000,"model":"qwen-vl-max","choices":[{"index":0,"message":{"role":"assistant","content":"{\n  \"needs_tool\": false,\n  \"summary\": \"无法获取图片内容，因此无法结合最新资讯进行分析。\"\n}"},"finish_reason":"stop","logprobs":null}],"usage":{"prompt_tokens":229,"completion_tokens":29,"total_tokens":258}}

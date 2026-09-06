@@ -46,7 +46,7 @@
 | `dashscope.realtime` | `openai.realtime` | 规划中 |  | 10 | 0 | 2 | 3 | 12 | 0.733 | — |
 | `openai.chat` | `openai.compat` | 已实现 | ✅ | 11 | 0 | 0 | 0 | 16 | 1.000 | 1.000 |
 | `openai.chat` | `dashscope.compatible` | 已实现 |  | 7 | 0 | 2 | 2 | 16 | 0.727 | 0.727 |
-| `openai.chat` | `dashscope.native` | 规划中 |  | 6 | 0 | 3 | 2 | 16 | 0.682 | — |
+| `openai.chat` | `dashscope.native` | 已实现 |  | 6 | 0 | 3 | 2 | 16 | 0.682 | 0.591（9 项中 8 项已投放） |
 | `openai.chat` | `anthropic.messages` | 规划中 |  | 6 | 0 | 1 | 4 | 16 | 0.591 | — |
 | `openai.realtime` | `openai.realtime` | 规划中 | ✅ | 12 | 0 | 0 | 0 | 15 | 1.000 | — |
 | `openai.realtime` | `dashscope.ws.realtime` | 规划中 | ✅ | 10 | 0 | 2 | 0 | 15 | 0.917 | — |
@@ -64,6 +64,7 @@
 | dashscope.native | dashscope.native | /api/v1/services/aigc/multimodal-generation/generation | text_generation, streaming, vision_input, audio_input, video_input | 0.278（18 项中 5 项已投放） |
 | dashscope.native | dashscope.native | /api/v1/services/aigc/text-generation/generation | text_generation, streaming, tool_calling, reasoning, web_search | 0.278（18 项中 5 项已投放） |
 | openai.chat | dashscope.compatible | /v1/chat/completions | text_generation, streaming, tool_calling, parallel_tool_calls, structured_output, reasoning, vision_input, audio_input, web_search | 0.727 |
+| openai.chat | dashscope.native | /v1/chat/completions | text_generation, streaming, tool_calling, parallel_tool_calls, structured_output, reasoning, vision_input, web_search | 0.591（9 项中 8 项已投放） |
 | openai.chat | openai.compat | /v1/chat/completions | text_generation, streaming, tool_calling, parallel_tool_calls, structured_output, reasoning, vision_input, audio_input, file_input, audio_output, web_search | 1.000 |
 | openai.responses | openai.compat | /v1/responses | text_generation, streaming, tool_calling, parallel_tool_calls, structured_output, reasoning, vision_input, audio_input, file_input, audio_output, image_generation, stateful_conversation, web_search, computer_use | 0.929（开启 convstore 后 1.000） |
 
@@ -272,7 +273,7 @@
 | `text_generation` | `PASSTHROUGH` | — |
 | `streaming` | `PASSTHROUGH` | — |
 | `tool_calling` | `PASSTHROUGH` | — |
-| `parallel_tool_calls` | `DEGRADE` | DashScope Native 的并行工具调用行为由上游模型决定，无显式开关可映射 |
+| `parallel_tool_calls` | `DEGRADE` | DashScope Native 有显式 parallel_tool_calls 开关，但模型支持面与并行行为 不具路径级全局保证；客户端未提交该字段时网关按 OpenAI 默认显式注入 true（Native 默认 false，不注入会静默变成串行） |
 | `structured_output` | `DEGRADE` | DashScope Native 支持 response_format=json_object，无 strict schema 校验 |
 | `reasoning` | `PASSTHROUGH` | — |
 | `reasoning_signature` | `N/A` | 该协议的线格式没有承载推理签名的字段，客户端无从表达；这项能力要到 Anthropic Messages 入站接入后（Phase 2）才可达 |
@@ -470,7 +471,7 @@
 | `text_generation` | `PASSTHROUGH` | — |
 | `streaming` | `PASSTHROUGH` | — |
 | `tool_calling` | `PASSTHROUGH` | — |
-| `parallel_tool_calls` | `DEGRADE` | DashScope Native 的并行工具调用行为由上游模型决定，无显式开关可映射 |
+| `parallel_tool_calls` | `DEGRADE` | DashScope Native 有显式 parallel_tool_calls 开关，但模型支持面与并行行为 不具路径级全局保证；客户端未提交该字段时网关按 OpenAI 默认显式注入 true（Native 默认 false，不注入会静默变成串行） |
 | `structured_output` | `DEGRADE` | DashScope Native 支持 response_format=json_object，无 strict schema 校验 |
 | `reasoning` | `PASSTHROUGH` | — |
 | `reasoning_signature` | `N/A` | 该协议的线格式没有承载推理签名的字段，客户端无从表达；这项能力要到 Anthropic Messages 入站接入后（Phase 2）才可达 |

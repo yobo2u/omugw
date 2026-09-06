@@ -1,0 +1,130 @@
+{
+  "name": "openai.chat__dashscope.native/structured_output",
+  "note": "structured_output 结构化输出降级（json_object/json_schema 保留与降级头）",
+  "request": {
+    "method": "POST",
+    "path": "/v1/chat/completions",
+    "headers": {
+      "authorization": "\u003credacted\u003e",
+      "content-type": "application/json"
+    },
+    "body": {
+      "model": "omugw-record-client-model",
+      "response_format": {
+        "type": "json_schema",
+        "json_schema": {
+          "name": "city_brief",
+          "strict": true,
+          "schema": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "province": {
+                "type": "string"
+              },
+              "population_million": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "name",
+              "province",
+              "population_million"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "messages": [
+        {
+          "role": "user",
+          "content": "用 JSON 描述杭州。"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "output": {
+        "choices": [
+          {
+            "message": {
+              "content": "{\n  \"name\": \"杭州\",\n  \"population_million\": 12.5,\n  \"province\": \"浙江省\"\n  }",
+              "role": "assistant"
+            },
+            "finish_reason": "stop"
+          }
+        ]
+      },
+      "usage": {
+        "total_tokens": 48,
+        "output_tokens": 32,
+        "input_tokens": 16,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "request_id": "b1a28234-0033-9ed0-88c7-4c7516696ad1"
+    }
+  },
+  "upstream": {
+    "method": "POST",
+    "path": "/api/v1/services/aigc/text-generation/generation",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip",
+      "authorization": "\u003credacted\u003e",
+      "content-length": "472",
+      "content-type": "application/json",
+      "user-agent": "Go-http-client/1.1"
+    },
+    "body": {
+      "model": "qwen-plus",
+      "input": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "用 JSON 描述杭州。"
+          }
+        ]
+      },
+      "parameters": {
+        "parallel_tool_calls": true,
+        "response_format": {
+          "type": "json_schema",
+          "json_schema": {
+            "name": "city_brief",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "province": {
+                  "type": "string"
+                },
+                "population_million": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "name",
+                "province",
+                "population_million"
+              ],
+              "additionalProperties": false
+            },
+            "strict": true
+          }
+        },
+        "result_format": "message"
+      }
+    }
+  }
+}

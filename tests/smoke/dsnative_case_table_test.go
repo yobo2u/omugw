@@ -6,8 +6,17 @@ import (
 	nativewire "github.com/yobo2u/omugw/internal/protocol/dashscopenative"
 )
 
-// recordCases 是 Chat -> DashScope Native 路径必须交付举证的 13 个测试用例元数据表。
+// recordCases 是 Chat -> DashScope Native 路径本期必须交付举证的 11 个测试用例元数据表。
 // 降级用例（expectDegraded=true）必须包含显式降级举证。
+//
+// audio_input 不在本表：设计处置仍是 PASS，但 qwen-audio-turbo 免费额度耗尽、
+// 没有真实 fixture——无证据不兑现（ADR-0001）。未来恢复投放的条件见
+// 2026-08-30 部分投放设计的「后续恢复条件」。
+//
+// multi_candidate_stream 不在本表：本期不承诺多候选流式，stream=true 搭 n>1
+// 在出门前就被拒成 422。给它留一个录制格子，等于让录制器去打一个网关自己
+// 都不会放行的请求——录不出任何证据，却先把这项能力写进了名单。
+// 非流式的 multi_candidate_nonstream 不受影响，仍在本表。
 var recordCases = []caseMeta{
 	{
 		name:           "basic",
@@ -46,21 +55,12 @@ var recordCases = []caseMeta{
 		body:           bodyVisionInput,
 	},
 	{
-		name:           "audio_input",
-		door:           nativewire.DoorMultimodalGeneration,
-		modelRole:      modelRoleAudio,
-		stream:         false,
-		expectDegraded: false,
-		note:           "audio_input 音频输入",
-		body:           bodyAudioInput,
-	},
-	{
 		name:           "reasoning",
 		door:           nativewire.DoorTextGeneration,
-		modelRole:      modelRoleText,
+		modelRole:      modelRoleReasoning,
 		stream:         true,
 		expectDegraded: false,
-		note:           "reasoning 深度思考流式输出（enable_thinking 与流式 reasoning_content）",
+		note:           "reasoning 深度思考流式输出（reasoning_effort 与流式 reasoning_content）",
 		body:           bodyReasoning,
 	},
 	{
@@ -107,15 +107,6 @@ var recordCases = []caseMeta{
 		expectDegraded: false,
 		note:           "multi_candidate_nonstream 多候选非流式（n=2 搭载在 text_generation 上的证据）",
 		body:           bodyMultiCandidateNonStream,
-	},
-	{
-		name:           "multi_candidate_stream",
-		door:           nativewire.DoorTextGeneration,
-		modelRole:      modelRoleText,
-		stream:         true,
-		expectDegraded: false,
-		note:           "multi_candidate_stream 多候选流式（n=2 搭载在 streaming 上的证据）",
-		body:           bodyMultiCandidateStream,
 	},
 	{
 		name:           "parallel_tool_calls_default",

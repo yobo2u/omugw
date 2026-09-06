@@ -1,0 +1,291 @@
+status: OK
+Content-Type: text/event-stream
+---
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"1"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":".  **理解"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"问题：**\n    *  "},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":" 动物总数（鸡 +"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":" 兔）= 8\n"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"    *   腿总数"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"（鸡腿 + 兔腿）="},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":" 26\n    *  "},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":" 需要求解：鸡的数量和"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"兔子的数量。\n    *   已"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"知：一只鸡有 "},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"2 条腿，一只兔子有 "},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"4 条腿。\n\n2.  **"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"选择方法：**\n    *   方法"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":" 1：代数"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"法（方程组）\n    *"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"   方法 2：假设"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"法（算术解"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"法）\n    *   方法 3"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"：抬腿法（"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"中国古代数学方法）\n\n3. "},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":" **起草解答：**\n\n    *  "},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":" *方法 1：代数法"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"*\n        设 $x$ 为鸡"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"的数量，$y$ 为兔子的"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"数量。\n        $x + y ="},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":" 8$  （"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"方程 1）\n        $2x"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":" + 4y = 26"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"$ （方程 2）\n"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"        由方程 1 可"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"得：$x = 8"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":" - y$\n        代入方程 "},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"2：$2(8 - y"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":") + 4y = 26"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"$\n        $16 - 2"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"y + 4y = 26"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"$\n        $16 + 2y"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":" = 26$\n        $2y"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":" = 10$\n        $y"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":" = 5$ （兔子）\n"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"        $x = 8 - "},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"5 = 3$ （鸡）\n\n"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"    *   *方法 2："},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"假设法（假设全是鸡）*\n"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"        假设 "},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"8 只全都是鸡。\n       "},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":" 腿总数 = $8 \\"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"times 2 = 16$ 条"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"腿。\n        题目中的"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"实际腿数 = 26 条腿"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"。\n        腿数差 ="},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":" $26 - 16 = 10"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"$ 条腿。\n        每"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"只兔子比鸡多出 $"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"4 - 2 = 2$"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":" 条腿。\n        兔子的数量"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":" = $10 / 2 ="},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":" 5$ 只兔子。\n       "},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":" 鸡的数量 = $8 - "},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"5 = 3$ 只鸡。\n\n"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"4.  **格式化输出："},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"**\n    *  "},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":" 首先给出清晰"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"、直接的答案。\n    *  "},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":" 提供逐步推理过程（"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"使用一种或多种简单"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"易懂的方法，如代"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"数法和假设法）。\n"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"    *   保持语言"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"自然且有帮助。\n\n5.  **"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"完善输出（起草时的"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"自我修正/润色）：**\n"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"    *   答案："},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"3 只鸡，5 只"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"兔子。\n    *  "},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":" 展示方程组法，因为非常"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"直观。\n    *   展示"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"假设法，因为这是此类"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"题目经典的小学数学解"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"法。\n\n6.  **最终"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"润色（中文）："},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"**\n    笼子里"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"有 3 只鸡，"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"5 只兔子。\n    可以用"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"以下两种常见方法来解答：\n   "},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":" 方法一：假设法"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"\n    ...\n    方法二："},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"列方程\n    ..."},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":"笼子里有 **"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":"3 只鸡** 和 **5 只"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":"兔子**。\n\n以下提供两种常用的"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":"解题思路：\n\n**方法一"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":"：假设法（算术解法"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":"）**\n1. 假设"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":"这 8 只全都是鸡。"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":"因为每只鸡有 2 条"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":"腿，那么一共有 $"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":"8 \\times 2 = 16"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":"$ 条腿。\n2."},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":" 题目中说实际有"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":" 26 条腿，比我们"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":"假设的多出了 $26 -"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":" 16 = 10$ 条腿"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":"。\n3. 这多出的"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":" 10 条腿是因为把"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":"兔子也当成了鸡。"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":"每只兔子比鸡多 2"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":" 条腿（$4 - 2"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":" = 2$）。\n4."},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":" 所以，兔子的数量是"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":" $10 \\div "},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":"2 = 5$ 只。\n"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":"5. 鸡的数量就是 $"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":"8 - 5 = 3$"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":" 只。\n\n**方法二：列方程"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":"（代数解法）"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":"**\n设鸡有 $x"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":"$ 只，兔子有 $y"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":"$ 只。根据题意可以"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":"列出两个方程：\n1."},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":" 头数：$"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":"x + y = 8$\n2"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":". 腿数：$2"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":"x + 4y = 26"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":"$\n\n由第一个方程可得"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":" $x = 8 - y$"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":"，代入第二个方程：\n$2("},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":"8 - y) + 4y"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":" = 26$\n$16 -"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":" 2y + 4y ="},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":" 26$\n$2y = "},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":"10$\n$y = 5$"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":" （即兔子有 5 只）\n"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":"那么鸡的数量 $x = 8"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":" - 5 = 3$ 只"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":"。\n\n验证：3只鸡有"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":"6条腿，5只兔子"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":"有20条腿，共"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":"8只动物，26"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":"条腿，完全正确"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":"。"},"finish_reason":null}]}
+
+data: {"id":"0210a577-daec-98f7-a4a9-9cd8c0cbeba7","object":"chat.completion.chunk","created":1755216000,"model":"glm-5.2","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+data: [DONE]
+

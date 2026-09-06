@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -97,15 +98,26 @@ func (p *Provider) translateNonStream(ctx context.Context, req provider.Request,
 		return nil, err
 	}
 
-	// 零候选一律拒收，不编成 choices:[] 交付。
+	// 候选条数不符一律拒收（零候选、欠交付、过交付）：
 	//
 	// 空数组在 Chat 线格式里是合法的，客户端会当成「模型什么都没说」而正常收下
 	// 一个 200——真实原因（异步任务受理、上游内部截断、信封形态不符）就此消失，
-	// 既进不了错误率，也换不到另一个凭据或 Provider 重试。带上 request_id 是
-	// 因为这类响应在上游日志里只能靠它捞回来。
-	if len(res.Choices) == 0 {
-		return nil, canonical.Newf(canonical.ClassUpstreamUnavailable,
-			"上游响应没有任何候选（request_id=%q）", res.RequestID)
+	// 既进不了错误率，也换不到另一个凭据或 Provider 重试。
+	// 欠交付是上游吞了候选（客户端按 n 计费却拿不全），过交付是上游越界注入。
+	// 两者均属于确定性响应契约违例，不可重试（Retryable=false）。
+	// 仅当显式请求多候选（n > 1）时才调高期望候选数，缺省/0/负数均保持默认的 1 个候选，
+	// 防止健康的上游单候选响应被误判为 upstream_unavailable。
+	wantChoices := 1
+	if proj.N != nil && *proj.N > 1 {
+		wantChoices = *proj.N
+	}
+	if len(res.Choices) != wantChoices {
+		return nil, &canonical.Error{
+			Class:             canonical.ClassUpstreamUnavailable,
+			Message:           fmt.Sprintf("上游响应候选数为 %d，期望 %d（request_id=%q）", len(res.Choices), wantChoices, res.RequestID),
+			Retryable:         false,
+			UpstreamRequestID: res.RequestID,
+		}
 	}
 
 	choices := make([]openaichat.CompletionChoice, 0, len(res.Choices))

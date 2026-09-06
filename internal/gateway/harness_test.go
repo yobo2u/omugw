@@ -76,12 +76,18 @@ func dashScopeCompatFactory(_ degrade.Provider, client *httpx.Client) provider.P
 	return dashscopecompat.New(client, nil)
 }
 
+// harnessNow 提供固定的时间，供回放测试生成稳定的 created 字段。
+func harnessNow() time.Time {
+	return time.Unix(1755216000, 0).UTC()
+}
+
 // dashScopeNativeFactory 构造 DashScope Native Composite 适配器。
 //
 // 与 build.go 用同一个构造函数：装配一旦在两处各写一份，harness 测过的就不是
 // 生产装出来的那个东西——线上装成直通而 harness 装着 Composite，测试照绿。
 func dashScopeNativeFactory(_ degrade.Provider, client *httpx.Client) provider.Provider {
-	return dsnativeprovider.New(client, nil)
+
+	return dsnativeprovider.New(client, harnessNow)
 }
 
 // harnessConfig 是一套网关 harness 的完整装配声明。
@@ -100,6 +106,11 @@ type harnessConfig struct {
 	// target」，与生产配置一致（config.Validate 只允许 Native kind 声明它），
 	// 因此既有 harness 无需改动。
 	nativeEndpoint string
+
+	// upstreamModel 允许测试覆盖默认的 "upstream-model"。
+	// 供 conformance 回放使用，避免在内存中篡改 fixture 的预期上游请求体
+	// 来迎合 harness 的默认值。
+	upstreamModel string
 }
 
 // newHarness 是 Responses 入站的 harness。
@@ -162,6 +173,19 @@ func newChatDSCompatHarness(t *testing.T, ups ...*upstream) *harness {
 // door 决定候选目标的门：纯文本用例用 text-generation，含媒体的用
 // multimodal-generation。门由调用点显式声明而不是从请求内容推断——那正是
 // 生产侧 config.Validate 守着的同一条规矩，harness 不该另立一套。
+func newChatDSNativeHarnessWithModel(t *testing.T, door string, model string, ups ...*upstream) *harness {
+	t.Helper()
+	return newHarnessFor(t, harnessConfig{
+		requestPath:    string(degrade.EndpointOpenAIChat),
+		kind:           degrade.ProviderDashScopeNative,
+		newHandler:     NewChatHandler,
+		limits:         config.Default().Limits,
+		factory:        dashScopeNativeFactory,
+		nativeEndpoint: door,
+		upstreamModel:  model,
+	}, ups...)
+}
+
 func newChatDSNativeHarness(t *testing.T, door string, ups ...*upstream) *harness {
 	t.Helper()
 	return newHarnessFor(t, harnessConfig{
@@ -236,11 +260,17 @@ func newHarnessFor(t *testing.T, cfg harnessConfig, ups ...*upstream) *harness {
 
 	for i, u := range ups {
 		name := endpointName(i)
+		model := cfg.upstreamModel
+		if model == "" {
+			model = "upstream-model"
+		}
+
 		targets = append(targets, router.Target{
-			Kind:           cfg.kind,
-			Endpoint:       name,
-			BaseURL:        u.srv.URL,
-			UpstreamModel:  "upstream-model",
+			Kind:          cfg.kind,
+			Endpoint:      name,
+			BaseURL:       u.srv.URL,
+			UpstreamModel: model,
+
 			CredentialPool: name,
 			NativeEndpoint: cfg.nativeEndpoint,
 		})

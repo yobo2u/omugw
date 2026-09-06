@@ -36,6 +36,8 @@
 - **设计处置与当前投放分离**：`Pass`/`Degrade`/`Reject`/`Emulate` 说的是这条路径
   最终该怎么走；`Redeem` 说的是哪些能力的实现真的写完了。`Check` 对已声明但未投放
   的能力返回 501（`ClassNotImplemented`），而不是当作可用放过去。
+- **部分投放形态**：路径转正但门可保持 `Gated()`（设计可交付、当前未投放的格子返回 501，
+  防的是把缺少证据的能力误放给上游）；可用列永远端点相对。
 - `Degrade` 的 `Note` 必须写清**丢了什么**——它会进 `X-Omugw-Degraded` 响应头。
 - `Reject` 的 `Note` 必须写清**为什么**——它会成为客户端错误消息的一部分。
 - `Emulate` 必须带非空 `RequiresFeature`，且必须在 `Note` 里写明运维代价。

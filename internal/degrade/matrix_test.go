@@ -124,6 +124,7 @@ func TestImplementedRoutesAreExplicit(t *testing.T) {
 		string(ProtoOpenAIChat) + " -> " + string(ProviderOpenAICompat):         true,
 		string(ProtoDashScopeNative) + " -> " + string(ProviderDashScopeNative): true,
 		string(ProtoOpenAIChat) + " -> " + string(ProviderDashScopeCompatible):  true,
+		string(ProtoOpenAIChat) + " -> " + string(ProviderDashScopeNative):      true,
 	}
 
 	m, err := Phase1()
@@ -192,6 +193,17 @@ func TestRedeemedCapabilitiesAreExplicit(t *testing.T) {
 			canonical.CapVisionInput,
 			canonical.CapAudioInput,
 			canonical.CapVideoInput,
+		},
+		string(ProtoOpenAIChat) + " -> " + string(ProviderDashScopeNative) +
+			" @ " + string(EndpointOpenAIChat): {
+			canonical.CapTextGeneration,
+			canonical.CapStreaming,
+			canonical.CapToolCalling,
+			canonical.CapParallelToolCalls,
+			canonical.CapStructuredOutput,
+			canonical.CapReasoning,
+			canonical.CapVisionInput,
+			canonical.CapWebSearch,
 		},
 	}
 

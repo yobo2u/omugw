@@ -280,18 +280,19 @@ type dispatchInput struct {
 // **只在下游首字节之前重试**（原则 2.4）。一旦向客户端发出过任何字节，
 // 无论错误多么可重试都必须就此打住——重试会让客户端收到重复内容。
 func (h *Handler) dispatch(w *tracked, r *http.Request, in dispatchInput) (string, string, error) {
-	var lastErr error
+	var lastSetupErr error
+	var lastCallErr error
 
 	for _, target := range in.targets {
 		pool, ok := h.deps.Pools[target.CredentialPool]
 		if !ok {
-			lastErr = canonical.Newf(canonical.ClassInternal,
+			lastSetupErr = canonical.Newf(canonical.ClassInternal,
 				"路由目标 %s 引用了不存在的凭据池 %q", target.Endpoint, target.CredentialPool)
 			continue
 		}
 		prov, ok := h.deps.Providers[target.Endpoint]
 		if !ok {
-			lastErr = canonical.Newf(canonical.ClassInternal,
+			lastSetupErr = canonical.Newf(canonical.ClassInternal,
 				"没有为 endpoint %q 注册出站适配器", target.Endpoint)
 			continue
 		}
@@ -300,7 +301,7 @@ func (h *Handler) dispatch(w *tracked, r *http.Request, in dispatchInput) (strin
 		for {
 			lease, err := pool.Acquire(tried)
 			if err != nil {
-				lastErr = err
+				lastSetupErr = err
 				break // 这个上游的凭据用尽，换下一个上游
 			}
 			tried[lease.Credential.ID] = true
@@ -334,7 +335,7 @@ func (h *Handler) dispatch(w *tracked, r *http.Request, in dispatchInput) (strin
 				lease.Fail(err)
 				cerr := canonical.AsError(err)
 				h.deps.Metrics.ObserveError(string(in.kind), cerr)
-				lastErr = err
+				lastCallErr = err
 
 				h.deps.Log.Warn("上游调用失败",
 					"endpoint", target.Endpoint,
@@ -392,10 +393,15 @@ func (h *Handler) dispatch(w *tracked, r *http.Request, in dispatchInput) (strin
 		}
 	}
 
-	if lastErr == nil {
-		lastErr = canonical.Newf(canonical.ClassUpstreamUnavailable, "没有可用的上游")
+	// 池与装配错误只能解释为何没有调用；只要 provider 真正返回过错误，客户端
+	// 就应看到最后一次真实调用的原因，而不是后续候选的循环终止条件。
+	if lastCallErr != nil {
+		return "upstream_error", string(in.kind), lastCallErr
 	}
-	return "upstream_error", string(in.kind), lastErr
+	if lastSetupErr == nil {
+		lastSetupErr = canonical.Newf(canonical.ClassUpstreamUnavailable, "没有可用的上游")
+	}
+	return "upstream_error", string(in.kind), lastSetupErr
 }
 
 // relay 按流式与否选择转发方式。
