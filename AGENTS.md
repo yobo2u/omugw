@@ -118,6 +118,22 @@ docs/               # principles.md、degradation-matrix.md（生成物）、adr
   线格式只是因为不需要重编码，语义是异构的（搜索选项降成开关、strict schema 无全局
   保证），不得 `MarkHomogeneous`，降级头由矩阵照常生成。
 
+## Agent skills
+
+### Issue tracker
+
+工作项使用 `yobo2u/omugw` 的 GitHub Issues；操作与 Wayfinder 约定见
+`docs/agents/issue-tracker.md`。
+
+### Triage labels
+
+外部问题按五种标准角色流转；标签映射见 `docs/agents/triage-labels.md`。
+
+### Domain docs
+
+本仓库采用 single-context：根 `CONTEXT.md` 是术语表，系统级决策位于
+`docs/adr/`；消费规则见 `docs/agents/domain.md`。
+
 ## COMMANDS
 
 ```bash
