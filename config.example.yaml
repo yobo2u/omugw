@@ -38,13 +38,54 @@ providers:
     base_url: "https://api.openai.com"
     credential_pool: openai
 
+  # DashScope 的两族以注释形态给出：${...} 引用未定义的环境变量会导致
+  # **启动失败**（见文件开头），只设了 OPENAI_API_KEY 的人取消注释就起不来。
+  # 要用先在 credentials 下补一个 dashscope 池。
+  #
+  # - endpoint: dashscope-compat
+  #   kind: dashscope.compatible
+  #   base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+  #   credential_pool: dashscope
+  #
+  # - endpoint: dashscope-native
+  #   kind: dashscope.native
+  #   base_url: "https://dashscope.aliyuncs.com"
+  #   credential_pool: dashscope
+
 # 模型路由。match 支持三种显式形态：精确、"前缀*"、"*" 兜底。
 # 不支持中缀通配——匹配顺序不可预期意味着请求会去到谁也说不清的地方。
+#
+# 这里是**唯一**决定「哪些模型可以被请求」的地方。下面的 discovery 只往
+# /v1/models 的清单里补充上游声称拥有的模型，不会让它们变得可调用。
 models:
   - match: "gpt-5"
     targets:
       - endpoint: openai
         upstream_model: "gpt-5" # 客户端请求的名字可以与上游真实名字不同
+
+  # - match: "qwen-*"
+  #   targets:
+  #     - endpoint: dashscope-compat
+  #       upstream_model: "qwen-plus"
+
+# 上游模型清单发现。**默认关闭。**
+#
+# 开启后，网关会按周期向已配置的上游询问它们各自的模型清单，结果只用于充实
+# 受鉴权的 GET /v1/models。**发现绝不创建路由**：上游目录不等于本网关可调用
+# 的集合（DashScope 的列表接口返回的是「平台上可用的模型」，OpenAI 的列表也
+# 不带「这把 key 能否调用」的位）。想让一个模型可被请求，只能写进上面的 models。
+#
+# 按协议族走各自的官方接口：openai.compat 走 GET /v1/models，
+# dashscope.native 走 GET /api/v1/models（页码分页）。
+# dashscope.compatible 没有官方列表接口，会被显式跳过——这不是故障。
+#
+# 默认关闭是因为发现会拿真实凭据打上游：那是一个会花钱、会产生外部流量的
+# 决定，得由你显式做出。
+discovery:
+  enabled: false
+  refresh_interval: 30m
+  # 目录查询的超时必须显著小于刷新间隔，否则两轮发现会彼此追尾。
+  timeout: 10s
 
 # 网关侧会话存储，为 OpenAI Responses 的 previous_response_id 提供服务端会话。
 #

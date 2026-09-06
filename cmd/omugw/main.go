@@ -102,6 +102,12 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	// 后台刷新挂在进程生命周期上，而不是在 Build 里起——Build 没有进程的
+	// 概念，在那里起一个没人能停的 goroutine，测试每构建一次就漏一个。
+	if built.Discovery != nil {
+		go built.Discovery.Run(ctx)
+	}
+
 	gwSrv := &http.Server{
 		Addr:    cfg.Server.Addr,
 		Handler: built.Mux,
@@ -126,6 +132,7 @@ func run() error {
 		"routes_implemented", built.Implemented,
 		"models", len(cfg.Models),
 		"convstore_enabled", cfg.ConvStore.Enabled,
+		"discovery_enabled", cfg.Discovery.Enabled,
 	)
 
 	select {
