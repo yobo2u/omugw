@@ -27,6 +27,7 @@ internal/
 ├── router/         # 模型名 → 候选上游（精确 > 最长前缀 > `*`）
 ├── transport/      # httpx（四层超时）、sse（事件读写）
 ├── credential/     # 凭据池：加权轮询 + 按错误类型冷却
+├── discovery/      # 问上游「你有哪些模型」；只充实 /v1/models 清单，绝不建路由
 ├── convstore/      # 内存态会话树，为无状态上游垫出 Responses 的服务端会话
 ├── config/         # YAML 加载 + ${ENV} 展开 + 跨字段校验
 ├── obs/            # 脱敏 slog + Prometheus 指标
@@ -48,6 +49,8 @@ docs/               # principles.md、degradation-matrix.md（生成物）、adr
 | 请求主链路 | `internal/gateway/handler.go:191` (`serve`) → `:263` (`dispatch`) | 鉴权→解码→路由→矩阵→凭据→Provider→回写 |
 | 首字节后不许重试的实现点 | `internal/gateway/handler.go:426` (`fail`)、`relay.go:25` | `tracked.wrote` 是唯一判据 |
 | 出站适配器接口 | `internal/provider/provider.go:47` | 同时拿 `Raw` 与 `Canonical`，适配器自己挑 |
+| 新增一个协议族的模型枚举 | `internal/discovery/` + `Probers()` | 只登记**有官方列表接口**的协议族；`dashscope.compatible` 刻意缺席 |
+| `/v1/models` 清单从哪来 | `internal/gateway/models.go` | 配置模型（权威）+ 发现快照（补充），按 ID 去重与排序 |
 | 启动装配 | `internal/gateway/build.go:36` | 未实现的协议族在此直接拒绝启动 |
 | DashScope Native 未投放端点兜底 | `internal/gateway/build.go:166` | `POST /api/v1/` 前缀兜底返回协议化 501，先于主链路拦下请求 |
 | 错误分类与响应头 | `internal/canonical/error.go` + `internal/protocol/*wire/` | |
@@ -70,6 +73,8 @@ docs/               # principles.md、degradation-matrix.md（生成物）、adr
 | `gateway.Handler.dispatch` | Method | `internal/gateway/handler.go:263` | Provider × 凭据两层 failover |
 | `credential.Pool.Acquire` | Method | `internal/credential/credential.go:161` | 返回 Lease，必须 `Succeed()`/`Fail()` |
 | `router.Router.Resolve` | Method | `internal/router/router.go:155` | 只给候选，不做能力裁决 |
+| `discovery.Probers` | Func | `internal/discovery/discovery.go` | 协议族 → 枚举实现；查不到即跳过（不是错误） |
+| `discovery.Refresher.RefreshOnce` | Method | `internal/discovery/refresh.go` | 单个 endpoint 失败不影响其余；失败保留上一次快照 |
 
 ## CONVENTIONS
 
@@ -102,6 +107,10 @@ docs/               # principles.md、degradation-matrix.md（生成物）、adr
 - **不要**在 `cmd/omugw/main.go` 的 `http.Server` 上设 `WriteTimeout`——会掐断长流式。
 - **不要**在 core 里写 OAuth 刷新 / 账号冷却 / 指纹伪装，那些属于 omsub 仓库。
 - **不要**在日志或错误里出现 `credential.Secret`。
+- **不要**让 `internal/discovery` 的结果流进 `Router`：上游目录不等于本网关可调用
+  的集合（DashScope 的列表返回「平台上可用的模型」，OpenAI 的列表也不带「这把 key
+  能否调用」的位）。发现只充实 `/v1/models` 清单；发现即建路由等于让一次上游目录
+  变更把请求送去一个降级矩阵从未审视过的目的地。
 - **不要**计算或展示路径级「当前可用」聚合分：各门兑现集合的并集不对应任何
   一扇真实存在的门（两门并集 8/18 已被显式否决）；可用列一律端点相对
   （`Preservation(avail, ep)`），绝不从 `Preservation(avail, Endpoint(""))` 取可用列。
