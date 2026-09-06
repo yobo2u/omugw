@@ -68,6 +68,16 @@ models:
   #     - endpoint: dashscope-compat
   #       upstream_model: "qwen-plus"
 
+  # 指向 dashscope.native 的 target 必须声明 native_endpoint：门是部署事实，
+  # 不按模型名或本次请求是否含媒体推断。枚举只有 text-generation 与
+  # multimodal-generation 两个，填错或漏填都在启动期被拒。
+  #
+  # - match: "qwen-vl-*"
+  #   targets:
+  #     - endpoint: dashscope-native
+  #       upstream_model: "qwen-vl-max"
+  #       native_endpoint: multimodal-generation
+
 # 上游模型清单发现。**默认关闭。**
 #
 # 开启后，网关会按周期向已配置的上游询问它们各自的模型清单，结果只用于充实
