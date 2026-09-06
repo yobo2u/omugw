@@ -13,3 +13,5 @@ config.local.yaml
 
 # 本地 agent 运行时产物（会话续接状态），绝不入库
 .omo/
+# 会话转储动辄数十 MB，且含完整对话内容，误提交一次就永远留在历史里
+session-*.json
