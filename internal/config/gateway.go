@@ -82,6 +82,62 @@ type ConvStore struct {
 	GCInterval    time.Duration `yaml:"gc_interval"`
 }
 
+// Discovery 是上游模型清单发现的配置。
+//
+// 发现只充实受鉴权的 GET /v1/models，**绝不创建路由**：上游目录不等于本网关
+// 可调用的集合（DashScope 的列表接口明说返回的是「平台上可用的模型」，
+// OpenAI 的列表也不带「这把 key 能否调用」的位）。若发现即建路由，一次上游
+// 目录变更就能让网关无声地把请求发去一个没人配置过、降级矩阵也没审视过的
+// 目的地——那正是这个仓库整套矩阵设计要防的行为漂移。
+type Discovery struct {
+	// Enabled 默认 false。
+	//
+	// 发现会拿真实凭据打上游。默认开启等于替部署者做了一个会花钱、会产生
+	// 外部流量的决定，必须由他显式承担。
+	Enabled bool `yaml:"enabled"`
+
+	// RefreshInterval 是两轮发现之间的间隔。
+	RefreshInterval time.Duration `yaml:"refresh_interval"`
+
+	// Timeout 是单轮发现的上限。
+	//
+	// 与四层超时分开：目录 GET 不该按生成请求的尺度等下去。上游 SDK 默认的
+	// 十分钟是给长生成用的，一个目录查询等那么久只会让刷新周期彼此追尾。
+	Timeout time.Duration `yaml:"timeout"`
+}
+
+// DefaultDiscovery 返回默认配置：关闭。
+func DefaultDiscovery() Discovery {
+	return Discovery{
+		Enabled:         false,
+		RefreshInterval: 30 * time.Minute,
+		Timeout:         10 * time.Second,
+	}
+}
+
+// validate 校验发现配置。
+//
+// 关闭时一概不校验：一份没打算用发现的配置，不该因为里面某个发现字段写得
+// 不合理而启动失败。
+func (d Discovery) validate() error {
+	if !d.Enabled {
+		return nil
+	}
+	if d.RefreshInterval <= 0 {
+		return fmt.Errorf("config: discovery.refresh_interval 必须为正数")
+	}
+	if d.Timeout <= 0 {
+		return fmt.Errorf("config: discovery.timeout 必须为正数")
+	}
+	if d.Timeout >= d.RefreshInterval {
+		// 单轮超时不小于刷新间隔时，上一轮还没放弃下一轮就该开始了——
+		// 刷新会彼此追尾，最终表现为「刷新看起来一直在跑，快照却始终是旧的」。
+		return fmt.Errorf("config: discovery.timeout (%v) 必须小于 refresh_interval (%v)，"+
+			"否则两轮发现会彼此追尾", d.Timeout, d.RefreshInterval)
+	}
+	return nil
+}
+
 // DefaultConvStore 返回默认配置：关闭。
 func DefaultConvStore() ConvStore {
 	return ConvStore{

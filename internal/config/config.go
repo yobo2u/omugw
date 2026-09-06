@@ -22,6 +22,7 @@ type Config struct {
 	Providers   []ProviderSpec              `yaml:"providers"`
 	Models      []ModelSpec                 `yaml:"models"`
 	ConvStore   ConvStore                   `yaml:"convstore"`
+	Discovery   Discovery                   `yaml:"discovery"`
 }
 
 // Server 是监听相关配置。
@@ -90,6 +91,7 @@ func Default() Config {
 			MaxRequestBytes: 32 << 20, // 32 MiB
 		},
 		ConvStore: DefaultConvStore(),
+		Discovery: DefaultDiscovery(),
 	}
 }
 
@@ -189,6 +191,13 @@ func (c Config) Validate() error {
 		return fmt.Errorf("config: limits.max_request_bytes (%d) 小于 max_inline_bytes (%d)，"+
 			"内联负载永远无法通过",
 			c.Limits.MaxRequestBytes, c.Limits.MaxInlineBytes)
+	}
+
+	// 发现是可选增强，不参与下面那条「四件套要么全配要么全不配」的判定：
+	// 一个只提供健康检查的网关没有上游可问，但它的配置文件里留着一段
+	// 关闭的 discovery 并不矛盾。
+	if err := c.Discovery.validate(); err != nil {
+		return err
 	}
 
 	// 网关部分要么完整配置，要么完全不配。
