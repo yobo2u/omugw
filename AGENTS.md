@@ -134,6 +134,28 @@ docs/               # principles.md、degradation-matrix.md（生成物）、adr
 本仓库采用 single-context：根 `CONTEXT.md` 是术语表，系统级决策位于
 `docs/adr/`；消费规则见 `docs/agents/domain.md`。
 
+### 开工前置检查（worktree 工作流）
+
+本仓库用 `superpowers` 的 worktree 工作流，工作树落在
+`~/.config/superpowers/worktrees/omugw/` 下——**不在仓库目录里，`ls` 看不见**。
+于是同一个人可以在两个工作树上并行推进两条线，而任一边的 `git status` 都显示
+「干净且领先远端」，看不出另一条线的存在。
+
+因此**任何 agent 动手前必须跑完这三条**，缺一条就可能在过期基线上开发：
+
+```bash
+GIT_MASTER=1 git fetch origin          # git status 只看本地，看不出远端已经走了
+GIT_MASTER=1 git worktree list         # 别的工作树在推进什么
+GIT_MASTER=1 git status -sb            # 带 ahead/behind，比裸 status 多这一半信息
+```
+
+看到 behind 就先同步再开工；看到第二个工作树就先确认它那条线的状态。
+新工作一律开分支，**不要直接在 `main` 上堆提交**——那会让本地 `main` 同时
+「有未推送内容」和「落后于远端」，是最容易撞车的形态。
+
+分支合并后立刻 `git worktree remove` 并删分支：一条已合过 PR 却没清理的工作树
+会继续长提交，下次合并时冲突面更大。
+
 ## COMMANDS
 
 ```bash
