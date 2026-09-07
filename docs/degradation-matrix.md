@@ -346,7 +346,7 @@
 | `reasoning` | `N/A` | openai.realtime 表达不了该能力，请改用入站协议 openai.responses |
 | `reasoning_signature` | `N/A` | 该协议的线格式没有承载推理签名的字段，客户端无从表达；这项能力要到 Anthropic Messages 入站接入后（Phase 2）才可达 |
 | `vision_input` | `N/A` | openai.realtime 表达不了该能力，请改用入站协议 openai.responses |
-| `audio_input` | `DEGRADE` | 输入音频需从 OpenAI 的 24 kHz 重采样到 DashScope 的 16 kHz，高频信息丢失；输出侧两者同为 24 kHz，无需转换 |
+| `audio_input` | `DEGRADE` | 上游不接受 24 kHz 时，输入音频需重采样到 16 kHz；必须先低通再抽取，直接抽点会产生混叠失真。输出侧两者同为 24 kHz，无需转换 |
 | `video_input` | `N/A` | OpenAI 的线格式不接受视频输入 |
 | `file_input` | `N/A` | openai.realtime 表达不了该能力，请改用入站协议 openai.responses |
 | `audio_output` | `PASSTHROUGH` | — |

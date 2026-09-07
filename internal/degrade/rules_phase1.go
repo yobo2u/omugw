@@ -260,6 +260,17 @@ func Phase1() (*Matrix, error) {
 	// DashScope 的 /api-ws/v1/realtime 与 OpenAI Realtime 事件模型基本一致
 	// （session.update / input_audio_buffer.append / response.create /
 	// response.audio.delta ...），绝大多数事件原样转发即可。
+	//
+	// audio_input 的处置是**按最坏情况**声明的：实测中 qwen3.5-omni-* 接受新式
+	// audio.input.format.sample_rate=24000，此时音频帧真的是字节直通；其余模型
+	// 只认 16 kHz，必须重采样。矩阵不支持按模型条件性处置，所以路径级取需要
+	// 重采样的那一支——多报一次降级是保守方向的误差，不违反 fail-closed。
+	//
+	// 判据只能是**查 session.updated 的回显结构**：中间代模型收到新式字段后
+	// 照样回 session.updated，回显的却是 legacy 的 input_audio_format。信「没
+	// 报错」就透传，等于把 24 kHz 喂给按 16 kHz 解析的上游——变速乱码且不报错。
+	// 证据见 docs/research/2026-09-06-dashscope-realtime-websocket-contract.md
+	// 与 tests/smoke/ws_realtime_test.go。
 	if err := m.Add(NewRoute(ProtoOpenAIRealtime, ProviderDashScopeWSRealtime).
 		MarkHomogeneous().
 		Pass(
@@ -274,8 +285,8 @@ func Phase1() (*Matrix, error) {
 			canonical.CapRealtimeServerVAD,
 			canonical.CapRealtimeInterruptTurns,
 		).
-		Degrade("输入音频需从 OpenAI 的 24 kHz 重采样到 DashScope 的 16 kHz，高频信息丢失；"+
-			"输出侧两者同为 24 kHz，无需转换",
+		Degrade("上游不接受 24 kHz 时，输入音频需重采样到 16 kHz；必须先低通再抽取，"+
+			"直接抽点会产生混叠失真。输出侧两者同为 24 kHz，无需转换",
 			canonical.CapAudioInput).
 		Degrade("DashScope Realtime 未提供并行工具调用开关，行为由上游模型决定",
 			canonical.CapParallelToolCalls).
