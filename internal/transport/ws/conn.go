@@ -124,7 +124,7 @@ func (c *Conn) ReadMessage() (Opcode, []byte, error) {
 			if derr != nil {
 				return 0, nil, derr
 			}
-			c.markClosed()
+			c.respondToPeerClose()
 			return 0, nil, &CloseError{Code: code, Reason: reason}
 		default:
 			return op, payload, nil
@@ -147,14 +147,18 @@ func (c *Conn) writeFrame(op Opcode, payload []byte) error {
 	return WriteFrame(c.conn, Frame{FIN: true, Opcode: op, Payload: payload}, c.role.masks())
 }
 
-// Close 发出关闭帧并把连接标记为已关闭。重复调用是空操作。
+// Close 发出关闭帧并释放底层连接。重复调用是空操作。
 //
 // 先发 close 帧而不是直接断 TCP：直接断连会让对端看到 abnormal closure
 // （1006），无从区分「对方正常收尾」与「网络断了」。发一个带码的 close
 // 是把原因说清楚的唯一机会。
 //
+// 发完必须关底层连接：只发帧不关，fd 会一直挂着。realtime 网关同时持有大量
+// 长连接，泄漏几百个就撞上系统上限，表现是「跑了几小时后突然连不上任何
+// 上游」——而那时根本看不出是谁没关。
+//
 // 幂等是必须的：关闭路径常被 defer 与错误分支同时触发，第二次发帧会写进
-// 一个可能已经关掉的连接，在生产里表现为一条毫无意义的 write on closed conn。
+// 一个已经关掉的连接，在生产里表现为一条毫无意义的 write on closed conn。
 func (c *Conn) Close(code uint16, reason string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -164,15 +168,37 @@ func (c *Conn) Close(code uint16, reason string) error {
 	}
 	c.closed = true
 
-	return WriteFrame(c.conn, Frame{
+	// 帧写失败也要继续关连接，否则一条写不进去的连接就永远泄漏在那里。
+	err := WriteFrame(c.conn, Frame{
 		FIN:     true,
 		Opcode:  OpClose,
 		Payload: EncodeClosePayload(code, reason),
 	}, c.role.masks())
+
+	if cerr := c.conn.Close(); err == nil {
+		err = cerr
+	}
+	return err
 }
 
-func (c *Conn) markClosed() {
+// respondToPeerClose 处理收到的对端 close 帧。
+//
+// 按 RFC 6455 §5.5.1，收到 close 且自己没发过时必须回一个 close——不回的话
+// 对端只能等自己的超时才断开。回完即释放本端连接：调用方那句惯常的
+// defer Close() 此时会因为「已关闭」直接返回，fd 就此永远挂着。
+func (c *Conn) respondToPeerClose() {
 	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.closed {
+		return
+	}
 	c.closed = true
-	c.mu.Unlock()
+
+	_ = WriteFrame(c.conn, Frame{
+		FIN:     true,
+		Opcode:  OpClose,
+		Payload: EncodeClosePayload(CloseNormal, ""),
+	}, c.role.masks())
+	_ = c.conn.Close()
 }

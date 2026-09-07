@@ -337,6 +337,80 @@ func TestConnConcurrentWritesDoNotInterleave(t *testing.T) {
 	wg.Wait()
 }
 
+// TestConnCloseReleasesUnderlyingConn 防的是文件描述符泄漏。
+//
+// 只发 close 帧而不关底层连接时，fd 会一直挂着。realtime 网关同时持有大量
+// 长连接，泄漏几百个就撞上系统上限，表现是「跑了几小时后突然连不上任何
+// 上游」——而那时根本看不出是谁没关。
+func TestConnCloseReleasesUnderlyingConn(t *testing.T) {
+	c, s := tcpPair(t)
+	defer s.Close()
+
+	conn := NewConn(c, RoleClient, maxTestPayload, 2*time.Second)
+	if err := conn.Close(CloseNormal, ""); err != nil {
+		t.Fatalf("关闭失败: %v", err)
+	}
+
+	if _, err := c.Write([]byte{0}); err == nil {
+		t.Fatal("Close 之后底层 net.Conn 应当已关闭")
+	}
+}
+
+// TestConnReleasesAfterPeerClose 覆盖读路径上的同一个泄漏。
+//
+// 收到对端 close 后只标记状态，用户那句 defer Close() 会因为「已关闭」而
+// 直接返回 nil——fd 就此永远挂着。收到 close 的一方必须自己把连接释放掉。
+func TestConnReleasesAfterPeerClose(t *testing.T) {
+	c, s := tcpPair(t)
+	defer s.Close()
+
+	conn := NewConn(c, RoleClient, maxTestPayload, 2*time.Second)
+
+	go func() {
+		_ = WriteFrame(s, Frame{
+			FIN: true, Opcode: OpClose, Payload: EncodeClosePayload(CloseNormal, ""),
+		}, false)
+	}()
+
+	if _, _, err := conn.ReadMessage(); err == nil {
+		t.Fatal("收到 close 帧应当报错")
+	}
+
+	// 用户惯常的 defer Close() 此时是空操作，所以释放必须已经发生。
+	if err := conn.Close(CloseNormal, ""); err != nil {
+		t.Fatalf("重复关闭应当是空操作，实际: %v", err)
+	}
+	if _, err := c.Write([]byte{0}); err == nil {
+		t.Fatal("收到对端 close 后底层 net.Conn 应当已释放")
+	}
+}
+
+// TestConnEchoesPeerCloseFrame 固化 RFC 6455 §5.5.1：收到 close 且自己没发过
+// 时必须回一个 close，否则对端只能等到自己的超时才断开。
+func TestConnEchoesPeerCloseFrame(t *testing.T) {
+	client, raw := pipeRaw(t, 2*time.Second)
+
+	go func() {
+		_ = WriteFrame(raw, Frame{
+			FIN: true, Opcode: OpClose, Payload: EncodeClosePayload(CloseGoingAway, "bye"),
+		}, false)
+	}()
+
+	if _, _, err := client.ReadMessage(); err == nil {
+		t.Fatal("收到 close 帧应当报错")
+	}
+
+	// 加读期限：没有回应时要快速失败，而不是把整个测试挂到超时。
+	_ = raw.SetReadDeadline(time.Now().Add(time.Second))
+	f, err := ReadFrame(raw, maxTestPayload)
+	if err != nil {
+		t.Fatalf("未收到 close 回应: %v", err)
+	}
+	if f.Opcode != OpClose {
+		t.Fatalf("回应 opcode = %v，期望 close", f.Opcode)
+	}
+}
+
 // TestConnPeerHangupIsNotACloseError：对端不发 close 直接断开，
 // 要与「收到 close 帧」区分——前者是链路异常，后者是对端说清了原因。
 func TestConnPeerHangupIsNotACloseError(t *testing.T) {
