@@ -195,11 +195,26 @@ WebSocket 传输层 + **一条**路径：`openai.realtime → dashscope.ws.realt
 
 离线部分全部不需要凭据，与仓库现有约定一致。
 
-## 6. 待确认
+## 6. 决策与落地状态
 
-1. **范围**：同意只做传输层 + 一条路径（`openai.realtime → dashscope.ws.realtime`）吗？
-2. **矩阵**：选方案 A（保留 `MarkHomogeneous()`，只改写降级说明）还是方案 B
-   （撤掉并归类为 wire-compatible，需同步改 `principles.md` 与选路行为）？
-   我建议 A，理由见 §3.6。
-3. **重采样**：本次实现只做 24k→16k（含低通）。反向路径的 16k→24k 上采样
-   留到做反向路径时再写。
+### 已决定并落地
+
+1. **范围**：本轮只做传输层。`internal/transport/ws` 已交付
+   （`frame` / `conn` / `handshake` 三层，42 条离线测试 + 2 条真实 smoke）。
+2. **矩阵**：取**方案 A**——保留 `MarkHomogeneous()`，只改写降级说明。
+   理由见 §3.6：实测证明主路径（qwen3.5）确实是字节透传，而撤掉标记要动
+   `principles.md` 原则 2.2 与选路行为，代价与收益不成比例。
+   已落地于 `internal/degrade/rules_phase1.go`，`docs/degradation-matrix.md`
+   由 `make matrix-update` 同步。
+
+### 尚未开工
+
+3. **重采样**：24k→16k（含低通防混叠）尚未实现。它属于协议层而非传输层，
+   与网关接线一起做更合适——单独实现一个没有调用方的重采样器，无法验证
+   它在真实事件流里的位置是否正确。
+4. **网关接线**：`openai.realtime → dashscope.ws.realtime` 这条路径的
+   handler 注册、协商检测（§3.5）与 failover 边界（§3.4）都还没写。
+   矩阵仍是 `PLANNED`，打过去返回 501。
+
+即：**传输层已通，路径未通。** 下一轮的工作是把 §3.5 的协商流程与 §3.4 的
+101 前 failover 规则实现出来，并按 ADR-0001 用 fixture 兑现能力。
