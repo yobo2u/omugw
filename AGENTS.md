@@ -25,7 +25,7 @@ internal/
 ├── provider/       # 出站适配器接口；passthrough 是同源快通道实现
 ├── gateway/        # 唯一把各层串起来的地方；跟踪下游首字节
 ├── router/         # 模型名 → 候选上游（精确 > 最长前缀 > `*`）
-├── transport/      # httpx（四层超时）、sse（事件读写）
+├── transport/      # httpx（四层超时）、sse（事件读写）、ws（RFC 6455，零依赖自实现）
 ├── credential/     # 凭据池：加权轮询 + 按错误类型冷却
 ├── discovery/      # 问上游「你有哪些模型」；只充实 /v1/models 清单，绝不建路由
 ├── convstore/      # 内存态会话树，为无状态上游垫出 Responses 的服务端会话
@@ -53,6 +53,9 @@ docs/               # principles.md、degradation-matrix.md（生成物）、adr
 | `/v1/models` 清单从哪来 | `internal/gateway/models.go` | 配置模型（权威）+ 发现快照（补充），按 ID 去重与排序 |
 | 启动装配 | `internal/gateway/build.go:36` | 未实现的协议族在此直接拒绝启动 |
 | DashScope Native 未投放端点兜底 | `internal/gateway/build.go:166` | `POST /api/v1/` 前缀兜底返回协议化 501，先于主链路拦下请求 |
+| WebSocket 帧编解码 | `internal/transport/ws/frame.go` | 纯函数，可穷举测；三种长度分支与掩码方向最易写错 |
+| WebSocket 连接生命周期 | `internal/transport/ws/conn.go` | 自动回 pong、close 握手、空闲超时；写走同一把锁串行化 |
+| WebSocket 双向握手 | `internal/transport/ws/handshake.go` | `Accept` 用 `http.Hijacker` 接管；`Dial` 必校验 Accept 摘要 |
 | 错误分类与响应头 | `internal/canonical/error.go` + `internal/protocol/*wire/` | |
 | 加/改 fixture | `testdata/routes/<in>__<out>/` | 目录名由 `degrade.FixtureDir()` 决定 |
 
@@ -117,6 +120,14 @@ docs/               # principles.md、degradation-matrix.md（生成物）、adr
 - **不要**把 wire-compatible 读成同源：`openai.chat → dashscope.compatible` 复用 Chat
   线格式只是因为不需要重编码，语义是异构的（搜索选项降成开关、strict schema 无全局
   保证），不得 `MarkHomogeneous`，降级头由矩阵照常生成。
+- **不要**把 DashScope Realtime 的 `session.updated` 当成「配置被采纳」：实测中
+  中间代模型（`qwen3-omni-flash-realtime`）收到新式 `audio.input.format` 后照样回
+  `session.updated`，回显的却是 legacy 的 `input_audio_format`。唯一可靠的判据是
+  **查回显结构**——有 `audio.input.format.sample_rate` 才算新式生效。不查就透传，
+  等于把 24 kHz 音频喂给按 16 kHz 解析的上游，听感是变速乱码且不报任何错。
+- **不要**在 `internal/transport/ws` 里用 `net.Pipe` 写测试：它无缓冲且完全同步，
+  自动回 pong 会与对端的下一帧互相死等。那是 `net.Pipe` 的性质，不是被测代码的
+  问题——用带内核缓冲的本地 TCP 对。
 
 ## Agent skills
 
