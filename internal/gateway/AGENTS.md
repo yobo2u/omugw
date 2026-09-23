@@ -7,7 +7,7 @@
 
 | 文件 | 职责 |
 |---|---|
-| `build.go` | 从 `config.Config` 装配凭据池、Provider、Router、Handler、Mux。出站适配器按协议族装配：`openai.compat` / `dashscope.native` 两类同源直通走 passthrough，wire-compatible 的 `dashscope.compatible` 走专用定点修补器；未实现的协议族在启动阶段直接拒绝。Mux 注册先落四个精确端点（OpenAI 两门 + Native 文本 / 多模态两门，Native 两门复用同一 handler 实例），再挂 DashScope Native 命名空间的两条兜底：`POST /api/v1/` 返回协议化 501，不带方法的 `/api/v1/` 返回框架 404——未投放端点在进 Handler 主链路之前就被拦下。注册清单（`doors`）是端点与处理器的唯一事实来源：每行只写端点与 `*Handler`，协议由处理器身份派生；启动期按 `Inbound`（协议 + 端点）对矩阵兑现与 Mux 注册做双向对账，任一方向失败即启动失败 |
+| `build.go` | 从 `config.Config` 装配凭据池、Provider、Router、Handler、Mux；`convstore.enabled` 同时进入矩阵可用性并创建内存 Store。出站适配器按协议族装配：`openai.compat` / `dashscope.native` 两类同源直通走 passthrough，wire-compatible 的 `dashscope.compatible` 走专用定点修补器；未实现的协议族在启动阶段直接拒绝。Mux 注册先落四个精确端点（OpenAI 两门 + Native 文本 / 多模态两门，Native 两门复用同一 handler 实例），再挂 DashScope Native 命名空间的两条兜底：`POST /api/v1/` 返回协议化 501，不带方法的 `/api/v1/` 返回框架 404——未投放端点在进 Handler 主链路之前就被拦下。注册清单（`doors`）是端点与处理器的唯一事实来源：每行只写端点与 `*Handler`，协议由处理器身份派生；启动期按 `Inbound`（协议 + 端点）对矩阵兑现与 Mux 注册做双向对账，任一方向失败即启动失败 |
 | `handler.go` | `serve()` 主链路 + `dispatch()` 两层 failover + `tracked` 首字节跟踪 |
 | `relay.go` | `relayJSON` / `relayStream`：回写响应、抽取 usage、流中断收尾 |
 | `auth.go` | 常量时间 API Key 校验，产出 `Caller` |
@@ -31,7 +31,7 @@ ServeHTTP (handler.go:175)  ← tracked 包装 ResponseWriter
       └ dispatch (:263)
           for target:                  ← 换上游
             for credential:            ← 换凭据（仅 Retryable）
-              Provider.Call → 成功则 Lease.Succeed，进 relay，此后不得重试
+              Provider.Call → relay → 下游未写时仍可 failover；完成后 Lease.Succeed
 ```
 
 ## CONVENTIONS
@@ -54,6 +54,9 @@ ServeHTTP (handler.go:175)  ← tracked 包装 ResponseWriter
   入站协议下是两扇不同的门；只比路径，一条路径兑现的门能替另一条路径注册的
   处理器顶账，两个方向的漂移一起判绿。
 - `Deps.Now` 可注入，测试用它控制 handler 耗时/延迟计时。
+- Responses 的 `store` 省略时按默认 `true` 处理；`convstore.enabled=true` 时用本地
+  `response.id` 保存本轮输入与输出，下一次 `previous_response_id` 只在同一调用方内
+  回放历史，并向上游强制 `store:false`。显式 `store:false` 的续轮只读历史、不保存本轮。
 - Chat → Native 的测试 harness 向 `dashscopenativeprovider.New` 传入固定时钟
   `harnessNow`（保证下游 golden 中 `created` 字段的稳定性，防动态时间戳导致断言抖动）；
   生产装配传 `nil`（默认回退到 `time.Now`）。
