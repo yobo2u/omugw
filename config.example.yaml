@@ -102,11 +102,19 @@ discovery:
 # **默认关闭。** 内存态会话在多副本部署下是错的：请求被负载均衡到另一个副本
 # 就找不到会话，表现为「会话时有时无」——最难查的一类 bug。开启即表示你确认
 # 是单副本部署，或已接受重启丢失历史。
+#
+# Responses 的 store 省略时按协议默认值 true 存一轮，但只有显式 store:true 或
+# previous_response_id 才算依赖服务端会话——关闭本项不影响普通请求。
 convstore:
   enabled: false
   ttl: 2h
+  # 沿链上限：一条对话能长多深。
   max_chain_depth: 200
   max_messages: 1000
+  # 全局上限：整个进程能存多少。沿链上限拦不住成批的一次性请求——
+  # 每个都是一条深度 1 的新链，却同样按 TTL 驻留在内存里。
+  max_turns: 10000
+  max_total_bytes: 536870912
   gc_interval: 5m
 
 # 四层超时（原则 2.7）。
