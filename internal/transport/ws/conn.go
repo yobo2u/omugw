@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -58,13 +59,13 @@ type Conn struct {
 	idle   time.Duration
 	reader *Reader
 
-	// mu 同时串行化写与保护 closed。
+	// writeMu 串行化帧写。
 	//
 	// 帧是「头 + 负载」两次写，不串行化时一个帧的负载会插进另一个帧的头
 	// 后面，对端解出来是彻底的乱码——而这种错误只在并发时偶发，最难复现。
 	// 绝不在持有它的时候读，否则自动回 pong 会和对端的下一帧互相死等。
-	mu     sync.Mutex
-	closed bool
+	writeMu sync.Mutex
+	closed  atomic.Bool
 }
 
 // NewConn 包装一条已握手的连接。limit 是单条消息重组后的负载上限，
@@ -83,7 +84,7 @@ func newConnBuffered(conn net.Conn, r io.Reader, role Role, limit int64, idle ti
 		conn:   conn,
 		role:   role,
 		idle:   idle,
-		reader: NewReader(r, limit),
+		reader: NewReader(&deadlineReader{r: r, conn: conn, idle: idle}, limit),
 	}
 }
 
@@ -94,14 +95,6 @@ func newConnBuffered(conn net.Conn, r io.Reader, role Role, limit int64, idle ti
 // 还在正常传输。表现是「长会话莫名其妙断连」。
 func (c *Conn) ReadMessage() (Opcode, []byte, error) {
 	for {
-		if c.idle > 0 {
-			// 每条消息前重置，所以有流量就等于续命；不重置的话，一个持续
-			// 五分钟的正常会话会在 idle 到期时被掐断。
-			if err := c.conn.SetReadDeadline(time.Now().Add(c.idle)); err != nil {
-				return 0, nil, err
-			}
-		}
-
 		op, payload, err := c.reader.ReadMessage()
 		if err != nil {
 			var ne net.Error
@@ -138,10 +131,10 @@ func (c *Conn) WriteMessage(op Opcode, payload []byte) error {
 }
 
 func (c *Conn) writeFrame(op Opcode, payload []byte) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
 
-	if c.closed {
+	if c.closed.Load() {
 		return ErrClosed
 	}
 	return WriteFrame(c.conn, Frame{FIN: true, Opcode: op, Payload: payload}, c.role.masks())
@@ -160,20 +153,26 @@ func (c *Conn) writeFrame(op Opcode, payload []byte) error {
 // 幂等是必须的：关闭路径常被 defer 与错误分支同时触发，第二次发帧会写进
 // 一个已经关掉的连接，在生产里表现为一条毫无意义的 write on closed conn。
 func (c *Conn) Close(code uint16, reason string) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if c.closed {
+	if !c.closed.CompareAndSwap(false, true) {
 		return nil
 	}
-	c.closed = true
 
-	// 帧写失败也要继续关连接，否则一条写不进去的连接就永远泄漏在那里。
-	err := WriteFrame(c.conn, Frame{
-		FIN:     true,
-		Opcode:  OpClose,
-		Payload: EncodeClosePayload(code, reason),
-	}, c.role.masks())
+	// 已有业务帧阻塞时不能等写锁：直接关底层连接才能把那个写唤醒。
+	// 没有并发写时尽力发送关闭帧，并给这次礼貌收尾一个有限期限。
+	var err error
+	if c.writeMu.TryLock() {
+		deadline := time.Second
+		if c.idle > 0 && c.idle < deadline {
+			deadline = c.idle
+		}
+		_ = c.conn.SetWriteDeadline(time.Now().Add(deadline))
+		err = WriteFrame(c.conn, Frame{
+			FIN:     true,
+			Opcode:  OpClose,
+			Payload: EncodeClosePayload(code, reason),
+		}, c.role.masks())
+		c.writeMu.Unlock()
+	}
 
 	if cerr := c.conn.Close(); err == nil {
 		err = cerr
@@ -187,18 +186,34 @@ func (c *Conn) Close(code uint16, reason string) error {
 // 对端只能等自己的超时才断开。回完即释放本端连接：调用方那句惯常的
 // defer Close() 此时会因为「已关闭」直接返回，fd 就此永远挂着。
 func (c *Conn) respondToPeerClose() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if c.closed {
+	if !c.closed.CompareAndSwap(false, true) {
 		return
 	}
-	c.closed = true
-
-	_ = WriteFrame(c.conn, Frame{
-		FIN:     true,
-		Opcode:  OpClose,
-		Payload: EncodeClosePayload(CloseNormal, ""),
-	}, c.role.masks())
+	if c.writeMu.TryLock() {
+		_ = c.conn.SetWriteDeadline(time.Now().Add(time.Second))
+		_ = WriteFrame(c.conn, Frame{
+			FIN:     true,
+			Opcode:  OpClose,
+			Payload: EncodeClosePayload(CloseNormal, ""),
+		}, c.role.masks())
+		c.writeMu.Unlock()
+	}
 	_ = c.conn.Close()
+}
+
+// deadlineReader 在每次需要更多字节前刷新读期限。Reader 可能在一条消息里读取
+// 很多分片，只在 ReadMessage 外层设一次会把活跃消息的总时长误当成空闲时间。
+type deadlineReader struct {
+	r    io.Reader
+	conn net.Conn
+	idle time.Duration
+}
+
+func (r *deadlineReader) Read(p []byte) (int, error) {
+	if r.idle > 0 {
+		if err := r.conn.SetReadDeadline(time.Now().Add(r.idle)); err != nil {
+			return 0, err
+		}
+	}
+	return r.r.Read(p)
 }
