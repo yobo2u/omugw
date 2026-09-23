@@ -120,6 +120,16 @@ func TestReaderRejectsOversizedEvent(t *testing.T) {
 	}
 }
 
+// TestReaderRejectsOversizedMultilineEvent 防的是攻击者把一条超限事件拆成多行，
+// 绕过 Scanner 只对单行生效的 token 上限。
+func TestReaderRejectsOversizedMultilineEvent(t *testing.T) {
+	line := strings.Repeat("x", 1<<20)
+	raw := strings.Repeat("data: "+line+"\n", 9) + "\n"
+	if _, err := NewReader(strings.NewReader(raw)).Next(); err == nil {
+		t.Fatal("超过 8 MiB 的多行事件未被拒绝")
+	}
+}
+
 func TestRoundTrip(t *testing.T) {
 	want := []Event{
 		{Event: "a", Data: `{"x":1}`},

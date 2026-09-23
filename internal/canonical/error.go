@@ -77,6 +77,12 @@ type RateLimitInfo struct {
 	LimitTokens     int64
 	RemainingTokens int64
 	ResetTokens     time.Duration
+
+	// has* 保存值为 0 时的“头存在”语义；只看数值无法区分 Remaining: 0 与缺失。
+	hasLimitRequests     bool
+	hasRemainingRequests bool
+	hasLimitTokens       bool
+	hasRemainingTokens   bool
 }
 
 func (e *Error) Error() string {
@@ -136,12 +142,16 @@ func (e *Error) Headers() map[string]string {
 		h["Retry-After"] = strconv.FormatInt(secs, 10)
 	}
 	if rl := e.RateLimit; rl != nil {
-		if rl.LimitRequests > 0 {
+		if rl.hasLimitRequests || rl.LimitRequests > 0 {
 			h["X-RateLimit-Limit-Requests"] = strconv.FormatInt(rl.LimitRequests, 10)
+		}
+		if rl.hasRemainingRequests || rl.LimitRequests > 0 {
 			h["X-RateLimit-Remaining-Requests"] = strconv.FormatInt(rl.RemainingRequests, 10)
 		}
-		if rl.LimitTokens > 0 {
+		if rl.hasLimitTokens || rl.LimitTokens > 0 {
 			h["X-RateLimit-Limit-Tokens"] = strconv.FormatInt(rl.LimitTokens, 10)
+		}
+		if rl.hasRemainingTokens || rl.LimitTokens > 0 {
 			h["X-RateLimit-Remaining-Tokens"] = strconv.FormatInt(rl.RemainingTokens, 10)
 		}
 		if rl.ResetRequests > 0 {
@@ -204,22 +214,34 @@ func ParseRateLimitHeaders(h http.Header) *RateLimitInfo {
 	if h == nil {
 		return nil
 	}
-	geti := func(k string) int64 {
-		n, err := strconv.ParseInt(h.Get(k), 10, 64)
-		if err != nil {
-			return 0
+	geti := func(k string) (int64, bool) {
+		v := h.Get(k)
+		if v == "" {
+			return 0, false
 		}
-		return n
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			return 0, false
+		}
+		return n, true
 	}
+	limitRequests, hasLimitRequests := geti("X-Ratelimit-Limit-Requests")
+	remainingRequests, hasRemainingRequests := geti("X-Ratelimit-Remaining-Requests")
+	limitTokens, hasLimitTokens := geti("X-Ratelimit-Limit-Tokens")
+	remainingTokens, hasRemainingTokens := geti("X-Ratelimit-Remaining-Tokens")
 	rl := &RateLimitInfo{
-		LimitRequests:     geti("X-Ratelimit-Limit-Requests"),
-		RemainingRequests: geti("X-Ratelimit-Remaining-Requests"),
-		LimitTokens:       geti("X-Ratelimit-Limit-Tokens"),
-		RemainingTokens:   geti("X-Ratelimit-Remaining-Tokens"),
-		ResetRequests:     parseDurationLoose(h.Get("X-Ratelimit-Reset-Requests")),
-		ResetTokens:       parseDurationLoose(h.Get("X-Ratelimit-Reset-Tokens")),
+		LimitRequests:        limitRequests,
+		RemainingRequests:    remainingRequests,
+		LimitTokens:          limitTokens,
+		RemainingTokens:      remainingTokens,
+		ResetRequests:        parseDurationLoose(h.Get("X-Ratelimit-Reset-Requests")),
+		ResetTokens:          parseDurationLoose(h.Get("X-Ratelimit-Reset-Tokens")),
+		hasLimitRequests:     hasLimitRequests,
+		hasRemainingRequests: hasRemainingRequests,
+		hasLimitTokens:       hasLimitTokens,
+		hasRemainingTokens:   hasRemainingTokens,
 	}
-	if rl.LimitRequests == 0 && rl.LimitTokens == 0 &&
+	if !hasLimitRequests && !hasRemainingRequests && !hasLimitTokens && !hasRemainingTokens &&
 		rl.ResetRequests == 0 && rl.ResetTokens == 0 {
 		return nil
 	}

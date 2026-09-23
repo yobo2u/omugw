@@ -261,6 +261,29 @@ func buildTestConfig(upstreamURL string) config.Config {
 	}
 }
 
+func TestBuildEnablesConversationStore(t *testing.T) {
+	m, err := degrade.Phase1()
+	if err != nil {
+		t.Fatal(err)
+	}
+	upstream := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	t.Cleanup(upstream.Close)
+	cfg := buildTestConfig(upstream.URL)
+	cfg.ConvStore = config.Default().ConvStore
+	cfg.ConvStore.Enabled = true
+	built, err := Build(cfg, m, obs.NewMetrics(prometheus.NewRegistry()),
+		slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if built.ConversationStore == nil {
+		t.Fatal("convstore.enabled=true 没有装配存储")
+	}
+	if !m.Availability().Enabled(degrade.FeatureConversationStore) {
+		t.Fatal("convstore.enabled=true 没有进入降级矩阵可用性")
+	}
+}
+
 // TestEveryOpenDoorReachesAHandler 防的是「对账名单与真实注册各说各话」。
 //
 // 对账表若是手写的第二份清单，它证明的只是「名单与矩阵一致」，而不是

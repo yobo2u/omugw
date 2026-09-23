@@ -90,6 +90,10 @@ type entry struct {
 
 	// picks 是加权轮询的计数游标。
 	picks int
+
+	// generation 每次可重试失败都会递增。租约用它分辨自己借出之后是否已有
+	// 更新的失败结论，防止乱序到达的旧成功把新冷却清掉。
+	generation uint64
 }
 
 func (e *entry) available(now time.Time) bool {
@@ -151,7 +155,9 @@ type Lease struct {
 
 	pool *Pool
 	e    *entry
-	done bool
+	// generation 是借出时观察到的凭据健康代数。
+	generation uint64
+	done       bool
 }
 
 // Acquire 借出一份可用凭据。
@@ -192,7 +198,7 @@ func (p *Pool) Acquire(exclude map[string]bool) (*Lease, error) {
 	}
 
 	best.picks++
-	return &Lease{Credential: best.cred, pool: p, e: best}, nil
+	return &Lease{Credential: best.cred, pool: p, e: best, generation: best.generation}, nil
 }
 
 // exhaustedLocked 构造「无可用凭据」的错误。
@@ -230,9 +236,13 @@ func (l *Lease) Succeed() {
 	l.pool.mu.Lock()
 	defer l.pool.mu.Unlock()
 
-	l.e.consecutiveFails = 0
-	l.e.backoff = 0
-	l.e.cooldownUntil = time.Time{}
+	// 借出之后若别的并发请求写入了新失败，这个成功只描述旧一代状态，
+	// 没有资格覆盖更晚的 Retry-After。
+	if l.e.generation == l.generation {
+		l.e.consecutiveFails = 0
+		l.e.backoff = 0
+		l.e.cooldownUntil = time.Time{}
+	}
 }
 
 // Fail 归还凭据并按错误分类决定是否冷却。
@@ -255,6 +265,7 @@ func (l *Lease) Fail(err error) {
 	defer l.pool.mu.Unlock()
 
 	e := l.e
+	e.generation++
 	e.consecutiveFails++
 
 	l.pool.applyCooldownLocked(e, cerr)

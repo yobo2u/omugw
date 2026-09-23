@@ -21,6 +21,10 @@ const (
 		"勉强映射只会让模型收到一个它读不懂的定义"
 	noteImageViaJobs = "Responses 的内建 image_generation 工具在 Phase 1 不做路由，" +
 		"请改用 /v1/jobs 端点"
+	noteNoImageDetailNative = "DashScope Native 图片内容块没有 OpenAI 的 detail 处理档位；" +
+		"low/high/auto/original 的精度与计费意图会丢失"
+	noteNoMessageNameNative = "DashScope Native 消息只有 role/content，没有 name；" +
+		"多个同角色参与者的身份标签会丢失"
 
 	// 网关侧模拟服务端会话的代价。这句话必须跟着 EMULATE 一起出现——
 	// 客户端拿到的能力是完整的，但这份完整性是网关垫出来的，
@@ -73,6 +77,8 @@ func Phase1() (*Matrix, error) {
 			canonical.CapVisionInput,
 			canonical.CapReasoning,
 		).
+		Degrade("Anthropic Messages 没有 OpenAI 图片 detail 处理档位", canonical.CapImageDetail).
+		Degrade("Anthropic Messages 没有 OpenAI 消息 name 参与者标签", canonical.CapMessageName).
 		Degrade(noteStrictSchema, canonical.CapStructuredOutput).
 		Reject(noteNoAudioIn, canonical.CapAudioInput).
 		Reject(noteNoAudioOut, canonical.CapAudioOutput).
@@ -89,8 +95,10 @@ func Phase1() (*Matrix, error) {
 			canonical.CapToolCalling,
 			canonical.CapParallelToolCalls,
 			canonical.CapVisionInput,
+			canonical.CapImageDetail,
 			canonical.CapAudioInput,
 			canonical.CapReasoning,
+			canonical.CapMessageName,
 		).
 		Degrade("DashScope 兼容模式支持 json_object，但不保证 strict json_schema 校验",
 			canonical.CapStructuredOutput).
@@ -110,8 +118,10 @@ func Phase1() (*Matrix, error) {
 			canonical.CapStructuredOutput,
 			canonical.CapReasoning,
 			canonical.CapVisionInput,
+			canonical.CapImageDetail,
 			canonical.CapAudioInput,
 			canonical.CapWebSearch,
+			canonical.CapMessageName,
 		)
 	if err := m.Add(chatToDSCompat.Build()); err != nil {
 		return nil, err
@@ -133,6 +143,8 @@ func Phase1() (*Matrix, error) {
 		Degrade("DashScope Native 支持 response_format=json_object，无 strict schema 校验",
 			canonical.CapStructuredOutput).
 		Degrade(noteSearchSwitch, canonical.CapWebSearch).
+		Degrade(noteNoImageDetailNative, canonical.CapImageDetail).
+		Degrade(noteNoMessageNameNative, canonical.CapMessageName).
 		Reject(noteFileRefBound, canonical.CapFileInput).
 		Reject("音频输出需要 Qwen-Omni 的输出格式参数，Chat Completions 入站无法表达",
 			canonical.CapAudioOutput).
@@ -150,7 +162,9 @@ func Phase1() (*Matrix, error) {
 			canonical.CapStructuredOutput,
 			canonical.CapReasoning,
 			canonical.CapVisionInput,
+			canonical.CapImageDetail,
 			canonical.CapWebSearch,
+			canonical.CapMessageName,
 		)
 	if err := m.Add(chatToDSNative.Build()); err != nil {
 		return nil, err

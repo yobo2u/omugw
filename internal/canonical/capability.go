@@ -25,6 +25,9 @@ const (
 
 	// 多模态输入
 	CapVisionInput Capability = "vision_input"
+	// CapImageDetail 单独跟踪 OpenAI 图片输入的处理档位；只有 URL 留下来而 detail
+	// 消失时，模型费用与视觉精度都可能改变，不能算作完整的 vision_input PASS。
+	CapImageDetail Capability = "image_detail"
 	CapAudioInput  Capability = "audio_input"
 	CapVideoInput  Capability = "video_input"
 	CapFileInput   Capability = "file_input"
@@ -56,6 +59,10 @@ const (
 	// 上游内建工具
 	CapWebSearch   Capability = "web_search"
 	CapComputerUse Capability = "computer_use"
+
+	// CapMessageName 是 Chat 消息的参与者标签。同一角色可用 name 区分多人，
+	// 丢掉它会把不同参与者合并成同一个说话人。
+	CapMessageName Capability = "message_name"
 )
 
 // AllCapabilities 是降级矩阵完整性检查的依据。新增常量后必须加进这个列表，
@@ -70,6 +77,7 @@ func AllCapabilities() []Capability {
 		CapReasoning,
 		CapReasoningSignature,
 		CapVisionInput,
+		CapImageDetail,
 		CapAudioInput,
 		CapVideoInput,
 		CapFileInput,
@@ -89,5 +97,6 @@ func AllCapabilities() []Capability {
 		CapRealtimeInterruptTurns,
 		CapWebSearch,
 		CapComputerUse,
+		CapMessageName,
 	}
 }

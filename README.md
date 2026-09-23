@@ -46,7 +46,10 @@
 - **上游没有的，网关能垫就垫。** Anthropic 与 DashScope 都是无状态协议，
   而 Responses 的客户端可以只发 `previous_response_id`。这道鸿沟由
   `internal/convstore` 填平，矩阵里记为 `EMULATE`——客户端拿到的能力是完整的，
-  但说明里必须写清这份完整性带着网关自己的可用性边界。
+  但说明里必须写清这份完整性带着网关自己的可用性边界。Responses 的 `store`
+  省略时按协议默认值 `true` 存一轮，但只有显式 `store:true` 或
+  `previous_response_id` 才算依赖服务端会话——未启用 `convstore` 的部署
+  照常处理普通请求，无需客户端改写。
 - **同源走快通道。** 入站协议族 == 出站 Provider 族时字节级透传，只改写鉴权，
   不进 Canonical——保住 TTFT，绕开绝大多数转换 bug。
 - **流式 failover 只在首字节之前有效。** 首字节发出后上游失败一律不重试

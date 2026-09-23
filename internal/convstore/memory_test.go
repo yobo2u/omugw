@@ -199,14 +199,9 @@ func TestMessageLimitRejectsRatherThanTruncates(t *testing.T) {
 
 	id, _ := s.Append(ctx, "", turn("q1", "a1"), "m")
 	id, _ = s.Append(ctx, id, turn("q2", "a2"), "m")
-	id, _ = s.Append(ctx, id, turn("q3", "a3"), "m") // 累计 6 条 > 5
-
-	got, err := s.History(ctx, id)
+	_, err := s.Append(ctx, id, turn("q3", "a3"), "m") // 累计 6 条 > 5
 	if !errors.Is(err, ErrTooLarge) {
-		t.Fatalf("超过消息上限应返回 ErrTooLarge，实际 err=%v len=%d", err, len(got))
-	}
-	if got != nil {
-		t.Error("超限时不得返回被截断的历史")
+		t.Fatalf("超过消息上限应在写入前返回 ErrTooLarge，实际 err=%v", err)
 	}
 }
 

@@ -79,7 +79,16 @@ type ConvStore struct {
 	TTL           time.Duration `yaml:"ttl"`
 	MaxChainDepth int           `yaml:"max_chain_depth"`
 	MaxMessages   int           `yaml:"max_messages"`
-	GCInterval    time.Duration `yaml:"gc_interval"`
+
+	// MaxTurns 与 MaxTotalBytes 是与会话无关的全局上限。
+	//
+	// 沿链上限拦不住这种增长：每个不带 previous_response_id 的请求都开一条
+	// 新链，深度 1、消息 2，沿链统计永远不会触发，而它们在 TTL 内全部驻留。
+	// 一个持有合法 Key 的调用方就能靠普通请求把网关打到 OOM。
+	MaxTurns      int   `yaml:"max_turns"`
+	MaxTotalBytes int64 `yaml:"max_total_bytes"`
+
+	GCInterval time.Duration `yaml:"gc_interval"`
 }
 
 // Discovery 是上游模型清单发现的配置。
@@ -145,6 +154,8 @@ func DefaultConvStore() ConvStore {
 		TTL:           2 * time.Hour,
 		MaxChainDepth: 200,
 		MaxMessages:   1000,
+		MaxTurns:      10000,
+		MaxTotalBytes: 512 << 20,
 		GCInterval:    5 * time.Minute,
 	}
 }
@@ -314,6 +325,14 @@ func (s ConvStore) validate() error {
 	}
 	if s.MaxMessages <= 0 {
 		return fmt.Errorf("config: convstore.max_messages 必须为正数")
+	}
+	// 零值在 MemoryStore 里表示「不设限」，那正是这道闸门要防的形态，
+	// 因此配置层不接受它：想放开就得先在配置里写下一个明确的数。
+	if s.MaxTurns <= 0 {
+		return fmt.Errorf("config: convstore.max_turns 必须为正数")
+	}
+	if s.MaxTotalBytes <= 0 {
+		return fmt.Errorf("config: convstore.max_total_bytes 必须为正数")
 	}
 	if s.GCInterval <= 0 {
 		return fmt.Errorf("config: convstore.gc_interval 必须为正数")

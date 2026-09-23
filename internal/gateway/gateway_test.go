@@ -25,7 +25,7 @@ import (
 func TestPlannedRouteReturns501(t *testing.T) {
 	hs := newHarness(t, false, jsonUpstream(t, `{}`))
 
-	rec := hs.do(t, `{"model":"m","input":"hi"}`, true)
+	rec := hs.do(t, `{"model":"m","input":"hi","store":false}`, true)
 	if rec.Code != http.StatusNotImplemented {
 		t.Fatalf("状态码 = %d, 期望 501", rec.Code)
 	}
@@ -52,14 +52,14 @@ func TestAuthIsEnforced(t *testing.T) {
 	hs := newHarness(t, true, jsonUpstream(t, `{"id":"resp_1"}`))
 
 	t.Run("缺少凭据", func(t *testing.T) {
-		if rec := hs.do(t, `{"model":"m","input":"hi"}`, false); rec.Code != 401 {
+		if rec := hs.do(t, `{"model":"m","input":"hi","store":false}`, false); rec.Code != 401 {
 			t.Errorf("状态码 = %d, 期望 401", rec.Code)
 		}
 	})
 
 	t.Run("错误凭据", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/v1/responses",
-			strings.NewReader(`{"model":"m","input":"hi"}`))
+			strings.NewReader(`{"model":"m","input":"hi","store":false}`))
 		req.Header.Set("Authorization", "Bearer wrong-key-but-long-enough")
 		rec := httptest.NewRecorder()
 		hs.h.ServeHTTP(rec, req)
@@ -75,7 +75,7 @@ func TestAuthIsEnforced(t *testing.T) {
 
 	t.Run("Api-Key 头也接受", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/v1/responses",
-			strings.NewReader(`{"model":"m","input":"hi"}`))
+			strings.NewReader(`{"model":"m","input":"hi","store":false}`))
 		req.Header.Set("Api-Key", testKey)
 		rec := httptest.NewRecorder()
 		hs.h.ServeHTTP(rec, req)
@@ -91,7 +91,7 @@ func TestHappyPathNonStreaming(t *testing.T) {
 	  "output_tokens_details":{"reasoning_tokens":3}}}`)
 	hs := newHarness(t, true, up)
 
-	rec := hs.do(t, `{"model":"logical","input":"hi"}`, true)
+	rec := hs.do(t, `{"model":"logical","input":"hi","store":false}`, true)
 	if rec.Code != 200 {
 		t.Fatalf("状态码 = %d, 期望 200，响应体: %s", rec.Code, rec.Body.String())
 	}
@@ -120,7 +120,7 @@ func TestHappyPathStreaming(t *testing.T) {
 	})
 	hs := newHarness(t, true, up)
 
-	rec := hs.do(t, `{"model":"logical","input":"hi","stream":true}`, true)
+	rec := hs.do(t, `{"model":"logical","input":"hi","stream":true,"store":false}`, true)
 	if rec.Code != 200 {
 		t.Fatalf("状态码 = %d, 期望 200", rec.Code)
 	}
@@ -141,6 +141,26 @@ func TestHappyPathStreaming(t *testing.T) {
 	}
 }
 
+func TestProtocolTerminalEndsStreamWithoutWaitingForEOF(t *testing.T) {
+	up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "event: response.completed\n"+
+			"data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}}\n\n")
+		w.(http.Flusher).Flush()
+		time.Sleep(time.Second)
+	})
+	hs := newHarness(t, true, up)
+
+	start := time.Now()
+	rec := hs.do(t, `{"model":"logical","input":"hi","stream":true,"store":false}`, true)
+	if elapsed := time.Since(start); elapsed >= 300*time.Millisecond {
+		t.Fatalf("协议终止后仍等待上游 EOF：%v", elapsed)
+	}
+	if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), "event: error") {
+		t.Fatalf("完整流被追加错误: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 // TestFailoverBeforeFirstByte 覆盖 failover 允许的那一侧。
 func TestFailoverBeforeFirstByte(t *testing.T) {
 	bad := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
@@ -151,7 +171,7 @@ func TestFailoverBeforeFirstByte(t *testing.T) {
 
 	hs := newHarness(t, true, bad, good)
 
-	rec := hs.do(t, `{"model":"logical","input":"hi"}`, true)
+	rec := hs.do(t, `{"model":"logical","input":"hi","store":false}`, true)
 	if rec.Code != 200 {
 		t.Fatalf("状态码 = %d, 期望 200（应已 failover 到备用上游）", rec.Code)
 	}
@@ -181,7 +201,7 @@ func TestNoFailoverAfterFirstByte(t *testing.T) {
 
 	hs := newHarness(t, true, dying, backup)
 
-	rec := hs.do(t, `{"model":"logical","input":"hi","stream":true}`, true)
+	rec := hs.do(t, `{"model":"logical","input":"hi","stream":true,"store":false}`, true)
 
 	body := rec.Body.String()
 	if !strings.Contains(body, "开头") {
@@ -224,7 +244,7 @@ func TestCredentialFailoverWithinOneUpstream(t *testing.T) {
 	}
 	hs.h.deps.Pools["a"] = pool
 
-	rec := hs.do(t, `{"model":"logical","input":"hi"}`, true)
+	rec := hs.do(t, `{"model":"logical","input":"hi","store":false}`, true)
 	if rec.Code != 200 {
 		t.Fatalf("状态码 = %d, 期望 200（应已换第二份凭据）: %s", rec.Code, rec.Body.String())
 	}
@@ -243,7 +263,7 @@ func TestRateLimitHeadersReachClient(t *testing.T) {
 	})
 	hs := newHarness(t, true, up)
 
-	rec := hs.do(t, `{"model":"logical","input":"hi"}`, true)
+	rec := hs.do(t, `{"model":"logical","input":"hi","store":false}`, true)
 
 	if got := rec.Header().Get("X-Ratelimit-Remaining-Tokens"); got != "1234" {
 		t.Errorf("限流额度头未透传: %q", got)
@@ -319,7 +339,7 @@ func TestUnknownModelIsRejected(t *testing.T) {
 	}
 	hs.h.deps.Router = rt
 
-	rec := hs.do(t, `{"model":"nope","input":"hi"}`, true)
+	rec := hs.do(t, `{"model":"nope","input":"hi","store":false}`, true)
 	if rec.Code != 400 {
 		t.Errorf("状态码 = %d, 期望 400", rec.Code)
 	}

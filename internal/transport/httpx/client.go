@@ -88,8 +88,9 @@ func (c *Client) Do(ctx context.Context, req *http.Request) (*Response, error) {
 	start := c.now()
 	resp, err := c.hc.Do(req.WithContext(ctx))
 	if err != nil {
+		classified := classify(err, ctx, c.timeouts)
 		cancel()
-		return nil, classify(err, ctx, c.timeouts)
+		return nil, classified
 	}
 
 	first := c.now()

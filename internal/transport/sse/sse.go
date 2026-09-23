@@ -64,9 +64,10 @@ func (r *Reader) Next() (Event, error) {
 	}
 
 	var (
-		ev   Event
-		data []string
-		open bool
+		ev         Event
+		data       []string
+		open       bool
+		eventBytes int
 	)
 
 	for r.sc.Scan() {
@@ -83,6 +84,11 @@ func (r *Reader) Next() (Event, error) {
 		// 冒号开头是注释，常用于心跳保活。
 		if strings.HasPrefix(line, ":") {
 			continue
+		}
+		eventBytes += len(line) + 1
+		if eventBytes > MaxEventBytes {
+			r.err = fmt.Errorf("sse: 单条事件超过 %d 字节上限", MaxEventBytes)
+			return Event{}, r.err
 		}
 
 		field, value, found := strings.Cut(line, ":")

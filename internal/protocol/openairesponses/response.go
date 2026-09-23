@@ -97,9 +97,10 @@ const (
 	statusInProgress = "in_progress"
 	statusFailed     = "failed"
 
-	outMessage   = "message"
-	outFuncCall  = "function_call"
-	outReasoning = "reasoning"
+	outMessage         = "message"
+	outFuncCall        = "function_call"
+	outReasoning       = "reasoning"
+	outImageGeneration = "image_generation_call"
 )
 
 // newID 生成带前缀的标识。

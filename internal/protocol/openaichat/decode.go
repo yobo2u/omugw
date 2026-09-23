@@ -27,6 +27,10 @@ type Decoded struct {
 
 	// streamOptions 是严格解码后的流式选项，只服务网关自身的 usage chunk 决策。
 	streamOptions *StreamOptions
+
+	// messageName 也覆盖被归并进 System 的命名消息；Canonical 的 System 只有内容块，
+	// 因此不能仅靠 Request.UsedCapabilities 发现这项入站语义。
+	messageName bool
 }
 
 // Decode 把 Chat Completions 请求线格式解成 Canonical。
@@ -67,13 +71,14 @@ func Decode(body []byte) (*Decoded, error) {
 		r.StopSequences = stop
 	}
 
-	system, msgs, inline, err := decodeMessages(w.Messages)
+	system, msgs, inline, messageName, err := decodeMessages(w.Messages)
 	if err != nil {
 		return nil, err
 	}
 	r.System = system
 	r.Messages = msgs
 	out.InlineBytes = inline
+	out.messageName = messageName
 
 	if r.Tools, err = decodeTools(w.Tools); err != nil {
 		return nil, err
@@ -138,7 +143,7 @@ func maxOutputTokens(legacy, modern *int) *int {
 
 // decodeStop 处理 stop 的两种形态：裸字符串与字符串数组。
 func decodeStop(raw json.RawMessage) ([]string, error) {
-	if len(raw) == 0 {
+	if len(raw) == 0 || string(raw) == "null" {
 		return nil, nil
 	}
 	var one string
@@ -157,27 +162,29 @@ func decodeStop(raw json.RawMessage) ([]string, error) {
 //
 // system / developer 角色的内容提取到 System（各出站协议各自还原），其余角色
 // 进 Messages。
-func decodeMessages(raw json.RawMessage) ([]canonical.Part, []canonical.Message, int64, error) {
+func decodeMessages(raw json.RawMessage) ([]canonical.Part, []canonical.Message, int64, bool, error) {
 	if len(raw) == 0 {
-		return nil, nil, 0, canonical.Newf(canonical.ClassBadRequest, "缺少 messages")
+		return nil, nil, 0, false, canonical.Newf(canonical.ClassBadRequest, "缺少 messages")
 	}
 	var msgs []Message
 	if err := json.Unmarshal(raw, &msgs); err != nil {
-		return nil, nil, 0, canonical.Wrapf(err, canonical.ClassBadRequest,
+		return nil, nil, 0, false, canonical.Wrapf(err, canonical.ClassBadRequest,
 			"messages 不是数组")
 	}
 	if len(msgs) == 0 {
-		return nil, nil, 0, canonical.Newf(canonical.ClassBadRequest, "messages 为空")
+		return nil, nil, 0, false, canonical.Newf(canonical.ClassBadRequest, "messages 为空")
 	}
 
 	var system []canonical.Part
 	var out []canonical.Message
 	var inline int64
+	var named bool
 
 	for i, m := range msgs {
+		named = named || m.Name != ""
 		parts, n, err := decodeContent(m.Content)
 		if err != nil {
-			return nil, nil, 0, fmt.Errorf("messages[%d]: %w", i, err)
+			return nil, nil, 0, false, fmt.Errorf("messages[%d]: %w", i, err)
 		}
 		inline += n
 
@@ -203,10 +210,11 @@ func decodeMessages(raw json.RawMessage) ([]canonical.Part, []canonical.Message,
 
 		case "tool":
 			if m.ToolCallID == "" {
-				return nil, nil, 0, fmt.Errorf("messages[%d]: tool 消息缺少 tool_call_id", i)
+				return nil, nil, 0, false, fmt.Errorf("messages[%d]: tool 消息缺少 tool_call_id", i)
 			}
 			out = append(out, canonical.Message{
 				Role: canonical.RoleTool,
+				Name: m.Name,
 				Parts: []canonical.Part{{
 					Kind:       canonical.PartToolResult,
 					ToolResult: &canonical.ToolResult{CallID: m.ToolCallID, Content: parts},
@@ -214,11 +222,11 @@ func decodeMessages(raw json.RawMessage) ([]canonical.Part, []canonical.Message,
 			})
 
 		default:
-			return nil, nil, 0, canonical.Newf(canonical.ClassBadRequest,
+			return nil, nil, 0, false, canonical.Newf(canonical.ClassBadRequest,
 				"messages[%d] 的角色 %q 无法识别", i, m.Role)
 		}
 	}
-	return system, out, inline, nil
+	return system, out, inline, named, nil
 }
 
 // toolArgs 把工具调用的 JSON 字符串参数转成 RawMessage；空串视为无参数。
@@ -273,9 +281,13 @@ func decodePart(p ContentPart) (canonical.Part, int64, error) {
 		// data: URI 是内联负载，要计入大小上限；http(s) URL 直接透传，
 		// 网关不代下载（原则 2.6），字节根本不经过这里。
 		if data, mime, ok := decodeDataURI(p.ImageURL.URL); ok {
-			return canonical.ImageData(data, mime), int64(len(data)), nil
+			out := canonical.ImageData(data, mime)
+			out.Media.Detail = p.ImageURL.Detail
+			return out, int64(len(data)), nil
 		}
-		return canonical.ImageURL(p.ImageURL.URL, ""), 0, nil
+		out := canonical.ImageURL(p.ImageURL.URL, "")
+		out.Media.Detail = p.ImageURL.Detail
+		return out, 0, nil
 
 	case "input_audio":
 		if p.InputAudio == nil {

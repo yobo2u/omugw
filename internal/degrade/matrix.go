@@ -395,7 +395,7 @@ func (r *Route) Derive(in Protocol, out Provider) *Route {
 		// 换一个入站协议就未必成立——Responses 表达得出 computer_use，
 		// 而 Chat 表达不出来。继承它会让派生路径既无法为该能力表态，
 		// 又在 Build 时被判成「声明了表达不出来的能力」。
-		if rule.Disposition == NotApplicable {
+		if rule.Disposition == NotApplicable || !Expressible(in, c) {
 			continue
 		}
 		n.rules[c] = rule

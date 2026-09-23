@@ -22,8 +22,8 @@ type Request struct {
 	// 这与 Chat Completions 把 system 混在 messages 里是实质差异。
 	Instructions string `json:"instructions,omitempty"`
 
-	Tools      []Tool          `json:"tools,omitempty"`
-	ToolChoice json.RawMessage `json:"tool_choice,omitempty"`
+	Tools      []json.RawMessage `json:"tools,omitempty"`
+	ToolChoice json.RawMessage   `json:"tool_choice,omitempty"`
 
 	Stream        *bool `json:"stream,omitempty"`
 	MaxOutputToks *int  `json:"max_output_tokens,omitempty"`
@@ -42,9 +42,9 @@ type Request struct {
 
 	// Store 是服务端会话的**写入**端，用指针以区分「省略」与「显式 true」。
 	//
-	// OpenAI 的默认值是 true，若把省略也当成「要求服务端会话」，默认配置下
-	// 几乎每个请求都会被拒。多数 SDK 不显式发送它，说明调用方并不在意；
-	// 显式写 true 才是真的打算回头引用。
+	// OpenAI 的默认值是 true，所以省略时也按存一轮处理；但只有显式 true 才
+	// 说明调用方真的打算回头引用。两者混为一谈，会让未启用 convstore 的部署
+	// 把每个普通请求都拒掉。
 	Store *bool `json:"store,omitempty"`
 
 	Metadata map[string]string `json:"metadata,omitempty"`

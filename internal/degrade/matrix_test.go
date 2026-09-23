@@ -159,7 +159,7 @@ func TestImplementedRoutesAreExplicit(t *testing.T) {
 // 等于宣称一个还没写的实现可用。
 func TestRedeemedCapabilitiesAreExplicit(t *testing.T) {
 	// OpenAI 两条同源直通各一扇门，字节级转发，可表达的全部兑现；
-	// Chat 到 DashScope Compatible 兑现九项可交付能力（两项 REJECT 不在其列）；
+	// Chat 到 DashScope Compatible 兑现十一项可交付能力（两项 REJECT 不在其列）；
 	// Native 投放了文本生成与多模态生成两扇门，各 5 项，名单彼此独立。
 	want := map[string][]canonical.Capability{
 		string(ProtoOpenAIResponses) + " -> " + string(ProviderOpenAICompat) +
@@ -175,8 +175,10 @@ func TestRedeemedCapabilitiesAreExplicit(t *testing.T) {
 			canonical.CapStructuredOutput,
 			canonical.CapReasoning,
 			canonical.CapVisionInput,
+			canonical.CapImageDetail,
 			canonical.CapAudioInput,
 			canonical.CapWebSearch,
+			canonical.CapMessageName,
 		},
 		string(ProtoDashScopeNative) + " -> " + string(ProviderDashScopeNative) +
 			" @ " + string(EndpointDashScopeTextGeneration): {
@@ -203,7 +205,9 @@ func TestRedeemedCapabilitiesAreExplicit(t *testing.T) {
 			canonical.CapStructuredOutput,
 			canonical.CapReasoning,
 			canonical.CapVisionInput,
+			canonical.CapImageDetail,
 			canonical.CapWebSearch,
+			canonical.CapMessageName,
 		},
 	}
 

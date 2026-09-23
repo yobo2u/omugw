@@ -48,6 +48,19 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("降级矩阵不完整: %w", err)
 	}
+
+	reg := prometheus.NewRegistry()
+	reg.MustRegister(
+		collectors.NewGoCollector(),
+		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+	)
+	metrics := obs.NewMetrics(reg)
+
+	built, err := gateway.Build(cfg, matrix, metrics, log)
+	if err != nil {
+		return err
+	}
+
 	var implemented int
 	for _, r := range matrix.Routes() {
 		// 设计列是路径级的，与端点无关；这里只取 DesignScore。
@@ -87,18 +100,6 @@ func run() error {
 			"hint", "配齐 auth.keys / credentials / providers / models 后重启")
 	}
 
-	reg := prometheus.NewRegistry()
-	reg.MustRegister(
-		collectors.NewGoCollector(),
-		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
-	)
-	metrics := obs.NewMetrics(reg)
-
-	built, err := gateway.Build(cfg, matrix, metrics, log)
-	if err != nil {
-		return err
-	}
-
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -107,12 +108,15 @@ func run() error {
 	if built.Discovery != nil {
 		go built.Discovery.Run(ctx)
 	}
+	if built.ConversationStore != nil {
+		go built.ConversationStore.RunGC(ctx, cfg.ConvStore.GCInterval)
+	}
 
 	gwSrv := &http.Server{
-		Addr:    cfg.Server.Addr,
-		Handler: built.Mux,
-		// 只设读头超时。整体超时由 internal/transport 的四层超时管理——
-		// 在这里设 WriteTimeout 会把长流式响应直接掐断。
+		Addr:        cfg.Server.Addr,
+		Handler:     built.Mux,
+		ReadTimeout: cfg.Timeouts.Total,
+		// WriteTimeout 会把长流式响应直接掐断，因此只限制请求读取。
 		ReadHeaderTimeout: cfg.Timeouts.Connect,
 	}
 	metricsSrv := &http.Server{
