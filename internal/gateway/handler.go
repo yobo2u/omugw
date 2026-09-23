@@ -7,6 +7,9 @@
 package gateway
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -14,6 +17,7 @@ import (
 
 	"github.com/yobo2u/omugw/internal/canonical"
 	"github.com/yobo2u/omugw/internal/config"
+	"github.com/yobo2u/omugw/internal/convstore"
 	"github.com/yobo2u/omugw/internal/credential"
 	"github.com/yobo2u/omugw/internal/degrade"
 	"github.com/yobo2u/omugw/internal/obs"
@@ -38,6 +42,11 @@ type Deps struct {
 	Log     *slog.Logger
 	Now     func() time.Time
 
+	// RequestReadTimeout 限制客户端交付完整请求体的时间。只在 Handler 层设限制
+	// 才能覆盖测试服务器与嵌入式使用；生产 http.Server 还会设置同值作为兜底。
+	RequestReadTimeout time.Duration
+	ConversationStore  convstore.Store
+
 	// Pools 按凭据池名索引。
 	Pools map[string]*credential.Pool
 
@@ -50,9 +59,16 @@ type Deps struct {
 // 各入站协议的解码器各自产出它，好让 serve/dispatch/relay 这条主链路对具体协议
 // 无感——新增一条入站协议不必改主链路，只需再给一个 inbound。
 type decodedRequest struct {
-	Request     canonical.Request
-	caps        []canonical.Capability
-	InlineBytes int64
+	Request            canonical.Request
+	caps               []canonical.Capability
+	InlineBytes        int64
+	ReplayInlineBytes  int64
+	PreviousResponseID string
+	WantsStore         bool
+
+	// RequiresConversationStore 表示调用方显式依赖服务端会话，缺了它请求就
+	// 不成立。WantsStore 只是协议默认值，够不上这个判据。
+	RequiresConversationStore bool
 }
 
 // Capabilities 报告这次请求用到的能力，供降级矩阵裁决。
@@ -74,6 +90,10 @@ type inbound struct {
 	// input_tokens 且每一帧都携带——不能共用一套解析。
 	usageJSON  func(body []byte) canonical.Usage
 	usageEvent func(ev sse.Event) (canonical.Usage, bool)
+
+	// streamTerminal 判定协议级正常结束。nil 表示该协议暂未声明判据；一旦声明，
+	// HTTP EOF 之前没见到终止事件就必须按上游中断处理，不能把半截回答记成成功。
+	streamTerminal func(ev sse.Event) bool
 
 	// upstreamPath 返回同源直通时打到的上游端点。网关对上游说的是客户端那套
 	// 线格式，所以路径由入站协议决定，而不是由出站 Provider 决定。多数协议是
@@ -118,10 +138,24 @@ func responsesInbound() inbound {
 			if err != nil {
 				return nil, err
 			}
-			return &decodedRequest{Request: d.Request, caps: d.Capabilities(), InlineBytes: d.InlineBytes}, nil
+			return &decodedRequest{
+				Request: d.Request, caps: d.Capabilities(), InlineBytes: d.InlineBytes,
+				ReplayInlineBytes:         d.ReplayInlineBytes,
+				PreviousResponseID:        d.PreviousResponseID,
+				WantsStore:                d.WantsStore,
+				RequiresConversationStore: d.RequiresStatefulConversation,
+			}, nil
 		},
-		usageJSON:    extractUsage,
-		usageEvent:   parseUsageEvent,
+		usageJSON:  extractUsage,
+		usageEvent: parseUsageEvent,
+		streamTerminal: func(ev sse.Event) bool {
+			switch ev.Event {
+			case "response.completed", "response.incomplete", "response.failed":
+				return true
+			default:
+				return false
+			}
+		},
 		upstreamPath: func(*http.Request) string { return string(degrade.EndpointOpenAIResponses) },
 		encodeError:  openaiwire.EncodeError,
 	}
@@ -138,8 +172,11 @@ func chatInbound() inbound {
 			}
 			return &decodedRequest{Request: d.Request, caps: d.Capabilities(), InlineBytes: d.InlineBytes}, nil
 		},
-		usageJSON:    extractChatUsage,
-		usageEvent:   parseChatUsageEvent,
+		usageJSON:  extractChatUsage,
+		usageEvent: parseChatUsageEvent,
+		streamTerminal: func(ev sse.Event) bool {
+			return ev.Data == "[DONE]"
+		},
 		upstreamPath: func(*http.Request) string { return string(degrade.EndpointOpenAIChat) },
 		encodeError:  openaiwire.EncodeError,
 	}
@@ -165,14 +202,43 @@ func dashScopeNativeInbound() inbound {
 			}
 			return &decodedRequest{Request: d.Request, caps: d.Capabilities(), InlineBytes: d.InlineBytes}, nil
 		},
-		usageJSON:    extractDashScopeUsage,
-		usageEvent:   parseDashScopeUsageEvent,
+		usageJSON:  extractDashScopeUsage,
+		usageEvent: parseDashScopeUsageEvent,
+		streamTerminal: func(ev sse.Event) bool {
+			if ev.Event != "" && ev.Event != "result" {
+				return false
+			}
+			var frame struct {
+				Output struct {
+					Choices []struct {
+						FinishReason *string `json:"finish_reason"`
+					} `json:"choices"`
+				} `json:"output"`
+			}
+			if err := json.Unmarshal([]byte(ev.Data), &frame); err != nil || len(frame.Output.Choices) == 0 {
+				return false
+			}
+			for _, choice := range frame.Output.Choices {
+				if choice.FinishReason == nil || *choice.FinishReason == "" || *choice.FinishReason == "null" {
+					return false
+				}
+			}
+			return true
+		},
 		upstreamPath: func(r *http.Request) string { return r.URL.Path },
 		encodeError:  dashscopewire.EncodeError,
 	}
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if h.deps.RequestReadTimeout > 0 {
+		// 慢速请求体发生在业务 handler 已经开始之后，ReadHeaderTimeout 管不到它。
+		// ResponseController 在真实 net/http 连接上设置读取期限；不支持该能力的
+		// 纯内存 ResponseWriter 会返回错误，此时仍由调用方的请求上下文兜底。
+		_ = http.NewResponseController(w).SetReadDeadline(
+			time.Now().Add(h.deps.RequestReadTimeout),
+		)
+	}
 	tw := &tracked{ResponseWriter: w}
 	start := h.deps.Now()
 
@@ -240,6 +306,14 @@ func (h *Handler) serve(w *tracked, r *http.Request) (outcome, outbound string, 
 
 	h.observeVerdict(kind, verdict)
 
+	conversation, err := h.prepareConversation(r, caller, decoded, raw)
+	if err != nil {
+		return "bad_request", outbound, err
+	}
+	if conversation != nil {
+		raw = conversation.raw
+	}
+
 	candidates := router.OfKind(targets, kind)
 	if kind == degrade.ProviderDashScopeNative {
 		candidates = filterNativeTargets(candidates, decoded.Capabilities())
@@ -252,14 +326,27 @@ func (h *Handler) serve(w *tracked, r *http.Request) (outcome, outbound string, 
 	}
 
 	return h.dispatch(w, r, dispatchInput{
-		caller:  caller,
-		raw:     raw,
-		decoded: decoded,
-		targets: candidates,
-		kind:    kind,
-		inbound: inbound,
-		headers: verdictHeaders(verdict),
+		caller:       caller,
+		raw:          raw,
+		decoded:      decoded,
+		targets:      candidates,
+		kind:         kind,
+		inbound:      inbound,
+		headers:      verdictHeaders(verdict),
+		conversation: conversation,
 	})
+}
+
+type conversationRequest struct {
+	raw         []byte
+	prevID      string
+	responseID  string
+	owner       string
+	store       bool
+	inlineBytes int64
+	current     []canonical.Message
+	currentWire []json.RawMessage
+	stored      bool
 }
 
 type dispatchInput struct {
@@ -272,7 +359,8 @@ type dispatchInput struct {
 	// inbound 是 serve 裁决时用的那一份入站坐标，原样交给 Provider。
 	inbound degrade.Inbound
 
-	headers map[string]string
+	headers      map[string]string
+	conversation *conversationRequest
 }
 
 // dispatch 在候选上游之间做 failover。
@@ -351,15 +439,13 @@ func (h *Handler) dispatch(w *tracked, r *http.Request, in dispatchInput) (strin
 				break // 换凭据也没用，换下一个上游
 			}
 
-			lease.Succeed()
-
-			// 走到这里就跨过了下游首字节的门槛：此后任何失败都只能收尾，
-			// 不能重试。
+			// Provider 返回响应只说明上游响应头到了。真正的 failover 边界仍由
+			// tracked.wrote 决定；非流式响应体可能在任何下游字节写出前就截断。
 			h.deps.Metrics.FirstByte.WithLabelValues(
 				string(h.in.protocol), string(in.kind), "true",
 			).Observe(resp.Latency.Seconds())
 
-			usage, rerr := h.relay(w, resp, in)
+			usage, rerr := h.relay(r.Context(), w, resp, in)
 
 			// 用量优先级：relay 给出的结果永远优先，回调只在它交白卷时补位。
 			//
@@ -379,6 +465,17 @@ func (h *Handler) dispatch(w *tracked, r *http.Request, in dispatchInput) (strin
 
 			if rerr != nil {
 				cerr := canonical.AsError(rerr)
+				if !w.wrote {
+					lease.Fail(rerr)
+					h.deps.Metrics.ObserveError(string(in.kind), cerr)
+					lastCallErr = rerr
+					if cerr.Retryable {
+						continue
+					}
+					break
+				}
+
+				lease.Fail(rerr)
 				h.deps.Metrics.StreamAborted.WithLabelValues(
 					string(h.in.protocol), string(in.kind), string(cerr.Class)).Inc()
 				h.deps.Log.Warn("响应转发中断",
@@ -389,6 +486,7 @@ func (h *Handler) dispatch(w *tracked, r *http.Request, in dispatchInput) (strin
 				// 已经开始回写，fail 会识别出这一点并只记日志。
 				return "stream_aborted", string(in.kind), rerr
 			}
+			lease.Succeed()
 			return "ok", string(in.kind), nil
 		}
 	}
@@ -405,11 +503,177 @@ func (h *Handler) dispatch(w *tracked, r *http.Request, in dispatchInput) (strin
 }
 
 // relay 按流式与否选择转发方式。
-func (h *Handler) relay(w *tracked, resp *httpx.Response, in dispatchInput) (canonical.Usage, error) {
-	if in.decoded.Request.Stream {
-		return relayStream(w, resp, in.headers, h.in.usageEvent, h.in.encodeError)
+func (h *Handler) relay(ctx context.Context, w *tracked, resp *httpx.Response, in dispatchInput) (canonical.Usage, error) {
+	var jsonTransform func([]byte) ([]byte, error)
+	var streamTransform func(sse.Event) (sse.Event, error)
+	if in.conversation != nil {
+		jsonTransform = func(body []byte) ([]byte, error) {
+			patched, output, err := openairesponses.RewriteStoredResponse(
+				body, in.conversation.responseID, in.conversation.prevID,
+				in.conversation.store)
+			if err != nil {
+				return nil, err
+			}
+			if in.conversation.store {
+				if err := h.storeConversation(ctx, in.conversation, output,
+					in.decoded.Request.Model); err != nil {
+					return nil, err
+				}
+			}
+			return patched, nil
+		}
+		streamTransform = func(ev sse.Event) (sse.Event, error) {
+			patched, output, terminal, err := openairesponses.RewriteStoredStreamEvent(
+				ev, in.conversation.responseID, in.conversation.prevID,
+				in.conversation.store)
+			if err != nil {
+				return ev, err
+			}
+			if terminal && in.conversation.store {
+				if err := h.storeConversation(ctx, in.conversation, output,
+					in.decoded.Request.Model); err != nil {
+					return ev, err
+				}
+			}
+			return patched, nil
+		}
 	}
-	return relayJSON(w, resp, in.headers, h.in.usageJSON)
+	if in.decoded.Request.Stream {
+		return relayStream(w, resp, in.headers, h.in.usageEvent,
+			h.in.streamTerminal, streamTransform, h.in.encodeError)
+	}
+	return relayJSON(w, resp, in.headers, h.in.usageJSON, jsonTransform)
+}
+
+func (h *Handler) prepareConversation(r *http.Request, caller Caller,
+	decoded *decodedRequest, raw []byte) (*conversationRequest, error) {
+	if decoded.PreviousResponseID == "" && !decoded.WantsStore {
+		return nil, nil
+	}
+	if h.deps.ConversationStore == nil {
+		// 没装配存储时，只有显式依赖会话的请求才算失败。省略 store 的请求
+		// 走协议默认值，本来就没要求网关保管——为它报错等于把一个能正常
+		// 完成的普通请求变成故障。
+		if decoded.RequiresConversationStore {
+			return nil, canonical.Newf(canonical.ClassInternal,
+				"convstore 已声明可用但没有装配存储实例")
+		}
+		return nil, nil
+	}
+
+	current := append([]canonical.Message(nil), decoded.Request.Messages...)
+	currentWire, err := openairesponses.ConversationInputItems(raw)
+	if err != nil {
+		return nil, err
+	}
+	var (
+		history       []canonical.Message
+		historyWire   []json.RawMessage
+		historyInline int64
+		turnCount     int
+	)
+	if decoded.PreviousResponseID != "" {
+		turns, err := h.deps.ConversationStore.TurnsOwned(
+			r.Context(), decoded.PreviousResponseID, caller.ID)
+		if err != nil {
+			return nil, conversationError(err)
+		}
+		turnCount = len(turns)
+		if len(turns) == 0 {
+			return nil, canonical.Newf(canonical.ClassInternal, "convstore 返回了空会话链")
+		}
+		if turns[len(turns)-1].Model != decoded.Request.Model {
+			return nil, canonical.Newf(canonical.ClassBadRequest,
+				"previous_response_id 属于模型 %q，不能用模型 %q 继续",
+				turns[len(turns)-1].Model, decoded.Request.Model)
+		}
+		for _, turn := range turns {
+			history = append(history, turn.Messages...)
+			historyInline += turn.InlineBytes
+			var items []json.RawMessage
+			if len(turn.Opaque) > 0 {
+				if err := json.Unmarshal(turn.Opaque, &items); err != nil {
+					return nil, canonical.Wrapf(err, canonical.ClassInternal,
+						"convstore 中的 Responses 原始历史损坏")
+				}
+			} else {
+				items, err = openairesponses.EncodeConversationHistory(turn.Messages)
+				if err != nil {
+					return nil, err
+				}
+			}
+			historyWire = append(historyWire, items...)
+		}
+	}
+
+	limits := h.deps.ConversationStore.Limits()
+	if decoded.WantsStore && turnCount >= limits.MaxChainDepth {
+		return nil, conversationError(convstore.ErrChainTooLong)
+	}
+	if decoded.WantsStore && len(history)+len(current) >= limits.MaxMessages {
+		return nil, conversationError(convstore.ErrTooLarge)
+	}
+	if historyInline+decoded.InlineBytes > h.deps.Limits.MaxInlineBytes {
+		return nil, canonical.Newf(canonical.ClassBadRequest,
+			"会话累计内联多模态负载 %d 字节，超过上限 %d",
+			historyInline+decoded.InlineBytes, h.deps.Limits.MaxInlineBytes)
+	}
+
+	patched, err := openairesponses.ExpandConversationRequest(raw, historyWire)
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(patched)) > h.deps.Limits.MaxRequestBytes {
+		return nil, canonical.Newf(canonical.ClassBadRequest,
+			"展开会话历史后的请求体超过上限 %d 字节", h.deps.Limits.MaxRequestBytes)
+	}
+	responseID, err := convstore.NewResponseID()
+	if err != nil {
+		return nil, canonical.Wrapf(err, canonical.ClassInternal, "生成本地 response.id 失败")
+	}
+	decoded.Request.Messages = append(history, current...)
+	return &conversationRequest{
+		raw: patched, prevID: decoded.PreviousResponseID,
+		responseID: responseID, owner: caller.ID, store: decoded.WantsStore,
+		inlineBytes: decoded.ReplayInlineBytes, current: current, currentWire: currentWire,
+	}, nil
+}
+
+func (h *Handler) storeConversation(ctx context.Context, conversation *conversationRequest,
+	output openairesponses.StoredOutput, model string) error {
+	if !conversation.store || conversation.stored {
+		return nil
+	}
+	messages := make([]canonical.Message, 0, len(conversation.current)+len(output.Messages))
+	messages = append(messages, conversation.current...)
+	messages = append(messages, output.Messages...)
+	items := make([]json.RawMessage, 0, len(conversation.currentWire)+len(output.Items))
+	items = append(items, conversation.currentWire...)
+	items = append(items, output.Items...)
+	opaque, err := json.Marshal(items)
+	if err != nil {
+		return canonical.Wrapf(err, canonical.ClassInternal, "序列化 Responses 会话轮次失败")
+	}
+	if err := h.deps.ConversationStore.AppendWithID(ctx, convstore.Turn{
+		ID: conversation.responseID, PrevID: conversation.prevID,
+		Owner: conversation.owner, Messages: messages, Opaque: opaque,
+		InlineBytes: conversation.inlineBytes + output.InlineBytes, Model: model,
+	}); err != nil {
+		return conversationError(err)
+	}
+	conversation.stored = true
+	return nil
+}
+
+func conversationError(err error) error {
+	if errors.Is(err, convstore.ErrNotFound) {
+		return canonical.Wrapf(err, canonical.ClassBadRequest,
+			"previous_response_id 不存在或已过期")
+	}
+	if errors.Is(err, convstore.ErrChainTooLong) || errors.Is(err, convstore.ErrTooLarge) {
+		return canonical.Wrapf(err, canonical.ClassBadRequest, "会话历史超过资源上限")
+	}
+	return canonical.Wrapf(err, canonical.ClassInternal, "会话存储失败")
 }
 
 // readBody 读取请求体，带大小上限。

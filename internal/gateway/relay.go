@@ -39,13 +39,20 @@ func (t *tracked) Flush() {
 
 // relayJSON 转发非流式响应。usageFromJSON 按入站协议从响应体里抽取用量。
 func relayJSON(w *tracked, resp *httpx.Response, extra map[string]string,
-	usageFromJSON func(body []byte) canonical.Usage) (canonical.Usage, error) {
+	usageFromJSON func(body []byte) canonical.Usage,
+	transform func(body []byte) ([]byte, error)) (canonical.Usage, error) {
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return canonical.UnavailableUsage(),
 			canonical.Wrapf(err, canonical.ClassUpstreamUnavailable, "读取上游响应失败")
+	}
+	if transform != nil {
+		body, err = transform(body)
+		if err != nil {
+			return canonical.UnavailableUsage(), err
+		}
 	}
 
 	usage := usageFromJSON(body)
@@ -68,6 +75,8 @@ func relayJSON(w *tracked, resp *httpx.Response, extra map[string]string,
 // 代价只是帧的空白格式被规范化——data 负载逐字保留，语义完全一致。
 func relayStream(w *tracked, resp *httpx.Response, extra map[string]string,
 	usageFromEvent func(ev sse.Event) (canonical.Usage, bool),
+	streamTerminal func(ev sse.Event) bool,
+	transform func(ev sse.Event) (sse.Event, error),
 	encodeError func(e *canonical.Error) (int, []byte, map[string]string)) (canonical.Usage, error) {
 	defer resp.Body.Close()
 
@@ -81,22 +90,43 @@ func relayStream(w *tracked, resp *httpx.Response, extra map[string]string,
 		return canonical.UnavailableUsage(),
 			canonical.Wrapf(err, canonical.ClassInternal, "无法建立流式输出")
 	}
-	w.WriteHeader(resp.StatusCode)
 
 	usage := canonical.UnavailableUsage()
 	reader := sse.NewReader(resp.Body)
+	terminated := false
 
 	for {
 		ev, err := reader.Next()
 
 		if ev.Data != "" || ev.Event != "" {
+			if transform != nil {
+				ev, err = transform(ev)
+				if err != nil {
+					cerr := canonical.AsError(err)
+					if !w.wrote {
+						return canonical.UnavailableUsage(), cerr
+					}
+					_, errBody, _ := encodeError(cerr)
+					_ = sw.Write(sse.Event{Event: "error", Data: string(errBody)})
+					return canonical.UnavailableUsage(), cerr
+				}
+			}
+			if streamTerminal != nil && streamTerminal(ev) {
+				terminated = true
+			}
 			if u, ok := usageFromEvent(ev); ok {
 				usage = u
+			}
+			if !w.wrote {
+				w.WriteHeader(resp.StatusCode)
 			}
 			if werr := sw.Write(ev); werr != nil {
 				// 客户端断开。不是上游的错，也不必再往下读。
 				return usage, canonical.Wrapf(werr, canonical.ClassBadRequest,
 					"客户端已断开")
+			}
+			if terminated {
+				return usage, nil
 			}
 		}
 
@@ -104,6 +134,17 @@ func relayStream(w *tracked, resp *httpx.Response, extra map[string]string,
 			continue
 		}
 		if errors.Is(err, io.EOF) {
+			if streamTerminal != nil && !terminated {
+				cerr := canonical.Wrapf(io.ErrUnexpectedEOF,
+					canonical.ClassUpstreamUnavailable,
+					"上游流在协议终止事件之前结束")
+				if !w.wrote {
+					return canonical.UnavailableUsage(), cerr
+				}
+				_, errBody, _ := encodeError(cerr)
+				_ = sw.Write(sse.Event{Event: "error", Data: string(errBody)})
+				return canonical.UnavailableUsage(), cerr
+			}
 			return usage, nil
 		}
 
@@ -112,6 +153,9 @@ func relayStream(w *tracked, resp *httpx.Response, extra map[string]string,
 		// 上游不会再送 usage 了，任何非零数字都是编造的。错误负载按入站协议
 		// 的线格式编码，客户端才读得懂。
 		cerr := canonical.AsError(err)
+		if !w.wrote {
+			return canonical.UnavailableUsage(), cerr
+		}
 		_, errBody, _ := encodeError(cerr)
 		_ = sw.Write(sse.Event{Event: "error", Data: string(errBody)})
 		return canonical.UnavailableUsage(), cerr

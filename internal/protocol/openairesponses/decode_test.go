@@ -182,18 +182,23 @@ func TestReasoningItemIsDropped(t *testing.T) {
 
 // TestStoreSemantics 是这个包里最需要说清楚的一处。
 //
-// OpenAI 的 store 默认为 true。把省略也当成「要求服务端会话」，默认配置下
-// 几乎每个请求都会被拒；而多数 SDK 不显式发送它，说明调用方并不在意。
-// 因此只有**显式** true 才触发能力。
+// store 有两列，绝不能并成一列：
+//
+//   - WantsStore 是写入决定。OpenAI 的默认值是 true，省略也按存一轮处理，
+//     否则首轮返回的 ID 在下一轮无法继续。
+//   - 会话能力是**调用方的要求**。只有显式 true 才算，因为多数 SDK 压根不发
+//     这个字段；把省略也报成要求，convstore 默认关闭的部署里几乎每个请求都
+//     会被矩阵拒成 422。
 func TestStoreSemantics(t *testing.T) {
 	tests := []struct {
-		name string
-		body string
-		want bool
+		name     string
+		body     string
+		want     bool
+		wantsCap bool
 	}{
-		{"省略 store", `{"model":"m","input":"hi"}`, false},
-		{"显式 false", `{"model":"m","input":"hi","store":false}`, false},
-		{"显式 true", `{"model":"m","input":"hi","store":true}`, true},
+		{"省略 store", `{"model":"m","input":"hi"}`, true, false},
+		{"显式 false", `{"model":"m","input":"hi","store":false}`, false, false},
+		{"显式 true", `{"model":"m","input":"hi","store":true}`, true, true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -201,8 +206,12 @@ func TestStoreSemantics(t *testing.T) {
 			if d.WantsStore != tc.want {
 				t.Errorf("WantsStore = %v, 期望 %v", d.WantsStore, tc.want)
 			}
-			if got := hasCap(d.Capabilities(), canonical.CapStatefulConversation); got != tc.want {
-				t.Errorf("服务端会话能力触发 = %v, 期望 %v", got, tc.want)
+			if d.RequiresStatefulConversation != tc.wantsCap {
+				t.Errorf("RequiresStatefulConversation = %v, 期望 %v",
+					d.RequiresStatefulConversation, tc.wantsCap)
+			}
+			if got := hasCap(d.Capabilities(), canonical.CapStatefulConversation); got != tc.wantsCap {
+				t.Errorf("服务端会话能力触发 = %v, 期望 %v", got, tc.wantsCap)
 			}
 		})
 	}
@@ -280,17 +289,113 @@ func TestToolChoiceForms(t *testing.T) {
 	}
 }
 
-// TestBuiltinToolIsRejected 固化「内建工具不做跨 Provider 映射」。
-//
-// 各家的 schema 不兼容，勉强映射只会让模型收到一个读不懂的定义。
-// 分类是 unsupported（422）而非 bad_request——请求本身没错，是这条路不支持。
-func TestBuiltinToolIsRejected(t *testing.T) {
-	cerr := decodeErr(t, `{"model":"m","input":"hi","tools":[{"type":"web_search"}]}`)
-	if cerr.Class != canonical.ClassUnsupported {
-		t.Errorf("分类 = %q, 期望 unsupported", cerr.Class)
+// TestBuiltinToolIsReportedToMatrix 防的是合法的同源工具在选定 Provider 前被解码器拒绝。
+// 异构路径是否允许由矩阵裁决，解码器只报告能力且不把私有 schema 塞进 Canonical。
+func TestBuiltinToolIsReportedToMatrix(t *testing.T) {
+	d := mustDecode(t, `{"model":"m","input":"hi","tools":[{"type":"web_search"}]}`)
+	if len(d.Request.Tools) != 0 {
+		t.Fatalf("内建工具不应变成 Canonical function: %+v", d.Request.Tools)
 	}
-	if cerr.HTTPStatus() != 422 {
-		t.Errorf("状态码 = %d, 期望 422", cerr.HTTPStatus())
+	if !hasCap(d.Capabilities(), canonical.CapWebSearch) {
+		t.Fatalf("web_search 未报告给矩阵: %v", d.Capabilities())
+	}
+}
+
+func TestBuiltinToolOptionsAndChoiceAreAccepted(t *testing.T) {
+	d := mustDecode(t, `{"model":"m","input":"hi","store":false,`+
+		`"tools":[{"type":"web_search","search_context_size":"low"}],`+
+		`"tool_choice":{"type":"web_search"}}`)
+	if len(d.Request.Tools) != 0 {
+		t.Fatalf("内建工具不应变成 Canonical function: %+v", d.Request.Tools)
+	}
+	if d.Request.ToolChoice != nil {
+		t.Fatalf("同源内建 tool_choice 不应伪装成 Canonical function: %+v", d.Request.ToolChoice)
+	}
+	if !hasCap(d.Capabilities(), canonical.CapWebSearch) {
+		t.Fatalf("web_search 未报告给矩阵: %v", d.Capabilities())
+	}
+}
+
+func TestCurrentComputerToolAndImageMaskAreAccepted(t *testing.T) {
+	d := mustDecode(t, `{"model":"m","input":"hi","store":false,`+
+		`"tools":[{"type":"computer"},{"type":"image_generation",`+
+		`"input_image_mask":{"image_url":"QUJD"}}],`+
+		`"tool_choice":{"type":"computer"}}`)
+	if !hasCap(d.Capabilities(), canonical.CapComputerUse) ||
+		!hasCap(d.Capabilities(), canonical.CapImageGeneration) {
+		t.Fatalf("当前内建工具没有报告给矩阵: %v", d.Capabilities())
+	}
+	if d.InlineBytes != 3 {
+		t.Fatalf("工具 mask 内联字节 = %d，期望 3", d.InlineBytes)
+	}
+	if d.ReplayInlineBytes != 0 {
+		t.Fatalf("不会进入历史的工具 mask 被计为回放字节: %d", d.ReplayInlineBytes)
+	}
+}
+
+func TestBuiltinContinuationItemsAreReportedToMatrix(t *testing.T) {
+	tests := []struct {
+		name       string
+		input      string
+		wantCaps   []canonical.Capability
+		wantInline int64
+	}{
+		{
+			name: "computer screenshot URL",
+			input: `[{"type":"computer_call_output","call_id":"call_1",` +
+				`"output":{"type":"computer_screenshot","image_url":"https://example.com/s.png"}}]`,
+			wantCaps: []canonical.Capability{canonical.CapComputerUse, canonical.CapVisionInput},
+		},
+		{
+			name: "computer screenshot data URI",
+			input: `[{"type":"computer_call_output","call_id":"call_1",` +
+				`"output":{"type":"computer_screenshot","image_url":"data:image/png;base64,QUJD"}}]`,
+			wantCaps:   []canonical.Capability{canonical.CapComputerUse, canonical.CapVisionInput},
+			wantInline: 3,
+		},
+		{
+			name: "computer screenshot file reference",
+			input: `[{"type":"computer_call_output","call_id":"call_1",` +
+				`"output":{"type":"computer_screenshot","file_id":"file_1"}}]`,
+			wantCaps: []canonical.Capability{canonical.CapComputerUse, canonical.CapVisionInput},
+		},
+		{
+			name: "web search call",
+			input: `[{"type":"web_search_call","id":"ws_1","status":"completed",` +
+				`"action":{"type":"search","query":"weather"}}]`,
+			wantCaps: []canonical.Capability{canonical.CapWebSearch},
+		},
+		{
+			name: "image generation result",
+			input: `[{"type":"image_generation_call","id":"ig_1",` +
+				`"status":"completed","result":"QUJD"}]`,
+			wantCaps:   []canonical.Capability{canonical.CapImageGeneration},
+			wantInline: 3,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			d := mustDecode(t, `{"model":"m","store":false,"input":`+tc.input+`}`)
+			for _, capability := range tc.wantCaps {
+				if !hasCap(d.Capabilities(), capability) {
+					t.Errorf("缺少能力 %q: %v", capability, d.Capabilities())
+				}
+			}
+			if d.InlineBytes != tc.wantInline {
+				t.Errorf("InlineBytes=%d，期望 %d", d.InlineBytes, tc.wantInline)
+			}
+		})
+	}
+}
+
+func TestInputImageDetailSurvivesDecode(t *testing.T) {
+	d := mustDecode(t, `{"model":"m","input":[{"role":"user","content":[{"type":"input_image","image_url":"https://example.com/a.png","detail":"low"}]}]}`)
+	media := d.Request.Messages[0].Parts[0].Media
+	if media == nil || media.Detail != "low" {
+		t.Fatalf("图片 detail 未进入 Canonical: %+v", media)
+	}
+	if !hasCap(d.Capabilities(), canonical.CapImageDetail) {
+		t.Fatalf("image_detail 未报告给矩阵: %v", d.Capabilities())
 	}
 }
 

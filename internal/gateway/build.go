@@ -7,6 +7,7 @@ import (
 
 	"github.com/yobo2u/omugw/internal/canonical"
 	"github.com/yobo2u/omugw/internal/config"
+	"github.com/yobo2u/omugw/internal/convstore"
 	"github.com/yobo2u/omugw/internal/credential"
 	"github.com/yobo2u/omugw/internal/degrade"
 	"github.com/yobo2u/omugw/internal/discovery"
@@ -23,7 +24,8 @@ import (
 
 // Built 是从配置组装出来的网关。
 type Built struct {
-	Mux *http.ServeMux
+	Mux               *http.ServeMux
+	ConversationStore *convstore.MemoryStore
 
 	// Routes 是已注册的转换路径数与已实现数，供启动日志使用。
 	Registered  int
@@ -42,6 +44,10 @@ type Built struct {
 // 只可能是代码写错，因此一律返回错误让启动失败——一个跑起来才发现路由指向
 // 空气的网关，比一个起不来的网关难查得多。
 func Build(cfg config.Config, m *degrade.Matrix, metrics *obs.Metrics, log *slog.Logger) (*Built, error) {
+	availability := degrade.DefaultAvailability()
+	availability[degrade.FeatureConversationStore] = cfg.ConvStore.Enabled
+	m.WithAvailability(availability)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -129,6 +135,15 @@ func Build(cfg config.Config, m *degrade.Matrix, metrics *obs.Metrics, log *slog
 	}
 
 	auth := NewAuthenticator(cfg.Auth.Keys)
+	var conversationStore *convstore.MemoryStore
+	if cfg.ConvStore.Enabled {
+		conversationStore = convstore.NewMemoryStore(convstore.Limits{
+			TTL: cfg.ConvStore.TTL, MaxChainDepth: cfg.ConvStore.MaxChainDepth,
+			MaxMessages: cfg.ConvStore.MaxMessages,
+			MaxTurns:    cfg.ConvStore.MaxTurns, MaxTotalBytes: cfg.ConvStore.MaxTotalBytes,
+		}, nil)
+		built.ConversationStore = conversationStore
+	}
 
 	// 发现只充实这扇门的清单，不进 Router——上游目录不等于本网关可调用的
 	// 集合（见 config.Discovery 与 internal/discovery 的包注释）。
@@ -142,14 +157,16 @@ func Build(cfg config.Config, m *degrade.Matrix, metrics *obs.Metrics, log *slog
 	mux.Handle("GET /v1/models", NewModelsHandler(auth, rt, registry))
 
 	deps := Deps{
-		Matrix:    m,
-		Router:    rt,
-		Auth:      auth,
-		Limits:    cfg.Limits,
-		Metrics:   metrics,
-		Log:       log,
-		Pools:     pools,
-		Providers: provs,
+		Matrix:             m,
+		Router:             rt,
+		Auth:               auth,
+		Limits:             cfg.Limits,
+		Metrics:            metrics,
+		Log:                log,
+		RequestReadTimeout: cfg.Timeouts.Total,
+		ConversationStore:  conversationStore,
+		Pools:              pools,
+		Providers:          provs,
 	}
 	native := NewDashScopeNativeHandler(deps) // handler 无状态，多扇门复用同一实例
 
