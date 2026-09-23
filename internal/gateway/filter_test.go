@@ -104,6 +104,8 @@ func testLocalMatrix(t *testing.T, caps ...canonical.Capability) *degrade.Matrix
 		Degrade("DashScope Native 支持 response_format=json_object，无 strict schema 校验",
 			canonical.CapStructuredOutput).
 		Degrade("搜索开关", canonical.CapWebSearch).
+		Degrade("图片档位", canonical.CapImageDetail).
+		Degrade("参与者标签", canonical.CapMessageName).
 		Reject("文件引用", canonical.CapFileInput).
 		Reject("音频输出需要 Qwen-Omni 的输出格式参数，Chat Completions 入站无法表达",
 			canonical.CapAudioOutput).

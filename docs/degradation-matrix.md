@@ -40,20 +40,20 @@
 
 | 入站 | 出站 | 状态 | 快通道 | 透传 | 模拟 | 降级 | 拒绝 | N/A | 设计目标 | 当前可用 |
 |---|---|---|---|---:|---:|---:|---:|---:|---:|---:|
-| `dashscope.inference` | `dashscope.ws.inference` | 规划中 | ✅ | 6 | 0 | 0 | 0 | 21 | 1.000 | — |
-| `dashscope.native` | `dashscope.native` | 已实现 | ✅ | 18 | 0 | 0 | 0 | 9 | 1.000 | 见端点细分 |
-| `dashscope.realtime` | `dashscope.ws.realtime` | 规划中 | ✅ | 15 | 0 | 0 | 0 | 12 | 1.000 | — |
-| `dashscope.realtime` | `openai.realtime` | 规划中 |  | 10 | 0 | 2 | 3 | 12 | 0.733 | — |
-| `openai.chat` | `openai.compat` | 已实现 | ✅ | 11 | 0 | 0 | 0 | 16 | 1.000 | 1.000 |
-| `openai.chat` | `dashscope.compatible` | 已实现 |  | 7 | 0 | 2 | 2 | 16 | 0.727 | 0.727 |
-| `openai.chat` | `dashscope.native` | 已实现 |  | 6 | 0 | 3 | 2 | 16 | 0.682 | 0.591（9 项中 8 项已投放） |
-| `openai.chat` | `anthropic.messages` | 规划中 |  | 6 | 0 | 1 | 4 | 16 | 0.591 | — |
-| `openai.realtime` | `openai.realtime` | 规划中 | ✅ | 12 | 0 | 0 | 0 | 15 | 1.000 | — |
-| `openai.realtime` | `dashscope.ws.realtime` | 规划中 | ✅ | 10 | 0 | 2 | 0 | 15 | 0.917 | — |
-| `openai.responses` | `openai.compat` | 已实现 | ✅ | 13 | 1（1 未开启） | 0 | 0 | 13 | 1.000 | 0.929（开启 convstore 后 1.000） |
-| `openai.responses` | `dashscope.compatible` | 规划中 |  | 7 | 1（1 未开启） | 2 | 4 | 13 | 0.643 | — |
-| `openai.responses` | `dashscope.native` | 规划中 |  | 6 | 1（1 未开启） | 3 | 4 | 13 | 0.607 | — |
-| `openai.responses` | `anthropic.messages` | 规划中 |  | 6 | 1（1 未开启） | 1 | 6 | 13 | 0.536 | — |
+| `dashscope.inference` | `dashscope.ws.inference` | 规划中 | ✅ | 6 | 0 | 0 | 0 | 23 | 1.000 | — |
+| `dashscope.native` | `dashscope.native` | 已实现 | ✅ | 18 | 0 | 0 | 0 | 11 | 1.000 | 见端点细分 |
+| `dashscope.realtime` | `dashscope.ws.realtime` | 规划中 | ✅ | 15 | 0 | 0 | 0 | 14 | 1.000 | — |
+| `dashscope.realtime` | `openai.realtime` | 规划中 |  | 10 | 0 | 2 | 3 | 14 | 0.733 | — |
+| `openai.chat` | `openai.compat` | 已实现 | ✅ | 13 | 0 | 0 | 0 | 16 | 1.000 | 1.000 |
+| `openai.chat` | `dashscope.compatible` | 已实现 |  | 9 | 0 | 2 | 2 | 16 | 0.769 | 0.769 |
+| `openai.chat` | `dashscope.native` | 已实现 |  | 6 | 0 | 5 | 2 | 16 | 0.654 | 0.577（11 项中 10 项已投放） |
+| `openai.chat` | `anthropic.messages` | 规划中 |  | 6 | 0 | 3 | 4 | 16 | 0.577 | — |
+| `openai.realtime` | `openai.realtime` | 规划中 | ✅ | 12 | 0 | 0 | 0 | 17 | 1.000 | — |
+| `openai.realtime` | `dashscope.ws.realtime` | 规划中 | ✅ | 10 | 0 | 2 | 0 | 17 | 0.917 | — |
+| `openai.responses` | `openai.compat` | 已实现 | ✅ | 14 | 1（1 未开启） | 0 | 0 | 14 | 1.000 | 0.933（开启 convstore 后 1.000） |
+| `openai.responses` | `dashscope.compatible` | 规划中 |  | 8 | 1（1 未开启） | 2 | 4 | 14 | 0.667 | — |
+| `openai.responses` | `dashscope.native` | 规划中 |  | 6 | 1（1 未开启） | 4 | 4 | 14 | 0.600 | — |
+| `openai.responses` | `anthropic.messages` | 规划中 |  | 6 | 1（1 未开启） | 2 | 6 | 14 | 0.533 | — |
 
 ### 端点细分
 
@@ -63,10 +63,10 @@
 |---|---|---|---|---:|
 | dashscope.native | dashscope.native | /api/v1/services/aigc/multimodal-generation/generation | text_generation, streaming, vision_input, audio_input, video_input | 0.278（18 项中 5 项已投放） |
 | dashscope.native | dashscope.native | /api/v1/services/aigc/text-generation/generation | text_generation, streaming, tool_calling, reasoning, web_search | 0.278（18 项中 5 项已投放） |
-| openai.chat | dashscope.compatible | /v1/chat/completions | text_generation, streaming, tool_calling, parallel_tool_calls, structured_output, reasoning, vision_input, audio_input, web_search | 0.727 |
-| openai.chat | dashscope.native | /v1/chat/completions | text_generation, streaming, tool_calling, parallel_tool_calls, structured_output, reasoning, vision_input, web_search | 0.591（9 项中 8 项已投放） |
-| openai.chat | openai.compat | /v1/chat/completions | text_generation, streaming, tool_calling, parallel_tool_calls, structured_output, reasoning, vision_input, audio_input, file_input, audio_output, web_search | 1.000 |
-| openai.responses | openai.compat | /v1/responses | text_generation, streaming, tool_calling, parallel_tool_calls, structured_output, reasoning, vision_input, audio_input, file_input, audio_output, image_generation, stateful_conversation, web_search, computer_use | 0.929（开启 convstore 后 1.000） |
+| openai.chat | dashscope.compatible | /v1/chat/completions | text_generation, streaming, tool_calling, parallel_tool_calls, structured_output, reasoning, vision_input, image_detail, audio_input, web_search, message_name | 0.769 |
+| openai.chat | dashscope.native | /v1/chat/completions | text_generation, streaming, tool_calling, parallel_tool_calls, structured_output, reasoning, vision_input, image_detail, web_search, message_name | 0.577（11 项中 10 项已投放） |
+| openai.chat | openai.compat | /v1/chat/completions | text_generation, streaming, tool_calling, parallel_tool_calls, structured_output, reasoning, vision_input, image_detail, audio_input, file_input, audio_output, web_search, message_name | 1.000 |
+| openai.responses | openai.compat | /v1/responses | text_generation, streaming, tool_calling, parallel_tool_calls, structured_output, reasoning, vision_input, image_detail, audio_input, file_input, audio_output, image_generation, stateful_conversation, web_search, computer_use | 0.933（开启 convstore 后 1.000） |
 
 ## `dashscope.inference` → `dashscope.ws.inference`
 
@@ -82,6 +82,7 @@
 | `reasoning` | `N/A` | dashscope.inference 表达不了该能力，请改用入站协议 dashscope.native |
 | `reasoning_signature` | `N/A` | 该协议的线格式没有承载推理签名的字段，客户端无从表达；这项能力要到 Anthropic Messages 入站接入后（Phase 2）才可达 |
 | `vision_input` | `N/A` | dashscope.inference 表达不了该能力，请改用入站协议 dashscope.native |
+| `image_detail` | `N/A` | dashscope.inference 表达不了该能力，请改用入站协议 openai.responses |
 | `audio_input` | `PASSTHROUGH` | — |
 | `video_input` | `N/A` | dashscope.inference 表达不了该能力，请改用入站协议 dashscope.native |
 | `file_input` | `N/A` | dashscope.inference 表达不了该能力，请改用入站协议 dashscope.native |
@@ -101,6 +102,7 @@
 | `realtime_interrupt_turns` | `N/A` | dashscope.inference 表达不了该能力，请改用入站协议 dashscope.realtime |
 | `web_search` | `N/A` | dashscope.inference 表达不了该能力，请改用入站协议 dashscope.native |
 | `computer_use` | `N/A` | 该协议未提供 computer use 类的内建工具定义 |
+| `message_name` | `N/A` | dashscope.inference 表达不了该能力，请改用入站协议 openai.chat |
 
 ## `dashscope.native` → `dashscope.native`
 
@@ -116,6 +118,7 @@
 | `reasoning` | `PASSTHROUGH` | — |
 | `reasoning_signature` | `N/A` | 该协议的线格式没有承载推理签名的字段，客户端无从表达；这项能力要到 Anthropic Messages 入站接入后（Phase 2）才可达 |
 | `vision_input` | `PASSTHROUGH` | — |
+| `image_detail` | `N/A` | dashscope.native 表达不了该能力，请改用入站协议 openai.responses |
 | `audio_input` | `PASSTHROUGH` | — |
 | `video_input` | `PASSTHROUGH` | — |
 | `file_input` | `PASSTHROUGH` | — |
@@ -135,6 +138,7 @@
 | `realtime_interrupt_turns` | `N/A` | dashscope.native 表达不了该能力，请改用入站协议 dashscope.realtime |
 | `web_search` | `PASSTHROUGH` | — |
 | `computer_use` | `N/A` | 该协议未提供 computer use 类的内建工具定义 |
+| `message_name` | `N/A` | dashscope.native 表达不了该能力，请改用入站协议 openai.chat |
 
 ## `dashscope.realtime` → `dashscope.ws.realtime`
 
@@ -150,6 +154,7 @@
 | `reasoning` | `N/A` | dashscope.realtime 表达不了该能力，请改用入站协议 dashscope.native |
 | `reasoning_signature` | `N/A` | 该协议的线格式没有承载推理签名的字段，客户端无从表达；这项能力要到 Anthropic Messages 入站接入后（Phase 2）才可达 |
 | `vision_input` | `PASSTHROUGH` | — |
+| `image_detail` | `N/A` | dashscope.realtime 表达不了该能力，请改用入站协议 openai.responses |
 | `audio_input` | `PASSTHROUGH` | — |
 | `video_input` | `N/A` | dashscope.realtime 表达不了该能力，请改用入站协议 dashscope.native |
 | `file_input` | `N/A` | dashscope.realtime 表达不了该能力，请改用入站协议 dashscope.native |
@@ -169,6 +174,7 @@
 | `realtime_interrupt_turns` | `PASSTHROUGH` | — |
 | `web_search` | `N/A` | dashscope.realtime 表达不了该能力，请改用入站协议 dashscope.native |
 | `computer_use` | `N/A` | 该协议未提供 computer use 类的内建工具定义 |
+| `message_name` | `N/A` | dashscope.realtime 表达不了该能力，请改用入站协议 openai.chat |
 
 ## `dashscope.realtime` → `openai.realtime`
 
@@ -182,6 +188,7 @@
 | `reasoning` | `N/A` | dashscope.realtime 表达不了该能力，请改用入站协议 dashscope.native |
 | `reasoning_signature` | `N/A` | 该协议的线格式没有承载推理签名的字段，客户端无从表达；这项能力要到 Anthropic Messages 入站接入后（Phase 2）才可达 |
 | `vision_input` | `REJECT` | OpenAI Realtime 没有 input_image_buffer 事件，图像输入无处安放 |
+| `image_detail` | `N/A` | dashscope.realtime 表达不了该能力，请改用入站协议 openai.responses |
 | `audio_input` | `DEGRADE` | 输入音频需从 DashScope 的 16 kHz 重采样到 OpenAI 的 24 kHz；上采样补不回原本就没采到的高频信息，只是满足格式要求 |
 | `video_input` | `N/A` | dashscope.realtime 表达不了该能力，请改用入站协议 dashscope.native |
 | `file_input` | `N/A` | dashscope.realtime 表达不了该能力，请改用入站协议 dashscope.native |
@@ -201,6 +208,7 @@
 | `realtime_interrupt_turns` | `PASSTHROUGH` | — |
 | `web_search` | `N/A` | dashscope.realtime 表达不了该能力，请改用入站协议 dashscope.native |
 | `computer_use` | `N/A` | 该协议未提供 computer use 类的内建工具定义 |
+| `message_name` | `N/A` | dashscope.realtime 表达不了该能力，请改用入站协议 openai.chat |
 
 ## `openai.chat` → `anthropic.messages`
 
@@ -214,6 +222,7 @@
 | `reasoning` | `PASSTHROUGH` | — |
 | `reasoning_signature` | `N/A` | 该协议的线格式没有承载推理签名的字段，客户端无从表达；这项能力要到 Anthropic Messages 入站接入后（Phase 2）才可达 |
 | `vision_input` | `PASSTHROUGH` | — |
+| `image_detail` | `DEGRADE` | Anthropic Messages 没有 OpenAI 图片 detail 处理档位 |
 | `audio_input` | `REJECT` | Anthropic Messages 不接受音频输入 |
 | `video_input` | `N/A` | OpenAI 的线格式不接受视频输入 |
 | `file_input` | `REJECT` | 文件引用绑定具体 Provider，跨 Provider 不可迁移；网关不代下载再上传（原则 2.6），请改用 URL 或内联字节 |
@@ -233,6 +242,7 @@
 | `realtime_interrupt_turns` | `N/A` | openai.chat 表达不了该能力，请改用入站协议 openai.realtime |
 | `web_search` | `REJECT` | 该内建工具在 Phase 1 不做跨 Provider 映射——各家的工具 schema 不兼容，勉强映射只会让模型收到一个它读不懂的定义 |
 | `computer_use` | `N/A` | openai.chat 表达不了该能力，请改用入站协议 openai.responses |
+| `message_name` | `DEGRADE` | Anthropic Messages 没有 OpenAI 消息 name 参与者标签 |
 
 ## `openai.chat` → `dashscope.compatible`
 
@@ -246,6 +256,7 @@
 | `reasoning` | `PASSTHROUGH` | — |
 | `reasoning_signature` | `N/A` | 该协议的线格式没有承载推理签名的字段，客户端无从表达；这项能力要到 Anthropic Messages 入站接入后（Phase 2）才可达 |
 | `vision_input` | `PASSTHROUGH` | — |
+| `image_detail` | `PASSTHROUGH` | — |
 | `audio_input` | `PASSTHROUGH` | — |
 | `video_input` | `N/A` | OpenAI 的线格式不接受视频输入 |
 | `file_input` | `REJECT` | 文件引用绑定具体 Provider，跨 Provider 不可迁移；网关不代下载再上传（原则 2.6），请改用 URL 或内联字节 |
@@ -265,6 +276,7 @@
 | `realtime_interrupt_turns` | `N/A` | openai.chat 表达不了该能力，请改用入站协议 openai.realtime |
 | `web_search` | `DEGRADE` | DashScope Compatible 只有 enable_search 布尔开关：搜索上下文大小 search_context_size 与用户位置 user_location 在此丢失，响应也不返回搜索来源；仅开关本身被映射 |
 | `computer_use` | `N/A` | openai.chat 表达不了该能力，请改用入站协议 openai.responses |
+| `message_name` | `PASSTHROUGH` | — |
 
 ## `openai.chat` → `dashscope.native`
 
@@ -278,6 +290,7 @@
 | `reasoning` | `PASSTHROUGH` | — |
 | `reasoning_signature` | `N/A` | 该协议的线格式没有承载推理签名的字段，客户端无从表达；这项能力要到 Anthropic Messages 入站接入后（Phase 2）才可达 |
 | `vision_input` | `PASSTHROUGH` | — |
+| `image_detail` | `DEGRADE` | DashScope Native 图片内容块没有 OpenAI 的 detail 处理档位；low/high/auto/original 的精度与计费意图会丢失 |
 | `audio_input` | `PASSTHROUGH` | — |
 | `video_input` | `N/A` | OpenAI 的线格式不接受视频输入 |
 | `file_input` | `REJECT` | 文件引用绑定具体 Provider，跨 Provider 不可迁移；网关不代下载再上传（原则 2.6），请改用 URL 或内联字节 |
@@ -297,6 +310,7 @@
 | `realtime_interrupt_turns` | `N/A` | openai.chat 表达不了该能力，请改用入站协议 openai.realtime |
 | `web_search` | `DEGRADE` | DashScope 的 enable_search 是布尔开关，承载不了 OpenAI web_search 工具的参数，仅开关本身被映射 |
 | `computer_use` | `N/A` | openai.chat 表达不了该能力，请改用入站协议 openai.responses |
+| `message_name` | `DEGRADE` | DashScope Native 消息只有 role/content，没有 name；多个同角色参与者的身份标签会丢失 |
 
 ## `openai.chat` → `openai.compat`
 
@@ -312,6 +326,7 @@
 | `reasoning` | `PASSTHROUGH` | — |
 | `reasoning_signature` | `N/A` | 该协议的线格式没有承载推理签名的字段，客户端无从表达；这项能力要到 Anthropic Messages 入站接入后（Phase 2）才可达 |
 | `vision_input` | `PASSTHROUGH` | — |
+| `image_detail` | `PASSTHROUGH` | — |
 | `audio_input` | `PASSTHROUGH` | — |
 | `video_input` | `N/A` | OpenAI 的线格式不接受视频输入 |
 | `file_input` | `PASSTHROUGH` | — |
@@ -331,6 +346,7 @@
 | `realtime_interrupt_turns` | `N/A` | openai.chat 表达不了该能力，请改用入站协议 openai.realtime |
 | `web_search` | `PASSTHROUGH` | — |
 | `computer_use` | `N/A` | openai.chat 表达不了该能力，请改用入站协议 openai.responses |
+| `message_name` | `PASSTHROUGH` | — |
 
 ## `openai.realtime` → `dashscope.ws.realtime`
 
@@ -346,6 +362,7 @@
 | `reasoning` | `N/A` | openai.realtime 表达不了该能力，请改用入站协议 openai.responses |
 | `reasoning_signature` | `N/A` | 该协议的线格式没有承载推理签名的字段，客户端无从表达；这项能力要到 Anthropic Messages 入站接入后（Phase 2）才可达 |
 | `vision_input` | `N/A` | openai.realtime 表达不了该能力，请改用入站协议 openai.responses |
+| `image_detail` | `N/A` | openai.realtime 表达不了该能力，请改用入站协议 openai.responses |
 | `audio_input` | `DEGRADE` | 上游不接受 24 kHz 时，输入音频需重采样到 16 kHz；必须先低通再抽取，直接抽点会产生混叠失真。输出侧两者同为 24 kHz，无需转换 |
 | `video_input` | `N/A` | OpenAI 的线格式不接受视频输入 |
 | `file_input` | `N/A` | openai.realtime 表达不了该能力，请改用入站协议 openai.responses |
@@ -365,6 +382,7 @@
 | `realtime_interrupt_turns` | `PASSTHROUGH` | — |
 | `web_search` | `N/A` | openai.realtime 表达不了该能力，请改用入站协议 openai.responses |
 | `computer_use` | `N/A` | openai.realtime 表达不了该能力，请改用入站协议 openai.responses |
+| `message_name` | `N/A` | openai.realtime 表达不了该能力，请改用入站协议 openai.chat |
 
 ## `openai.realtime` → `openai.realtime`
 
@@ -380,6 +398,7 @@
 | `reasoning` | `N/A` | openai.realtime 表达不了该能力，请改用入站协议 openai.responses |
 | `reasoning_signature` | `N/A` | 该协议的线格式没有承载推理签名的字段，客户端无从表达；这项能力要到 Anthropic Messages 入站接入后（Phase 2）才可达 |
 | `vision_input` | `N/A` | openai.realtime 表达不了该能力，请改用入站协议 openai.responses |
+| `image_detail` | `N/A` | openai.realtime 表达不了该能力，请改用入站协议 openai.responses |
 | `audio_input` | `PASSTHROUGH` | — |
 | `video_input` | `N/A` | OpenAI 的线格式不接受视频输入 |
 | `file_input` | `N/A` | openai.realtime 表达不了该能力，请改用入站协议 openai.responses |
@@ -399,6 +418,7 @@
 | `realtime_interrupt_turns` | `PASSTHROUGH` | — |
 | `web_search` | `N/A` | openai.realtime 表达不了该能力，请改用入站协议 openai.responses |
 | `computer_use` | `N/A` | openai.realtime 表达不了该能力，请改用入站协议 openai.responses |
+| `message_name` | `N/A` | openai.realtime 表达不了该能力，请改用入站协议 openai.chat |
 
 ## `openai.responses` → `anthropic.messages`
 
@@ -412,6 +432,7 @@
 | `reasoning` | `PASSTHROUGH` | — |
 | `reasoning_signature` | `N/A` | 该协议的线格式没有承载推理签名的字段，客户端无从表达；这项能力要到 Anthropic Messages 入站接入后（Phase 2）才可达 |
 | `vision_input` | `PASSTHROUGH` | — |
+| `image_detail` | `DEGRADE` | Anthropic Messages 没有 OpenAI 图片 detail 处理档位 |
 | `audio_input` | `REJECT` | Anthropic Messages 不接受音频输入 |
 | `video_input` | `N/A` | OpenAI 的线格式不接受视频输入 |
 | `file_input` | `REJECT` | 文件引用绑定具体 Provider，跨 Provider 不可迁移；网关不代下载再上传（原则 2.6），请改用 URL 或内联字节 |
@@ -431,6 +452,7 @@
 | `realtime_interrupt_turns` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 openai.realtime |
 | `web_search` | `REJECT` | 该内建工具在 Phase 1 不做跨 Provider 映射——各家的工具 schema 不兼容，勉强映射只会让模型收到一个它读不懂的定义 |
 | `computer_use` | `REJECT` | 该内建工具在 Phase 1 不做跨 Provider 映射——各家的工具 schema 不兼容，勉强映射只会让模型收到一个它读不懂的定义 |
+| `message_name` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 openai.chat |
 
 ## `openai.responses` → `dashscope.compatible`
 
@@ -444,6 +466,7 @@
 | `reasoning` | `PASSTHROUGH` | — |
 | `reasoning_signature` | `N/A` | 该协议的线格式没有承载推理签名的字段，客户端无从表达；这项能力要到 Anthropic Messages 入站接入后（Phase 2）才可达 |
 | `vision_input` | `PASSTHROUGH` | — |
+| `image_detail` | `PASSTHROUGH` | — |
 | `audio_input` | `PASSTHROUGH` | — |
 | `video_input` | `N/A` | OpenAI 的线格式不接受视频输入 |
 | `file_input` | `REJECT` | 文件引用绑定具体 Provider，跨 Provider 不可迁移；网关不代下载再上传（原则 2.6），请改用 URL 或内联字节 |
@@ -463,6 +486,7 @@
 | `realtime_interrupt_turns` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 openai.realtime |
 | `web_search` | `DEGRADE` | DashScope Compatible 只有 enable_search 布尔开关：搜索上下文大小 search_context_size 与用户位置 user_location 在此丢失，响应也不返回搜索来源；仅开关本身被映射 |
 | `computer_use` | `REJECT` | 该内建工具在 Phase 1 不做跨 Provider 映射——各家的工具 schema 不兼容，勉强映射只会让模型收到一个它读不懂的定义 |
+| `message_name` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 openai.chat |
 
 ## `openai.responses` → `dashscope.native`
 
@@ -476,6 +500,7 @@
 | `reasoning` | `PASSTHROUGH` | — |
 | `reasoning_signature` | `N/A` | 该协议的线格式没有承载推理签名的字段，客户端无从表达；这项能力要到 Anthropic Messages 入站接入后（Phase 2）才可达 |
 | `vision_input` | `PASSTHROUGH` | — |
+| `image_detail` | `DEGRADE` | DashScope Native 图片内容块没有 OpenAI 的 detail 处理档位；low/high/auto/original 的精度与计费意图会丢失 |
 | `audio_input` | `PASSTHROUGH` | — |
 | `video_input` | `N/A` | OpenAI 的线格式不接受视频输入 |
 | `file_input` | `REJECT` | 文件引用绑定具体 Provider，跨 Provider 不可迁移；网关不代下载再上传（原则 2.6），请改用 URL 或内联字节 |
@@ -495,6 +520,7 @@
 | `realtime_interrupt_turns` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 openai.realtime |
 | `web_search` | `DEGRADE` | DashScope 的 enable_search 是布尔开关，承载不了 OpenAI web_search 工具的参数，仅开关本身被映射 |
 | `computer_use` | `REJECT` | 该内建工具在 Phase 1 不做跨 Provider 映射——各家的工具 schema 不兼容，勉强映射只会让模型收到一个它读不懂的定义 |
+| `message_name` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 openai.chat |
 
 ## `openai.responses` → `openai.compat`
 
@@ -510,6 +536,7 @@
 | `reasoning` | `PASSTHROUGH` | — |
 | `reasoning_signature` | `N/A` | 该协议的线格式没有承载推理签名的字段，客户端无从表达；这项能力要到 Anthropic Messages 入站接入后（Phase 2）才可达 |
 | `vision_input` | `PASSTHROUGH` | — |
+| `image_detail` | `PASSTHROUGH` | — |
 | `audio_input` | `PASSTHROUGH` | — |
 | `video_input` | `N/A` | OpenAI 的线格式不接受视频输入 |
 | `file_input` | `PASSTHROUGH` | — |
@@ -529,4 +556,5 @@
 | `realtime_interrupt_turns` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 openai.realtime |
 | `web_search` | `PASSTHROUGH` | — |
 | `computer_use` | `PASSTHROUGH` | — |
+| `message_name` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 openai.chat |
 

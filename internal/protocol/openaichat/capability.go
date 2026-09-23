@@ -19,7 +19,7 @@ import (
 // 输出——golden 文件依赖这一点稳定。
 func (d *Decoded) Capabilities() []canonical.Capability {
 	caps := d.Request.UsedCapabilities()
-	if !d.webSearch && !d.parallelToolCalls {
+	if !d.webSearch && !d.parallelToolCalls && !d.messageName {
 		return caps
 	}
 	seen := make(map[canonical.Capability]bool, len(caps)+2)
@@ -31,6 +31,9 @@ func (d *Decoded) Capabilities() []canonical.Capability {
 	}
 	if d.parallelToolCalls {
 		seen[canonical.CapParallelToolCalls] = true
+	}
+	if d.messageName {
+		seen[canonical.CapMessageName] = true
 	}
 	out := make([]canonical.Capability, 0, len(seen))
 	for _, c := range canonical.AllCapabilities() {

@@ -8,7 +8,7 @@ import (
 )
 
 // redeemedChatDSCompat 是 /v1/chat/completions 门在 dashscope.compatible 上
-// 兑现的九项能力，按 AllCapabilities 顺序——与 RedeemedAt 的输出顺序一致。
+// 兑现的十一项能力，按 AllCapabilities 顺序——与 RedeemedAt 的输出顺序一致。
 var redeemedChatDSCompat = []canonical.Capability{
 	canonical.CapTextGeneration,
 	canonical.CapStreaming,
@@ -17,8 +17,10 @@ var redeemedChatDSCompat = []canonical.Capability{
 	canonical.CapStructuredOutput,
 	canonical.CapReasoning,
 	canonical.CapVisionInput,
+	canonical.CapImageDetail,
 	canonical.CapAudioInput,
 	canonical.CapWebSearch,
+	canonical.CapMessageName,
 }
 
 // TestChatDSCompatRouteIsWireCompatibleNotHomogeneous 钉死这条路径的身份：
@@ -37,20 +39,20 @@ func TestChatDSCompatRouteIsWireCompatibleNotHomogeneous(t *testing.T) {
 		t.Error("该路径是 wire-compatible 异构转换，不得标记为同源快通道")
 	}
 
-	// 设计处置：7 PASS + 2 DEGRADE + 2 REJECT = 11 项可表达能力，设计分 8/11。
+	// 设计处置：9 PASS + 2 DEGRADE + 2 REJECT = 13 项可表达能力，设计分 10/13。
 	p := r.Preservation(m.Availability(), Endpoint(""))
-	if p.Passthrough != 7 || p.Degrade != 2 || p.Reject != 2 {
-		t.Errorf("设计处置 = pass %d deg %d rej %d，期望 7/2/2",
+	if p.Passthrough != 9 || p.Degrade != 2 || p.Reject != 2 {
+		t.Errorf("设计处置 = pass %d deg %d rej %d，期望 9/2/2",
 			p.Passthrough, p.Degrade, p.Reject)
 	}
-	if want := 8.0 / 11.0; p.DesignScore() != want {
-		t.Errorf("设计保留度 = %.3f，期望 %.3f（8/11）", p.DesignScore(), want)
+	if want := 10.0 / 13.0; p.DesignScore() != want {
+		t.Errorf("设计保留度 = %.3f，期望 %.3f（10/13）", p.DesignScore(), want)
 	}
 }
 
-// TestChatDSCompatRedemptionIsExactlyNineCapabilities 钉死兑现集合的精确形状：
-// 九项可交付能力；file_input / audio_output 是 REJECT，不在兑现之列。
-func TestChatDSCompatRedemptionIsExactlyNineCapabilities(t *testing.T) {
+// TestChatDSCompatRedemptionIsExactlyElevenCapabilities 钉死兑现集合的精确形状：
+// 十一项可交付能力；file_input / audio_output 是 REJECT，不在兑现之列。
+func TestChatDSCompatRedemptionIsExactlyElevenCapabilities(t *testing.T) {
 	m, err := Phase1()
 	if err != nil {
 		t.Fatal(err)
@@ -69,19 +71,19 @@ func TestChatDSCompatRedemptionIsExactlyNineCapabilities(t *testing.T) {
 		}
 	}
 
-	// 这门此刻九项全兑：可用分与设计分合一，都是 8/11，没有未投放格子。
+	// 这门此刻十一项全兑：可用分与设计分合一，都是 10/13，没有未投放格子。
 	p := r.Preservation(m.Availability(), EndpointOpenAIChat)
-	if want := 8.0 / 11.0; p.AvailableScore() != want {
+	if want := 10.0 / 13.0; p.AvailableScore() != want {
 		t.Errorf("门 %s 可用分 = %.3f，期望 %.3f", EndpointOpenAIChat, p.AvailableScore(), want)
 	}
 	if p.Gated() {
-		t.Error("九项可交付能力已全部兑现，这门不应再有未投放格子")
+		t.Error("十一项可交付能力已全部兑现，这门不应再有未投放格子")
 	}
 }
 
 // TestChatDoorRankingPrefersHomogeneousFastPath 钉死同门选路：
 // /v1/chat/completions 这扇门同时被 openai.compat（同源，可用 1.000）与
-// dashscope.compatible（wire-compatible，可用 8/11）兑现，选路必须同源优先。
+// dashscope.compatible（wire-compatible，可用 10/13）兑现，选路必须同源优先。
 func TestChatDoorRankingPrefersHomogeneousFastPath(t *testing.T) {
 	m, err := Phase1()
 	if err != nil {

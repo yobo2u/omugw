@@ -65,6 +65,8 @@ const (
 type Media struct {
 	Kind     MediaKind `json:"kind"`
 	MIMEType string    `json:"mime_type,omitempty"`
+	// Detail 保留 OpenAI 图片输入的处理档位；异构出站是否能承载由矩阵裁决。
+	Detail string `json:"detail,omitempty"`
 
 	URL     string    `json:"url,omitempty"`
 	Data    []byte    `json:"data,omitempty"`

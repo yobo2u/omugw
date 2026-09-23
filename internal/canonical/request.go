@@ -164,6 +164,12 @@ func (r *Request) UsedCapabilities() []Capability {
 	}
 	if len(r.Tools) > 0 {
 		seen[CapToolCalling] = true
+		for _, tool := range r.Tools {
+			if tool.Strict {
+				seen[CapStructuredOutput] = true
+				break
+			}
+		}
 	}
 	if r.ResponseFormat != nil && r.ResponseFormat.Kind != FormatText {
 		seen[CapStructuredOutput] = true
@@ -194,6 +200,9 @@ func (r *Request) UsedCapabilities() []Capability {
 				switch p.Media.Kind {
 				case MediaImage:
 					seen[CapVisionInput] = true
+					if p.Media.Detail != "" {
+						seen[CapImageDetail] = true
+					}
 				case MediaAudio:
 					seen[CapAudioInput] = true
 				case MediaVideo:
@@ -206,6 +215,9 @@ func (r *Request) UsedCapabilities() []Capability {
 	}
 	scan(r.System)
 	for _, m := range r.Messages {
+		if m.Name != "" {
+			seen[CapMessageName] = true
+		}
 		scan(m.Parts)
 	}
 

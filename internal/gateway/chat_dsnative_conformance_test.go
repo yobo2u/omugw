@@ -23,6 +23,8 @@ func chatDSNativeCaseNames() []string {
 	return []string{
 		"basic",
 		"combined",
+		"image_detail",
+		"message_name",
 		"multi_candidate_nonstream",
 		"parallel_tool_calls",
 		"parallel_tool_calls_default",
@@ -49,6 +51,8 @@ var chatDSNativeDegradedHeaders = map[string][]string{
 	"parallel_tool_calls": {"parallel_tool_calls="},
 	"structured_output":   {"structured_output="},
 	"web_search":          {"web_search="},
+	"image_detail":        {"image_detail="},
+	"message_name":        {"message_name="},
 	"combined":            {"structured_output=", "web_search="},
 }
 

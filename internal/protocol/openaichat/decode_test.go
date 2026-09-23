@@ -214,3 +214,32 @@ func TestDecodeParallelToolCallsGoToExtensions(t *testing.T) {
 		t.Errorf("parallel_tool_calls 应存入 Extensions: %q", raw)
 	}
 }
+
+// TestDecodeStopNullDoesNotCreateEmptySequence 防的是 JSON null 被 Go 的 string
+// 零值吸收后，凭空产生一个空字符串停止词。
+func TestDecodeStopNullDoesNotCreateEmptySequence(t *testing.T) {
+	got, err := decodeStop([]byte("null"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != nil {
+		t.Fatalf("stop:null 解码为 %#v，期望 nil", got)
+	}
+}
+
+func TestDecodeReportsStrictToolImageDetailAndMessageName(t *testing.T) {
+	d := mustDecode(t, `{"model":"m","messages":[{"role":"user","name":"alice","content":[{"type":"image_url","image_url":{"url":"https://example.com/a.png","detail":"low"}}]}],"tools":[{"type":"function","function":{"name":"f","strict":true}}]}`)
+	for _, want := range []canonical.Capability{
+		canonical.CapStructuredOutput,
+		canonical.CapImageDetail,
+		canonical.CapMessageName,
+	} {
+		if !hasCap(d.Capabilities(), want) {
+			t.Errorf("未报告能力 %q: %v", want, d.Capabilities())
+		}
+	}
+	media := d.Request.Messages[0].Parts[0].Media
+	if media == nil || media.Detail != "low" {
+		t.Fatalf("图片 detail 未进入 Canonical: %+v", media)
+	}
+}

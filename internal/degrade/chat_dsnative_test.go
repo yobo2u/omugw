@@ -9,7 +9,7 @@ import (
 	"github.com/yobo2u/omugw/internal/canonical"
 )
 
-// redeemedChatDSNative 是 /v1/chat/completions 门在 dashscope.native 上兑现的八项，
+// redeemedChatDSNative 是 /v1/chat/completions 门在 dashscope.native 上兑现的十项，
 // 按 AllCapabilities 顺序——与 RedeemedAt 输出顺序一致。
 //
 // audio_input 不在其中：设计处置仍是 PASS（协议能力没有消失），但
@@ -23,11 +23,13 @@ var redeemedChatDSNative = []canonical.Capability{
 	canonical.CapStructuredOutput,
 	canonical.CapReasoning,
 	canonical.CapVisionInput,
+	canonical.CapImageDetail,
 	canonical.CapWebSearch,
+	canonical.CapMessageName,
 }
 
 // TestChatDSNativeRouteIsHeterogeneous 钉死身份与设计处置：
-// 完整重编码的异构路径，非同源快通道；设计分 7.5/11；
+// 完整重编码的异构路径，非同源快通道；设计分 8.5/13；
 // audio_input 的设计处置保持 PASS——本期不投放是证据问题，不是协议表达问题。
 func TestChatDSNativeRouteIsHeterogeneous(t *testing.T) {
 	m, err := Phase1()
@@ -42,14 +44,14 @@ func TestChatDSNativeRouteIsHeterogeneous(t *testing.T) {
 		t.Error("该路径是完整重编码异构转换，不得标记为同源快通道")
 	}
 
-	// 设计处置：6 PASS + 3 DEGRADE + 2 REJECT = 11 项可表达能力，设计分 7.5/11。
+	// 设计处置：6 PASS + 5 DEGRADE + 2 REJECT = 13 项可表达能力，设计分 8.5/13。
 	p := r.Preservation(m.Availability(), EndpointOpenAIChat)
-	if p.Passthrough != 6 || p.Degrade != 3 || p.Reject != 2 {
-		t.Errorf("设计处置 = pass %d deg %d rej %d，期望 6/3/2",
+	if p.Passthrough != 6 || p.Degrade != 5 || p.Reject != 2 {
+		t.Errorf("设计处置 = pass %d deg %d rej %d，期望 6/5/2",
 			p.Passthrough, p.Degrade, p.Reject)
 	}
-	if want := 7.5 / 11.0; p.DesignScore() != want {
-		t.Errorf("设计保留度 = %.3f，期望 %.3f（7.5/11）", p.DesignScore(), want)
+	if want := 8.5 / 13.0; p.DesignScore() != want {
+		t.Errorf("设计保留度 = %.3f，期望 %.3f（8.5/13）", p.DesignScore(), want)
 	}
 
 	// audio_input 的设计处置必须是 PASS：把它改成 REJECT 或 N/A，
@@ -60,9 +62,9 @@ func TestChatDSNativeRouteIsHeterogeneous(t *testing.T) {
 	}
 }
 
-// TestChatDSNativeRedemptionIsExactlyEightCapabilities 钉死兑现集合精确为八项：
-// 门可用分 6.5/11，门保持 Gated（audio_input 设计上可交付、当前未投放）。
-func TestChatDSNativeRedemptionIsExactlyEightCapabilities(t *testing.T) {
+// TestChatDSNativeRedemptionIsExactlyTenCapabilities 钉死兑现集合精确为十项：
+// 门可用分 7.5/13，门保持 Gated（audio_input 设计上可交付、当前未投放）。
+func TestChatDSNativeRedemptionIsExactlyTenCapabilities(t *testing.T) {
 	m, err := Phase1()
 	if err != nil {
 		t.Fatal(err)
@@ -84,10 +86,10 @@ func TestChatDSNativeRedemptionIsExactlyEightCapabilities(t *testing.T) {
 		}
 	}
 
-	// 八项兑现：5 PASS + 3 DEGRADE×0.5 = 6.5，分母 11。
+	// 十项兑现：5 PASS + 5 DEGRADE×0.5 = 7.5，分母 13。
 	p := r.Preservation(m.Availability(), EndpointOpenAIChat)
-	if want := 6.5 / 11.0; p.AvailableScore() != want {
-		t.Errorf("门 %s 可用分 = %.3f，期望 %.3f（6.5/11）", EndpointOpenAIChat, p.AvailableScore(), want)
+	if want := 7.5 / 13.0; p.AvailableScore() != want {
+		t.Errorf("门 %s 可用分 = %.3f，期望 %.3f（7.5/13）", EndpointOpenAIChat, p.AvailableScore(), want)
 	}
 	if !p.Gated() {
 		t.Error("audio_input 设计上可交付、当前未投放，门必须保持 Gated")
@@ -125,14 +127,14 @@ func TestChatDSNativeAudioInputStays501AtMatrix(t *testing.T) {
 		t.Errorf("错误应点名能力与端点: %s", cerr.Message)
 	}
 
-	// 已投放的八项照常放行，否则这道闸门把整条路径也一起关了。
+	// 已投放的十项照常放行，否则这道闸门把整条路径也一起关了。
 	if _, err := m.Check(in, ProviderDashScopeNative, redeemedChatDSNative); err != nil {
-		t.Errorf("已投放的八项不该被拦下: %v", err)
+		t.Errorf("已投放的十项不该被拦下: %v", err)
 	}
 }
 
 // TestChatDoorStillPrefersCompatibleOverNative 钉死同门选路不变：
-// dashscope.compatible（8/11 ≈ 0.727）仍优先于 dashscope.native（6.5/11 ≈ 0.591），
+// dashscope.compatible（10/13 ≈ 0.769）仍优先于 dashscope.native（7.5/13 ≈ 0.577），
 // OutboundPreference 不改。
 func TestChatDoorStillPrefersCompatibleOverNative(t *testing.T) {
 	m, err := Phase1()
