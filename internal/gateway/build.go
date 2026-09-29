@@ -164,9 +164,12 @@ func Build(cfg config.Config, m *degrade.Matrix, metrics *obs.Metrics, log *slog
 		Metrics:            metrics,
 		Log:                log,
 		RequestReadTimeout: cfg.Timeouts.Total,
-		ConversationStore:  conversationStore,
 		Pools:              pools,
 		Providers:          provs,
+	}
+	// nil 指针装进接口后不再等于 nil，关闭存储时必须保留接口的零值。
+	if conversationStore != nil {
+		deps.ConversationStore = conversationStore
 	}
 	native := NewDashScopeNativeHandler(deps) // handler 无状态，多扇门复用同一实例
 

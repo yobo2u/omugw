@@ -291,6 +291,10 @@ func (h *Handler) serve(w *tracked, r *http.Request) (outcome, outbound string, 
 		Protocol: h.in.protocol,
 		Endpoint: degrade.Endpoint(h.in.upstreamPath(r)),
 	}
+	// 默认写入只有在实际装配存储时才产生模拟行为；仍交给矩阵告知并记账。
+	if decoded.WantsStore && h.deps.ConversationStore != nil && !decoded.RequiresConversationStore {
+		decoded.caps = append(decoded.caps, canonical.CapStatefulConversation)
+	}
 
 	// 路由给出候选，矩阵按入站坐标（协议 + 门）与能力裁决。两者分工，不互相包含。
 	kind, verdict, err := h.deps.Matrix.BestOutbound(
