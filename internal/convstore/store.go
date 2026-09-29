@@ -126,10 +126,11 @@ type Limits struct {
 	// MaxTurns 是整个 Store 同时保存的轮数上限，与所属会话无关。
 	MaxTurns int
 
-	// MaxTotalBytes 是整个 Store 同时保存的负载字节上限。
+	// MaxTotalBytes 是保留量的估算预算，含内容块结构、索引余量和变长负载。
 	//
 	// 计入消息文本与 Opaque，而不只是内联媒体：纯文本的 InlineBytes 是 0，
 	// 只看媒体的话，连续几十个 4 MiB 的纯文本请求会一路放行。
+	// 不覆盖解码临时对象、在途请求和 Go 运行时，不能作为进程 RSS 上限。
 	MaxTotalBytes int64
 
 	// TTL 是一轮对话的存活时间，从最后一次被读取或延伸算起。

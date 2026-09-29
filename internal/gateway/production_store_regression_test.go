@@ -99,3 +99,31 @@ func TestBuildResponsesStoreModes(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildConversationBudgetRejectsManySmallParts(t *testing.T) {
+	up := jsonUpstream(t, `{"id":"upstream","object":"response","status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ok"}]}]}`)
+	cfg := buildTestConfig(up.srv.URL)
+	cfg.ConvStore = config.DefaultConvStore()
+	cfg.ConvStore.Enabled = true
+	cfg.ConvStore.MaxTotalBytes = 8192
+	matrix, err := degrade.Phase1()
+	if err != nil {
+		t.Fatal(err)
+	}
+	built, err := Build(cfg, matrix, obs.NewMetrics(prometheus.NewRegistry()), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	parts := strings.TrimSuffix(strings.Repeat(`{"type":"input_text","text":"a"},`, 128), ",")
+	body := `{"model":"m","store":true,"input":[{"role":"user","content":[` + parts + `]}]}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer sk-test-1234567890")
+	rec := httptest.NewRecorder()
+	built.Mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest || built.ConversationStore.Len() != 0 {
+		t.Fatalf("大量短块突破存储预算: status=%d len=%d body=%s", rec.Code, built.ConversationStore.Len(), rec.Body.String())
+	}
+	if up.calls.Load() != 1 {
+		t.Fatalf("存储容量错误发生后不应重试生成: calls=%d", up.calls.Load())
+	}
+}
