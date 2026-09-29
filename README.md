@@ -9,12 +9,12 @@
 > `openai.responses → openai.compat`、`openai.chat → openai.compat` 与
 > `dashscope.native → dashscope.native`（均为同源直通），以及第一条异构路径
 > `openai.chat → dashscope.compatible`（wire-compatible：请求仍是 Chat 线格式，
-> 但语义异构，不是同源快通道；在 `/v1/chat/completions` 门兑现 9 项能力，
-> 设计分与可用分均为 8/11 ≈ 0.727），
+> 但语义异构，不是同源快通道；在 `/v1/chat/completions` 门兑现 11 项能力，
+> 设计分与可用分均为 10/13 ≈ 0.769），
 > 以及首条请求与响应都完整重编码的异构路径 `openai.chat → dashscope.native`
->（在 `/v1/chat/completions` 门兑现 8 项能力；`audio_input` 设计处置是 PASS，
-> 但缺少真实证据、本期不兑现，含它的请求由矩阵返回 501；设计分 7.5/11 ≈ 0.682，
-> 门可用分 6.5/11 ≈ 0.591，`dashscope.compatible` 的 0.727 仍优先）。
+>（在 `/v1/chat/completions` 门兑现 10 项能力；`audio_input` 设计处置是 PASS，
+> 但缺少真实证据、本期不兑现，含它的请求由矩阵返回 501；设计分 8.5/13 ≈ 0.654，
+> 门可用分 7.5/13 ≈ 0.577，`dashscope.compatible` 的 0.769 仍优先）。
 > 其中 DashScope Native 路径投放了文本生成与多模态生成两个端点，
 > 每扇门各兑现 5 项能力（多模态门为视觉 / 音频 / 视频输入加文本与流式）。
 > 其余仍是 `PLANNED`，
@@ -43,13 +43,15 @@
   未注册的 `(入站协议, 出站 Provider, 能力)` 组合一律显式报错，绝不静默丢字段。
   「这条路承载不了」和「这个协议表达不出来」严格分开——后者是协议属性，
   不该算成路径的损失，也必须注明该去哪个协议找。
-- **上游没有的，网关能垫就垫。** Anthropic 与 DashScope 都是无状态协议，
+- **上游没有的，网关能垫就垫。** Anthropic Messages 与 DashScope Native 生成端点要求请求携带历史，
   而 Responses 的客户端可以只发 `previous_response_id`。这道鸿沟由
   `internal/convstore` 填平，矩阵里记为 `EMULATE`——客户端拿到的能力是完整的，
   但说明里必须写清这份完整性带着网关自己的可用性边界。Responses 的 `store`
   省略时按协议默认值 `true` 存一轮，但只有显式 `store:true` 或
   `previous_response_id` 才算依赖服务端会话——未启用 `convstore` 的部署
   照常处理普通请求，无需客户端改写。
+  DashScope Compatible 的 Responses 端点另有原生会话契约，其路径尚未投放，
+  会话处置待[专项决定](https://github.com/yobo2u/omugw/issues/12)，不能一概视为无状态。
 - **同源走快通道。** 入站协议族 == 出站 Provider 族时字节级透传，只改写鉴权，
   不进 Canonical——保住 TTFT，绕开绝大多数转换 bug。
 - **流式 failover 只在首字节之前有效。** 首字节发出后上游失败一律不重试
