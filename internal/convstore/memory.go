@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -36,9 +37,7 @@ type MemoryStore struct {
 type entry struct {
 	turn     Turn
 	expireAt time.Time
-	// bytes 是这一轮计入全局预算的字节数，删除时按它回退。
-	// 不重算而是记下来：Messages 在回收时可能已被改写，重算会算出另一个数，
-	// 让 totalBytes 缓慢漂移直到把 Store 卡死在一个虚高的水位上。
+	// 入库后负载不可变，删除与过期均按同一数值回退，防止计量口径漂移。
 	bytes int64
 }
 
@@ -103,9 +102,9 @@ func (s *MemoryStore) AppendWithID(_ context.Context, turn Turn) error {
 		return fmt.Errorf("%w: 已保存 %d 轮，全局上限 %d",
 			ErrTooLarge, len(s.turns), s.limits.MaxTurns)
 	}
-	if s.limits.MaxTotalBytes > 0 && s.totalBytes+size > s.limits.MaxTotalBytes {
-		return fmt.Errorf("%w: 累计 %d 字节，全局上限 %d",
-			ErrTooLarge, s.totalBytes+size, s.limits.MaxTotalBytes)
+	if s.limits.MaxTotalBytes > 0 && size > s.limits.MaxTotalBytes-s.totalBytes {
+		return fmt.Errorf("%w: 新增估算 %d 字节，剩余预算 %d",
+			ErrTooLarge, size, s.limits.MaxTotalBytes-s.totalBytes)
 	}
 
 	depth := 1
@@ -135,15 +134,17 @@ func (s *MemoryStore) AppendWithID(_ context.Context, turn Turn) error {
 		s.touchChainLocked(turn.PrevID, now)
 	}
 
-	s.turns[turn.ID] = &entry{
+	// 字符串也要取得所有权，避免短子串把整个未计入预算的 backing string 留住。
+	id, prevID := strings.Clone(turn.ID), strings.Clone(turn.PrevID)
+	s.turns[id] = &entry{
 		turn: Turn{
-			ID:          turn.ID,
-			PrevID:      turn.PrevID,
-			Owner:       turn.Owner,
+			ID:          id,
+			PrevID:      prevID,
+			Owner:       strings.Clone(turn.Owner),
 			Messages:    cloneMessages(turn.Messages),
 			Opaque:      append([]byte(nil), turn.Opaque...),
 			InlineBytes: turn.InlineBytes,
-			Model:       turn.Model,
+			Model:       strings.Clone(turn.Model),
 			CreatedAt:   now,
 		},
 		expireAt: now.Add(s.limits.TTL),
@@ -151,7 +152,7 @@ func (s *MemoryStore) AppendWithID(_ context.Context, turn Turn) error {
 	}
 	s.totalBytes += size
 	if turn.PrevID != "" {
-		s.children[turn.PrevID] = append(s.children[turn.PrevID], turn.ID)
+		s.children[prevID] = append(s.children[prevID], id)
 	}
 	return nil
 }
@@ -252,6 +253,8 @@ func cloneMessages(src []canonical.Message) []canonical.Message {
 	out := make([]canonical.Message, len(src))
 	for i, msg := range src {
 		out[i] = msg
+		out[i].Role = canonical.Role(strings.Clone(string(msg.Role)))
+		out[i].Name = strings.Clone(msg.Name)
 		out[i].Parts = cloneParts(msg.Parts)
 	}
 	return out
@@ -264,30 +267,44 @@ func cloneParts(src []canonical.Part) []canonical.Part {
 	out := make([]canonical.Part, len(src))
 	for i, part := range src {
 		out[i] = part
+		out[i].Kind = canonical.PartKind(strings.Clone(string(part.Kind)))
+		out[i].Text = strings.Clone(part.Text)
 		if part.Thinking != nil {
 			v := *part.Thinking
+			v.Text = strings.Clone(v.Text)
+			v.Signature = strings.Clone(v.Signature)
 			out[i].Thinking = &v
 		}
 		if part.Media != nil {
 			v := *part.Media
+			v.Kind = canonical.MediaKind(strings.Clone(string(v.Kind)))
+			v.MIMEType = strings.Clone(v.MIMEType)
+			v.Detail = strings.Clone(v.Detail)
+			v.URL = strings.Clone(v.URL)
 			v.Data = append([]byte(nil), part.Media.Data...)
 			if part.Media.FileRef != nil {
 				ref := *part.Media.FileRef
+				ref.ID = strings.Clone(ref.ID)
+				ref.Provider = strings.Clone(ref.Provider)
 				v.FileRef = &ref
 			}
 			if part.Media.Audio != nil {
 				audio := *part.Media.Audio
+				audio.Encoding = strings.Clone(audio.Encoding)
 				v.Audio = &audio
 			}
 			out[i].Media = &v
 		}
 		if part.ToolCall != nil {
 			v := *part.ToolCall
+			v.ID = strings.Clone(v.ID)
+			v.Name = strings.Clone(v.Name)
 			v.Arguments = append([]byte(nil), part.ToolCall.Arguments...)
 			out[i].ToolCall = &v
 		}
 		if part.ToolResult != nil {
 			v := *part.ToolResult
+			v.CallID = strings.Clone(v.CallID)
 			v.Content = cloneParts(part.ToolResult.Content)
 			out[i].ToolResult = &v
 		}
@@ -333,39 +350,6 @@ func (s *MemoryStore) collectExpiredLocked(now time.Time) int {
 		}
 	}
 	return len(dead)
-}
-
-// turnBytes 估算一轮计入全局预算的负载大小。
-//
-// 把文本也算进来，而不只是 InlineBytes：纯文本的 InlineBytes 恒为 0，只按
-// 媒体记账的话，成批的大段文本请求会绕过整个字节闸门。
-func turnBytes(turn Turn) int64 {
-	total := turn.InlineBytes + int64(len(turn.Opaque)) + int64(len(turn.Model))
-	for _, m := range turn.Messages {
-		total += int64(len(m.Role))
-		total += partsBytes(m.Parts)
-	}
-	return total
-}
-
-func partsBytes(parts []canonical.Part) int64 {
-	var total int64
-	for _, p := range parts {
-		total += int64(len(p.Text))
-		if p.Thinking != nil {
-			total += int64(len(p.Thinking.Text)) + int64(len(p.Thinking.Signature))
-		}
-		if p.Media != nil {
-			total += int64(len(p.Media.Data)) + int64(len(p.Media.URL))
-		}
-		if p.ToolCall != nil {
-			total += int64(len(p.ToolCall.Arguments)) + int64(len(p.ToolCall.Name))
-		}
-		if p.ToolResult != nil {
-			total += partsBytes(p.ToolResult.Content)
-		}
-	}
-	return total
 }
 
 // Len 返回当前保存的轮数，供观测使用。
