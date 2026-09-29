@@ -210,13 +210,19 @@ func dashScopeNativeInbound() inbound {
 			}
 			var frame struct {
 				Output struct {
-					Choices []struct {
+					FinishReason *string `json:"finish_reason"`
+					Choices      []struct {
 						FinishReason *string `json:"finish_reason"`
 					} `json:"choices"`
 				} `json:"output"`
 			}
-			if err := json.Unmarshal([]byte(ev.Data), &frame); err != nil || len(frame.Output.Choices) == 0 {
+			if err := json.Unmarshal([]byte(ev.Data), &frame); err != nil {
 				return false
+			}
+			// text 格式没有 choices；其终止原因在 output，不能误报正常流中断。
+			if len(frame.Output.Choices) == 0 {
+				reason := frame.Output.FinishReason
+				return reason != nil && *reason != "" && *reason != "null"
 			}
 			for _, choice := range frame.Output.Choices {
 				if choice.FinishReason == nil || *choice.FinishReason == "" || *choice.FinishReason == "null" {

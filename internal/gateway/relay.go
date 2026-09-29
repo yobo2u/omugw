@@ -80,17 +80,7 @@ func relayStream(w *tracked, resp *httpx.Response, extra map[string]string,
 	encodeError func(e *canonical.Error) (int, []byte, map[string]string)) (canonical.Usage, error) {
 	defer resp.Body.Close()
 
-	copyUpstreamHeaders(w.Header(), resp.Header)
-	for k, v := range extra {
-		w.Header().Set(k, v)
-	}
-
-	sw, err := sse.NewWriter(w)
-	if err != nil {
-		return canonical.UnavailableUsage(),
-			canonical.Wrapf(err, canonical.ClassInternal, "无法建立流式输出")
-	}
-
+	var sw *sse.Writer
 	usage := canonical.UnavailableUsage()
 	reader := sse.NewReader(resp.Body)
 	terminated := false
@@ -116,6 +106,19 @@ func relayStream(w *tracked, resp *httpx.Response, extra map[string]string,
 			}
 			if u, ok := usageFromEvent(ev); ok {
 				usage = u
+			}
+			if sw == nil {
+				// 首事件可交付才写响应头，避免 failover 继承失败尝试的限流信息。
+				var writerErr error
+				sw, writerErr = sse.NewWriter(w)
+				if writerErr != nil {
+					return canonical.UnavailableUsage(),
+						canonical.Wrapf(writerErr, canonical.ClassInternal, "无法建立流式输出")
+				}
+				copyUpstreamHeaders(w.Header(), resp.Header)
+				for k, v := range extra {
+					w.Header().Set(k, v)
+				}
 			}
 			if !w.wrote {
 				w.WriteHeader(resp.StatusCode)
