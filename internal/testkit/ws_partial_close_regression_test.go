@@ -59,23 +59,26 @@ func TestWSReplayRejectsPartialBeforeNormalClose(t *testing.T) {
 				}
 				go forward(bridgeDown, bridgeUp, up, WSClientSend)
 				go forward(bridgeUp, bridgeDown, down, WSUpstreamSend)
+				defer func() {
+					_ = down.Close()
+					_ = up.Close()
+					workers.Wait()
+				}()
 				result, err := ReplayWS(context.Background(), f, WSReplayEndpoints{Client: client, Upstream: upstream}, 1, limits)
-				_ = down.Close()
-				_ = up.Close()
-				workers.Wait()
+				// driver 可在 Close 的最终释放回执前返回；先收注入门闩，避免测试 cleanup 抢关同一 fd。
 				select {
 				case injectedErr := <-injected:
 					if injectedErr != nil {
 						t.Fatal("实际分片与关闭注入失败")
 					}
-				default:
+				case <-time.After(2 * time.Second):
 					t.Fatal("没有到达关闭注入，未覆盖 partial 边界")
 				}
 				if err == nil || result.Outcome.Kind != "" {
 					t.Fatal("未完成额外消息被 normal close 掩盖为 completed")
 				}
-				if !strings.Contains(err.Error(), "ws.nodes[") || strings.Contains(err.Error(), "synthetic-private") {
-					t.Fatal("失败没有安全节点路径或回显了负载")
+				if !strings.Contains(err.Error(), "ws.nodes[") || !strings.Contains(err.Error(), "未完成分片") || strings.Contains(err.Error(), "synthetic-private") {
+					t.Fatalf("未明确拒绝 partial 证据或诊断不安全: %v", err)
 				}
 			})
 		}
