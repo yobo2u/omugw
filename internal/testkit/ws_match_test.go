@@ -503,6 +503,88 @@ func TestWSMaterializeOnlyConfirmedReferences(t *testing.T) {
 	}
 }
 
+// 解码器不能把错误 surrogate 折叠为合法 replacement character 后认可固定文本或实体。
+func TestWSMatchRejectsSurrogateCollisions(t *testing.T) {
+	t.Run("fixed-text", func(t *testing.T) {
+		m := wsTestMatcher(t, DefaultWSLimits())
+		n := wsMatchNode(`{"text":"\ufffd"}`)
+		if err := m.Match(n, wsMatchText(`{"text":"\ud800"}`)); err == nil {
+			t.Fatal("未配对 surrogate 与固定 U+FFFD 错误匹配")
+		}
+	})
+	t.Run("wrong-reference", func(t *testing.T) {
+		m := wsTestMatcher(t, DefaultWSLimits())
+		bind := wsMatchNode(`{"task_id":"fixture"}`, wsMatchID("/task_id", "bind", "task", "first"))
+		if err := m.Match(bind, wsMatchText(`{"task_id":"\ufffd"}`)); err != nil {
+			t.Fatal(err)
+		}
+		ref := wsMatchNode(`{"task_id":"fixture"}`, wsMatchID("/task_id", "reference", "task", "first"))
+		if err := m.Match(ref, wsMatchText(`{"task_id":"\ud800"}`)); err == nil {
+			t.Fatal("错误 surrogate ID 被当成已确认引用")
+		}
+		if err := m.Match(ref, wsMatchText(`{"task_id":"�"}`)); err != nil {
+			t.Fatal("错误引用污染已确认的合法 ID", err)
+		}
+	})
+	t.Run("equal-forward-target", func(t *testing.T) {
+		sent := wsMatchText(`{"model":"logical"}`)
+		rules := []WSFieldRule{wsMatchEqual("/model", `"\ufffd"`)}
+		if err := AssertWSForwardedPayload(sent, wsMatchText(`{"model":"\ud800"}`), rules); err == nil {
+			t.Fatal("转发 equal 错误认可 surrogate 目标")
+		}
+	})
+	t.Run("valid-unicode-controls", func(t *testing.T) {
+		for _, pair := range [][2]string{{`"\ufffd"`, `"�"`}, {`"\ud83d\ude00"`, `"😀"`}, {`"\u0061"`, `"a"`}} {
+			m := wsTestMatcher(t, DefaultWSLimits())
+			if err := m.Match(wsMatchNode(`{"text":`+pair[0]+`}`), wsMatchText(`{"text":`+pair[1]+`}`)); err != nil {
+				t.Fatal("合法 Unicode 固定文本不应被拒绝", err)
+			}
+			bind := wsMatchNode(`{"task_id":"fixture"}`, wsMatchID("/task_id", "bind", "task", "first"))
+			if err := m.Match(bind, wsMatchText(`{"task_id":`+pair[0]+`}`)); err != nil {
+				t.Fatal(err)
+			}
+			ref := wsMatchNode(`{"task_id":"fixture"}`, wsMatchID("/task_id", "reference", "task", "first"))
+			if err := m.Match(ref, wsMatchText(`{"task_id":`+pair[1]+`}`)); err != nil {
+				t.Fatal("合法 Unicode 引用不应被拒绝", err)
+			}
+			if err := AssertWSForwardedPayload(wsMatchText(`{"model":"logical"}`), wsMatchText(`{"model":`+pair[1]+`}`), []WSFieldRule{wsMatchEqual("/model", pair[0])}); err != nil {
+				t.Fatal("合法 Unicode equal 目标不应被拒绝", err)
+			}
+		}
+	})
+	t.Run("invalid-fixture-and-equal-value", func(t *testing.T) {
+		m := wsTestMatcher(t, DefaultWSLimits())
+		invalid := wsMatchNode(`{"text":"\udc00"}`)
+		if err := m.Match(invalid, wsMatchText(`{"text":"�"}`)); err == nil {
+			t.Fatal("fixture surrogate 被合法实际文本掩盖")
+		}
+		if _, err := m.Materialize(invalid); err == nil {
+			t.Fatal("非法 fixture 被物化")
+		}
+		equal := wsMatchNode(`{"model":"logical"}`, wsMatchEqual("/model", `"\udc00"`))
+		if err := m.Match(equal, wsMatchText(`{"model":"�"}`)); err == nil {
+			t.Fatal("非法 equal value 被接纳")
+		}
+		if err := AssertWSForwardedPayload(*equal.Message, wsMatchText(`{"model":"�"}`), equal.Fields); err == nil {
+			t.Fatal("转发非法 equal value 被接纳")
+		}
+	})
+	t.Run("invalid-bind-does-not-commit", func(t *testing.T) {
+		m := wsTestMatcher(t, DefaultWSLimits())
+		bind := wsMatchNode(`{"task_id":"fixture"}`, wsMatchID("/task_id", "bind", "task", "first"))
+		if err := m.Match(bind, wsMatchText(`{"task_id":"\ud800"}`)); err == nil {
+			t.Fatal("非法 bind ID 被接纳")
+		}
+		ref := wsMatchNode(`{"task_id":"fixture"}`, wsMatchID("/task_id", "reference", "task", "first"))
+		if err := m.Match(ref, wsMatchText(`{"task_id":"�"}`)); err == nil {
+			t.Fatal("非法 bind 留下实体状态")
+		}
+		if err := m.Match(bind, wsMatchText(`{"task_id":"�"}`)); err != nil {
+			t.Fatal("非法 bind 消耗预算或实际 ID", err)
+		}
+	})
+}
+
 func TestWSMatcherErrorsDoNotExposePayload(t *testing.T) {
 	const secret = "sensitive-task-value"
 	m := wsTestMatcher(t, DefaultWSLimits())

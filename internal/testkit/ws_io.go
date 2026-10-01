@@ -17,6 +17,9 @@ func strictWSJSON(raw []byte, depthLimit int) (any, error) {
 	if !utf8.Valid(raw) {
 		return nil, fmt.Errorf("WS JSON 必须为 UTF8")
 	}
+	if err := checkWSJSONSurrogates(raw); err != nil {
+		return nil, err
+	}
 	d := json.NewDecoder(bytes.NewReader(raw))
 	d.UseNumber()
 	value, err := readWSJSONValue(d, 0, depthLimit)
@@ -27,6 +30,67 @@ func strictWSJSON(raw []byte, depthLimit int) (any, error) {
 		return nil, fmt.Errorf("WS JSON 含尾随内容")
 	}
 	return value, nil
+}
+
+// Go 解码器会将未配对 surrogate 替换为 U+FFFD；必须先检查原始 escape，防止文本或 ID 身份碰撞。
+// 此处只守 Unicode 配对，完整 JSON 语法仍由原解码器裁决，不复制第二套解码逻辑。
+func checkWSJSONSurrogates(raw []byte) error {
+	inString := false
+	for i := 0; i < len(raw); i++ {
+		if raw[i] == '"' {
+			inString = !inString
+			continue
+		}
+		if !inString || raw[i] != '\\' {
+			continue
+		}
+		i++
+		if i >= len(raw) || raw[i] != 'u' {
+			// 跳过整个普通 escape，防止字面 \\ud800 或转义引号被误作 Unicode escape。
+			continue
+		}
+		code, ok := wsJSONHex4(raw[i+1:])
+		if !ok {
+			return fmt.Errorf("WS JSON Unicode escape 不合法")
+		}
+		i += 4
+		if code >= 0xdc00 && code <= 0xdfff {
+			return fmt.Errorf("WS JSON 含未配对 surrogate")
+		}
+		if code < 0xd800 || code > 0xdbff {
+			continue
+		}
+		if len(raw)-i-1 < 6 || raw[i+1] != '\\' || raw[i+2] != 'u' {
+			return fmt.Errorf("WS JSON 含未配对 surrogate")
+		}
+		low, ok := wsJSONHex4(raw[i+3:])
+		if !ok || low < 0xdc00 || low > 0xdfff {
+			return fmt.Errorf("WS JSON 含未配对 surrogate")
+		}
+		i += 6
+	}
+	return nil
+}
+
+func wsJSONHex4(raw []byte) (uint16, bool) {
+	if len(raw) < 4 {
+		return 0, false
+	}
+	var code uint16
+	for _, digit := range raw[:4] {
+		code <<= 4
+		switch {
+		case digit >= '0' && digit <= '9':
+			code |= uint16(digit - '0')
+		case digit >= 'a' && digit <= 'f':
+			code |= uint16(digit-'a') + 10
+		case digit >= 'A' && digit <= 'F':
+			code |= uint16(digit-'A') + 10
+		default:
+			return 0, false
+		}
+	}
+	return code, true
 }
 
 func readWSJSONValue(d *json.Decoder, depth, limit int) (any, error) {
