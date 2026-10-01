@@ -101,6 +101,9 @@ func ValidateWSSession(f Fixture, limits WSLimits) error {
 				return err
 			}
 		case "close":
+			if n.ForwardedFrom != "" {
+				return fmt.Errorf("WS schema v1 forwarded_from 仅支持 message")
+			}
 			if n.CloseCode == nil || n.Message != nil || len(n.Fields) != 0 || n.Match != "" {
 				return fmt.Errorf("WS close 必须仅有关闭负载")
 			}
