@@ -62,9 +62,10 @@ join 依赖正常 goroutine 调度与 Context 方法按约定返回，并非宣�
 | 受控 context seam | `dialWatchdogGateContext :173-195` | 仅测试文件内 context，门闩模拟合法迟到调度；没有生产插桩 |
 | 真 socket 对端 | `newDialHandoffPeer :208-285` | 原生 httptest Hijack、101 与首帧同一次 Flush、实际 Close 帧(code 1000/reason)与 EOF，底层 socket 清理、handler join |
 | 消息与响应保全 | `assertDialHandoffExchange :289-311` | 独立字面 payload/opcode/header/关闭断言；实际 SetDeadline/Read/Write/Close |
-| 即使失败也归还 worker | `startDialHandoff :314-335` | cleanup 取消、放行 gate、join Dial，未领取的缓冲结果若持有 Conn 则直接释放 |
+| 初版失败清理（后来被 F1 否决） | `startDialHandoff :314-335`（初版行号） | cleanup 取消、放行 gate、join Dial，但缺少独立 socket 释放；取消失效时不能可靠归还，见追加修复记录 |
 
-所有测试只用真实本机 TCP/httptest，未用 net.Pipe。测试网络与 join 有 3 秒上界；
+所有测试只用真实本机 TCP/httptest，未用 net.Pipe。初版每个网络/join 观察有 3 秒期限，
+但这不等于整个 cleanup 有界：独立复核 F1 实际确认 Server.Close 可卡到进程超时；
 100 ms 只用于“门闩未放行时不应提前返回”的负观察窗，不用 sleep 修复产品竞态。
 101 的真实写完成、watchdog 进入门闩均有 ready 通道，不靠盲等猜测握手阶段。
 
@@ -149,7 +150,8 @@ Markdown 表格的 `\|` 是展示转义，不是 shell 正则中的反斜杠；e
 - Background nil Done 由停止通道唤醒；所有拨号后 error return 都经过同一 defer join。
 - 没有动 ErrHandshake 的既有包装风格或旧 response/预读职责。
 - test owner 保留原 Close 证据，不把幂等 nil 当成功发送；实际对端检查 close/EOF。
-- 测试 seam 不篡改 Done/Err 的值，只延迟调用；Context、worker、handler、socket 有清理。
+- 测试 seam 不篡改 Done/Err 的值，只延迟调用；初版清理覆盖正常路径，但取消失效路径的
+  worker/handler/socket 归还由后续 F1 复核否决，不将初次绿色当失败清理有界的证据。
 - BASE 相比仅产品文件、新永久测试与本报告发生变化；没有 testkit/golden/matrix 绕过。
 
 提交前 scoped stage 仅 `handshake.go` 与 `handshake_handoff_test.go`，
@@ -179,3 +181,31 @@ Markdown 表格的 `\|` 是展示转义，不是 shell 正则中的反斜杠；e
 4. 全部为本机 TCP 机制证据，无真实上游/模型、凭据、音频、P3 接线或能力兑现证明。
    原诊断未认证的两次自然失败历史不被本任务追溯认证或删除。
 5. 控制器另行独立 review 仍是下一步；本 leaf 未自派 reviewer，也不把本自检称作独立复核。
+
+## 8. 2026-10-02 — fix round 1 / F1 定点修正
+
+本节追加历史，不改写上述原 TDD、GREEN、负控制或原复核 FAIL。
+固定 fixBASE `39bb8e6d750e8f09b510e81f3618e98a157ff213`；独立 review 的 D1 ADDRESSED 保留，
+Spec/Quality FAIL 原因 F1（取消失效时测试自身清理无独立兜底）在本轮处理，等待 scoped 重审。
+
+- 修改前实际重跑原 no-watchdog-close overlay：具名取消断言 3 秒失败、cleanup join 再失败、
+  `httptest.Server.Close` blocked，12 秒进程 timeout panic，exit 1。原复核发现已实际验证。
+- 只改永久测试 owner：从真实 TCP 的 StateNew 开始登记连接，保留 Hijack 后 fallback 权；
+  cleanup 先放行 context/协议门闩、独立 Close socket/解除 handler，再 join Dial 和 server。
+  所有正常取消/消息/实际 close 证据仍在 cleanup 前断言，坏取消不会被 fallback 变成 GREEN。
+- 同一个原 overlay 改后仍具名 FAIL/exit 1（约 3 秒），普通/race 均记录实际 Dial worker 与
+  handler join；没有 cleanup 超时、Server.Close blocked 或进程 panic。
+- 额外测试局部 overlay 在成功握手后、watchdog 未放行但请求 ready、取消竞争的 101 未放行
+  时强制断言失败，均保留 FAIL/exit 1 且实际 worker/handler join，无进程超时。
+- 正常聚焦普通/race 各 20 轮、全仓 uncached 普通/race 均 exit 0。
+- `make check` **实际 exit 2**：ignored 旧审查工件
+  `.superpowers/sdd/2026-10-01-ws-dial-handoff/review-evidence/tls-handshake-test.go` 未格式化，
+  fmt-check 拦下；该工件未修改/删除。tracked Go 文件 gofmt 检查无输出，
+  `make vet test matrix` exit 0（缓存项明示）。不把此 check 失败省略或改称通过。
+
+本轮产品 handshake.go/CAS/Conn/Frame 字节未改；F2 caller seam 与 100 ms 窗口原样保留。
+完整 fix 报告另存 ignored `fix-1-report.md`，不 stage 新 SDD/ledger/review/evidence；
+本 tracked 报告只定点纠正原“所有失败有界”过强说明并追加本节。
+准确命令/exit/完整日志：
+`/private/var/folders/r6/9bfgzbnj3kgdxb7h9x_37kmr0000gn/T/opencode/ws-dial-handoff-d1-fix1/`。
+最终 fix commit SHA/clean 以本轮回报与该目录 `final-git-state.json` 为准，避免报告自引用 SHA。

@@ -29,8 +29,10 @@ func TestDialHandoffSurvivesContextCancellation(t *testing.T) {
 	peer.upgrade()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	conn, resp, err := Dial(ctx, peer.url, DialOptions{MaxPayload: maxTestPayload})
+	result := startDialHandoff(t, ctx, peer.url, cancel, peer.fallback)
+	got := awaitDialHandoff(t, result, "握手未归还 Dial 工作者")
 	cancel()
+	conn, resp, err := got.conn, got.resp, got.err
 	if err != nil || conn == nil {
 		t.Fatalf("握手失败: %v", err)
 	}
@@ -45,15 +47,37 @@ func TestDialHandoffSurvivesContextCancellation(t *testing.T) {
 func TestDialBlockedHandshakeCancellation(t *testing.T) {
 	ready := make(chan struct{})
 	handlerDone := make(chan struct{})
-	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+	handlerStop := make(chan struct{})
+	var stopOnce sync.Once
+	sockets := newDialHandoffSockets()
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		defer close(handlerDone)
 		close(ready)
-		<-r.Context().Done()
-		close(handlerDone)
+		select {
+		case <-r.Context().Done():
+		case <-handlerStop:
+		}
 	}))
-	t.Cleanup(srv.Close)
+	srv.Config.ConnState = sockets.track
+	srv.Start()
+	fallback := func() {
+		sockets.close()
+		stopOnce.Do(func() { close(handlerStop) })
+	}
+	t.Cleanup(func() {
+		fallback()
+		// 先解除 socket 与 handler，再 join；不能让 Server.Close 等被测取消机制。
+		srv.Close()
+		select {
+		case <-ready:
+			awaitDialHandoff(t, handlerDone, "清理未归还阻塞握手 handler")
+			t.Log("测试 owner fallback 已释放实际 socket 并 join 阻塞握手 handler")
+		default:
+		}
+	})
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	result := startDialHandoff(t, ctx, wsURL(t, srv), cancel)
+	result := startDialHandoff(t, ctx, wsURL(t, srv), cancel, fallback)
 	awaitDialHandoff(t, ready, "握手请求未到达")
 	cancel()
 	got := awaitDialHandoff(t, result, "取消未唤醒阻塞握手")
@@ -82,7 +106,7 @@ func TestDialHandoffJoinsWatchdog(t *testing.T) {
 	result := startDialHandoff(t, gate, peer.url, func() {
 		cancel()
 		gate.open()
-	})
+	}, peer.fallback)
 	awaitDialHandoff(t, gate.entered, "watchdog 未进入测试门闩")
 	awaitDialHandoff(t, peer.ready, "握手请求未到达")
 	peer.upgrade()
@@ -129,7 +153,7 @@ func TestDialHandoffCancellationRace(t *testing.T) {
 			peer := newDialHandoffPeer(t)
 			ctx, cancel := context.WithCancel(context.Background())
 			t.Cleanup(cancel)
-			result := startDialHandoff(t, ctx, peer.url, cancel)
+			result := startDialHandoff(t, ctx, peer.url, cancel, peer.fallback)
 			awaitDialHandoff(t, peer.ready, "握手请求未到达")
 			start := make(chan struct{})
 			cancelDone := make(chan struct{})
@@ -194,13 +218,53 @@ func (c *dialWatchdogGateContext) open() {
 	c.releaseOnce.Do(func() { close(c.release) })
 }
 
+// ConnState 从 StateNew 就登记真实 TCP；Hijack 后仍保留兜底关闭权。
+// close 与迟到登记用同一把锁封口，实际 Close 在锁外，避免测试清理卡住服务器状态回调。
+type dialHandoffSockets struct {
+	mu     sync.Mutex
+	closed bool
+	conns  map[net.Conn]struct{}
+}
+
+func newDialHandoffSockets() *dialHandoffSockets {
+	return &dialHandoffSockets{conns: make(map[net.Conn]struct{})}
+}
+
+func (s *dialHandoffSockets) track(conn net.Conn, state http.ConnState) {
+	s.mu.Lock()
+	if state == http.StateClosed {
+		delete(s.conns, conn)
+		s.mu.Unlock()
+		return
+	}
+	if s.closed {
+		s.mu.Unlock()
+		_ = conn.Close()
+		return
+	}
+	s.conns[conn] = struct{}{}
+	s.mu.Unlock()
+}
+
+func (s *dialHandoffSockets) close() {
+	s.mu.Lock()
+	s.closed = true
+	conns := s.conns
+	s.conns = nil
+	s.mu.Unlock()
+	for conn := range conns {
+		_ = conn.Close()
+	}
+}
+
 type dialHandoffPeer struct {
 	url     string
 	ready   chan struct{}
 	sent101 chan struct{}
 	done    chan error
+	started chan struct{}
 	exited  chan struct{}
-	raw     chan net.Conn
+	sockets *dialHandoffSockets
 	allow   chan struct{}
 	once    sync.Once
 }
@@ -209,18 +273,18 @@ func newDialHandoffPeer(t *testing.T) *dialHandoffPeer {
 	t.Helper()
 	p := &dialHandoffPeer{
 		ready: make(chan struct{}), sent101: make(chan struct{}),
-		done: make(chan error, 1), exited: make(chan struct{}), raw: make(chan net.Conn, 1),
-		allow: make(chan struct{}),
+		done: make(chan error, 1), started: make(chan struct{}), exited: make(chan struct{}),
+		sockets: newDialHandoffSockets(), allow: make(chan struct{}),
 	}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer close(p.exited)
+		close(p.started)
 		p.done <- func() error {
 			raw, brw, err := w.(http.Hijacker).Hijack()
 			if err != nil {
 				return err
 			}
 			defer raw.Close()
-			p.raw <- raw
 			if err := raw.SetDeadline(time.Now().Add(dialHandoffWait)); err != nil {
 				return err
 			}
@@ -270,14 +334,16 @@ func newDialHandoffPeer(t *testing.T) *dialHandoffPeer {
 			return nil
 		}()
 	}))
+	srv.Config.ConnState = p.sockets.track
+	srv.Start()
 	p.url = wsURL(t, srv)
 	t.Cleanup(func() {
-		p.upgrade()
+		p.fallback()
 		srv.Close()
 		select {
-		case raw := <-p.raw:
-			_ = raw.Close()
+		case <-p.started:
 			awaitDialHandoff(t, p.exited, "清理未归还实际上游工作者")
+			t.Log("测试 owner fallback 后已 join 上游 handler")
 		default:
 		}
 	})
@@ -285,6 +351,12 @@ func newDialHandoffPeer(t *testing.T) *dialHandoffPeer {
 }
 
 func (p *dialHandoffPeer) upgrade() { p.once.Do(func() { close(p.allow) }) }
+
+// 门闩、未接管的 active 连接与 Hijack 后的 socket 都须在 join 之前独立释放。
+func (p *dialHandoffPeer) fallback() {
+	p.sockets.close()
+	p.upgrade()
+}
 
 func assertDialHandoffExchange(t *testing.T, conn *Conn, resp *http.Response) {
 	t.Helper()
@@ -310,8 +382,9 @@ func assertDialHandoffExchange(t *testing.T, conn *Conn, resp *http.Response) {
 	}
 }
 
-// 即使断言中途失败，也要取消并 join Dial；缓冲结果尚未领取时 socket 仍归测试 owner。
-func startDialHandoff(t *testing.T, ctx context.Context, url string, stop func()) <-chan dialHandoffResult {
+// 被测取消可能失效，cleanup 必须先放行门闩并独立关 socket，再 join Dial。
+// fallback 只在正常证据断言结束或失败后运行，不能替产品取消制造假绿。
+func startDialHandoff(t *testing.T, ctx context.Context, url string, stop, fallback func()) <-chan dialHandoffResult {
 	t.Helper()
 	result := make(chan dialHandoffResult, 1)
 	exited := make(chan struct{})
@@ -322,7 +395,9 @@ func startDialHandoff(t *testing.T, ctx context.Context, url string, stop func()
 	}()
 	t.Cleanup(func() {
 		stop()
+		fallback()
 		awaitDialHandoff(t, exited, "清理未归还 Dial 工作者")
+		t.Log("测试 owner fallback 后已 join Dial 工作者")
 		select {
 		case got := <-result:
 			if got.conn != nil {
