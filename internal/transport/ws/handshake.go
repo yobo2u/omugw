@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -140,14 +141,23 @@ func Dial(ctx context.Context, rawURL string, opts DialOptions) (*Conn, *http.Re
 		return nil, nil, err
 	}
 
-	// 拨号成功后 ctx 仍可能被取消。挂一个 watchdog 关掉连接，让阻塞中的
-	// 握手读写立刻返回——否则一个不应答的上游会把调用方挂到 TCP 自己超时。
+	// 拨号成功后取消仍须唤醒握手读写，但不能把关闭权带进业务会话。
+	// 同一个 CAS 仲裁取消与交接：取消先认领就必须报错，交接先认领后
+	// 即使 watchdog 迟到且两个通道都 ready，也不再允许它关闭 socket。
+	var handshakeClaimed atomic.Bool
 	handshakeDone := make(chan struct{})
-	defer close(handshakeDone)
+	watchdogDone := make(chan struct{})
+	defer func() {
+		close(handshakeDone)
+		<-watchdogDone
+	}()
 	go func() {
+		defer close(watchdogDone)
 		select {
 		case <-ctx.Done():
-			_ = netConn.Close()
+			if handshakeClaimed.CompareAndSwap(false, true) {
+				_ = netConn.Close()
+			}
 		case <-handshakeDone:
 		}
 	}()
@@ -186,6 +196,11 @@ func Dial(ctx context.Context, rawURL string, opts DialOptions) (*Conn, *http.Re
 		return nil, resp, fmt.Errorf("%w: Sec-WebSocket-Accept 摘要不匹配", ErrHandshake)
 	}
 
+	// 取消已取得关闭权时，101 与摘要校验通过也不能交付一条即将失效的连接。
+	// defer join 确保真正关完 socket 或放弃关闭权之后，调用方才会收到结果。
+	if !handshakeClaimed.CompareAndSwap(false, true) {
+		return nil, resp, fmt.Errorf("%w: %v", ErrHandshake, ctx.Err())
+	}
 	return newConnBuffered(netConn, br, RoleClient, opts.MaxPayload, opts.Idle), resp, nil
 }
 
