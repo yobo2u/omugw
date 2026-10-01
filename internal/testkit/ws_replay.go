@@ -323,6 +323,11 @@ func (c *wsReplayController) consumePending() error {
 			if ep.next < len(ep.receives) {
 				i = ep.receives[ep.next]
 			}
+			// 正常 close 可插在分片中，但不能将未声明的半条消息当作完整轨迹收尾。
+			var partialClose *ws.CloseError
+			if errors.As(read.err, &partialClose) && partialClose.IncompleteMessage {
+				return fmt.Errorf("ws.nodes[%d].message: 关闭前存在未完成分片", i)
+			}
 			// 主动 Close 马上关 TCP，不能要求本端看到自动 1000 回应，亦不能拿其
 			// EOF 消费任何尚未匹配的 receive 节点。先等 close 写结果，不误判抢先 EOF。
 			if read.err != nil && ep.next == len(ep.receives) && ep.inFlight != -1 && c.nodes[ep.inFlight].Kind == "close" {

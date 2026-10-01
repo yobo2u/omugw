@@ -43,6 +43,9 @@ var (
 type CloseError struct {
 	Code   uint16
 	Reason string
+	// IncompleteMessage 保留关闭前仍在重组的分片证据，不把正常 close 当完整业务终结。
+	// 它不改变关闭码、错误文本或自动回应，也不表示此关闭违反 RFC。
+	IncompleteMessage bool
 }
 
 func (e *CloseError) Error() string {
@@ -118,7 +121,7 @@ func (c *Conn) ReadMessage() (Opcode, []byte, error) {
 				return 0, nil, derr
 			}
 			c.respondToPeerClose()
-			return 0, nil, &CloseError{Code: code, Reason: reason}
+			return 0, nil, &CloseError{Code: code, Reason: reason, IncompleteMessage: c.reader.fragments}
 		default:
 			return op, payload, nil
 		}
