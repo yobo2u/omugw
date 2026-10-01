@@ -207,7 +207,18 @@ func prepareWSMatchNode(node WSNode, limits WSLimits) (any, []wsMatchRule, error
 		return nil, nil, err
 	}
 	rules, err := prepareWSMatchRules(value, node.Fields, limits)
-	return value, rules, err
+	if err != nil {
+		return nil, nil, err
+	}
+	if node.Point == WSClientSend || node.Point == WSUpstreamSend {
+		for _, rule := range rules {
+			literal, _ := wsJSONPointer(value, rule.field.Pointer)
+			if rule.field.Mode == "equal" && !reflect.DeepEqual(literal, rule.value) {
+				return nil, nil, fmt.Errorf("WS 发送 equal 必须与字面负载一致")
+			}
+		}
+	}
+	return value, rules, nil
 }
 
 func prepareWSMatchRules(value any, fields []WSFieldRule, limits WSLimits) ([]wsMatchRule, error) {

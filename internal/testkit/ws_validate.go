@@ -69,7 +69,9 @@ func ValidateWSSession(f Fixture, limits WSLimits) error {
 	var traceBytes int64
 	rules := 0
 	bindings := make(map[wsBinding]int)
+	sentIDs := make(map[wsActualID]wsBinding)
 	for i, n := range s.Nodes {
+		var prepared []wsMatchRule
 		if strings.TrimSpace(n.Source) == "" {
 			return fmt.Errorf("WS 节点缺少来源")
 		}
@@ -93,19 +95,10 @@ func ValidateWSSession(f Fixture, limits WSLimits) error {
 			if n.Message.Opcode == ws.OpText && (len(n.Message.Payload) == 0 || !utf8.Valid(n.Message.Payload)) {
 				return fmt.Errorf("WS text 必须为非空 UTF8")
 			}
-			if n.Match != "" && n.Match != "json" && n.Match != "bytes" {
-				return fmt.Errorf("WS message 匹配模式不合法")
-			}
-			if n.Match == "json" {
-				if n.Message.Opcode != ws.OpText {
-					return fmt.Errorf("JSON 匹配只适用 text")
-				}
-				payloads[i], err = strictWSJSON(n.Message.Payload, limits.JSONDepth)
-				if err != nil {
-					return fmt.Errorf("WS JSON 消息不合法或超过深度预算")
-				}
-			} else if len(n.Fields) != 0 {
-				return fmt.Errorf("bytes 匹配不能带字段规则")
+			// 与消费者共用无状态预检，防止 loader 交付运行时必然拒绝的字段契约。
+			payloads[i], prepared, err = prepareWSMatchNode(n, limits)
+			if err != nil {
+				return err
 			}
 		case "close":
 			if n.CloseCode == nil || n.Message != nil || len(n.Fields) != 0 || n.Match != "" {
@@ -125,43 +118,27 @@ func ValidateWSSession(f Fixture, limits WSLimits) error {
 			return fmt.Errorf("WS 字段规则超过预算")
 		}
 		rules += len(n.Fields)
-		seen := make(map[string]bool)
-		for _, field := range n.Fields {
-			if seen[field.Pointer] {
-				return fmt.Errorf("同一 JSON pointer 不能重复声明规则")
+		for _, rule := range prepared {
+			field := rule.field
+			if field.Mode != "bind" {
+				continue
 			}
-			seen[field.Pointer] = true
-			fieldValue, ok := wsJSONPointer(payloads[i], field.Pointer)
-			if !ok {
-				return fmt.Errorf("WS 字段 pointer 不合法或不存在")
+			key := wsBinding{field.Namespace, field.Symbol}
+			if _, exists := bindings[key]; exists {
+				return fmt.Errorf("WS 实体不能重复绑定")
 			}
-			switch field.Mode {
-			case "bind", "reference":
-				if id, ok := fieldValue.(string); !ok || id == "" {
-					return fmt.Errorf("实体绑定与引用必须指向非空字符串")
+			if len(bindings) >= limits.Bindings {
+				return fmt.Errorf("WS 绑定超过预算")
+			}
+			bindings[key] = i
+			if n.Point == WSClientSend || n.Point == WSUpstreamSend {
+				// 接收占位不是真实 ID；仅作者将原样发送的字面值可提前证明冲突。
+				literal, _ := wsJSONPointer(payloads[i], field.Pointer)
+				actual := wsActualID{key.namespace, literal.(string)}
+				if owner, exists := sentIDs[actual]; exists && owner != key {
+					return fmt.Errorf("WS 发送字面 ID 在同命名空间不能复用")
 				}
-				if field.Namespace == "" || field.Symbol == "" || field.Value != nil {
-					return fmt.Errorf("绑定规则必须声明 namespace、symbol 且不能带字面 value")
-				}
-				if field.Mode == "bind" {
-					key := wsBinding{field.Namespace, field.Symbol}
-					if _, exists := bindings[key]; exists {
-						return fmt.Errorf("WS 实体不能重复绑定")
-					}
-					if len(bindings) >= limits.Bindings {
-						return fmt.Errorf("WS 绑定超过预算")
-					}
-					bindings[key] = i
-				}
-			case "equal":
-				if field.Namespace != "" || field.Symbol != "" || field.Value == nil {
-					return fmt.Errorf("字面规则必须仅声明 value")
-				}
-				if _, err := strictWSJSON(field.Value, limits.JSONDepth); err != nil {
-					return fmt.Errorf("字段字面 value 不合法")
-				}
-			default:
-				return fmt.Errorf("WS 字段规则 mode 不合法")
+				sentIDs[actual] = key
 			}
 		}
 	}

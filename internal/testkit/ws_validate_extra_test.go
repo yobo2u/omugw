@@ -28,8 +28,13 @@ func TestWSTraceValidationBoundaries(t *testing.T) {
 			f.Response.WS.Nodes[0].Message = &WSMessage{Opcode: ws.OpBinary}
 		}, false},
 		{"literal terminal", func(f *Fixture) { f.Response.WS.Nodes[2].Fields = nil; f.Response.WS.Nodes[3].Fields = nil }, true},
-		{"bound state terminal", func(f *Fixture) {
+		{"state cannot bind", func(f *Fixture) {
 			f.Response.WS.Nodes[3].Fields = append(f.Response.WS.Nodes[3].Fields, WSFieldRule{Pointer: "/response/status", Mode: "bind", Namespace: "state", Symbol: "completed"})
+		}, false},
+		{"bound id terminal", func(f *Fixture) {
+			f.Response.WS.Nodes[3].Fields[0].Mode = "bind"
+			f.Response.WS.Nodes[3].Fields[0].Namespace = "client-response"
+			f.Response.WS.Outcome.Terminal[0].Namespace = "client-response"
 		}, true},
 		{"completed non1000 close", func(f *Fixture) {
 			c := uint16(1001)
