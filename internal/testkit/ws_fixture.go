@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/yobo2u/omugw/internal/transport/ws"
 )
@@ -91,7 +92,7 @@ type WSCoverage struct {
 }
 
 // WSSession 将上下游握手与消息轨迹独立保存，防止套用 HTTP upstream.body 的必填契约。
-// 该 schema 不代表生产 WS 接线已投放；完整轨迹校验由后续任务接入。
+// 该 schema 不代表生产 WS 接线已投放，来源账本也不能自行证明真实能力。
 type WSSession struct {
 	Version                int                 `json:"version"`
 	ClientProtocol         string              `json:"client_protocol"`
@@ -106,8 +107,40 @@ type WSSession struct {
 	Outcome                WSOutcome           `json:"outcome"`
 }
 
+// WSLimits 限制离线读取与回放资源，防止 fixture 成为无界内存或等待入口。
+type WSLimits struct {
+	FileBytes      int64
+	DirectoryBytes int64
+	MessageBytes   int64
+	TraceBytes     int64
+	Nodes          int
+	Edges          int
+	Bindings       int
+	FieldRules     int
+	JSONDepth      int
+	Replay         time.Duration
+}
+
+// DefaultWSLimits 不沿用生产预算，避免测试夹具改变真实会话的时长和大小。
+func DefaultWSLimits() WSLimits {
+	return WSLimits{
+		FileBytes: 8 << 20, DirectoryBytes: 64 << 20,
+		MessageBytes: 1 << 20, TraceBytes: 4 << 20,
+		Nodes: 4096, Edges: 8192, Bindings: 2048, FieldRules: 8192,
+		JSONDepth: 64, Replay: 5 * time.Second,
+	}
+}
+
+func (l WSLimits) validate() error {
+	if l.FileBytes <= 0 || l.FileBytes == int64(^uint64(0)>>1) || l.DirectoryBytes <= 0 || l.MessageBytes <= 0 || l.TraceBytes <= 0 ||
+		l.Nodes <= 0 || l.Edges <= 0 || l.Bindings <= 0 || l.FieldRules <= 0 || l.JSONDepth <= 0 || l.Replay <= 0 {
+		return fmt.Errorf("WS 预算必须全部为正且文件预算可安全加一")
+	}
+	return nil
+}
+
 // 先拦传输信封错配，避免空请求体的 WS 握手借用或放宽旧 HTTP 校验。
-// 此处仅守基本握手边界，来源、预算、轨迹与关闭结局的完整校验由后续任务接入。
+// 此处仅守基本握手边界，完整会话还必须通过 ValidateWSSession。
 func (f Fixture) validateWSEnvelope() error {
 	if f.Response.Body != nil || f.Response.SSE != nil {
 		return fmt.Errorf("fixture %q 的 ws 与 body、sse 互斥", f.Name)

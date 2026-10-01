@@ -108,18 +108,21 @@ func TestWSFixtureEnvelope(t *testing.T) {
 			f.Response.WS.UpstreamExpectedStatus = 401
 			f.Response.WS.UpstreamError = json.RawMessage(`{"error":{"code":"synthetic_error"}}`)
 			f.Response.WS.Nodes = nil
+			f.Response.WS.Coverage = nil
 			f.Response.WS.Outcome = WSOutcome{Kind: "handshake_failed"}
 		}, false},
 		{"handshake failed downstream upgrade", func(f *Fixture) {
 			f.Response.WS.UpstreamExpectedStatus = 401
 			f.Response.WS.UpstreamError = json.RawMessage(`{"error":{"code":"synthetic_error"}}`)
 			f.Response.WS.Nodes = nil
+			f.Response.WS.Coverage = nil
 			f.Response.WS.Outcome = WSOutcome{Kind: "handshake_failed"}
 		}, true},
 		{"handshake failed upstream upgrade", func(f *Fixture) {
 			f.Response.Status = 401
 			f.Response.WS.UpstreamError = json.RawMessage(`{"error":{"code":"synthetic_error"}}`)
 			f.Response.WS.Nodes = nil
+			f.Response.WS.Coverage = nil
 			f.Response.WS.Outcome = WSOutcome{Kind: "handshake_failed"}
 		}, true},
 		{"downstream raw secret", func(f *Fixture) { f.Request.Headers = map[string]string{"Authorization": "Bearer synthetic-secret"} }, true},

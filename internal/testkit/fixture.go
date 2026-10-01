@@ -116,9 +116,12 @@ func SanitizeHeaders(h http.Header) map[string]string {
 func Load(t *testing.T, path string) Fixture {
 	t.Helper()
 
-	raw, err := os.ReadFile(path)
+	raw, err := readFixtureBounded(path, DefaultWSLimits().FileBytes)
 	if err != nil {
 		t.Fatalf("testkit: 读取 fixture %s 失败: %v", path, err)
+	}
+	if legacyHasWS(raw) {
+		t.Fatalf("testkit: WS fixture 必须使用有界的 ReadWSFixture 入口")
 	}
 	var f Fixture
 	if err := json.Unmarshal(raw, &f); err != nil {
@@ -189,9 +192,7 @@ func (f Fixture) Validate() error {
 		return fmt.Errorf("fixture %q 同时有 body 和 sse，两者互斥", f.Name)
 	}
 	if f.Response.WS != nil {
-		if err := f.validateWSEnvelope(); err != nil {
-			return err
-		}
+		return ValidateWSSession(f, DefaultWSLimits())
 	}
 	if f.Upstream != nil {
 		if f.Upstream.Method == "" {
