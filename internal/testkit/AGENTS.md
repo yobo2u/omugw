@@ -55,6 +55,8 @@ testdata/
 - `WSReplayUpstream` 只拥有单次握手与 socket 兜底释放，不运行消息 driver；`Connection` 只转交一次使用权，httptest 不负责劫持连接。整合 owner 必须在驱动返回后调用 `Close()` 并检查其结果与 `Err()`，迟到重复/错配握手不能被 driver Done 掩盖。最终检查前调用方应停止并 join 自己的请求生产者，不能声称已检查未来尚未到达的请求。
 - `ReplayWS` 只有初始化成功才接管两个 socket，返回前关闭并 join 自己的固定工作者；初始化失败仍由调用方释放端点。completed 必须同时有真实客户端业务终态与对侧 close 接收；failed/interrupted 不得混成 completed，raw TCP EOF 不能当有效 close。
 - 传输层的最小 `CloseWithResult(code, reason) (sent, err)` 只证明**本次关闭帧完整写入成功**，不证明对端收到。幂等 nil、被动自动关闭或写锁占用均不能补造发送，仍须独立实际对端接收证据；不增加 Abort 或状态预检查来绕过生命周期竞争。
+- schema v1 `ForwardedFrom` 只允许完整 message，close 上声明明确拒绝；未声明来源的两侧 close reason 可独立断言。`CloseError.IncompleteMessage` 保留关闭时仍未重组完成的证据，回放所有关闭分支都拒绝，不将正常 close 误称 RFC 错误或完整业务终结。
+- 有界读取先预拒非普通文件/末级链接，Darwin/Linux 非阻塞且不跟随链接打开，再复核 descriptor 类型与身份；其它平台仅预检与 descriptor 复核，不声称完整抗恶意文件系统竞态。JSON 文件预算不等于堆内存预算，通用树解析仍有累计分配放大。
 - 全部机制测试使用本地 TCP/httptest，不用 `net.Pipe`、真实凭据或 smoke。本阶段没有 P2 录制器、P3 生产 WS 接线、音频宽松匹配或能力投放，不因此宣告 Phase1 已完成。
 
 ## ANTI-PATTERNS

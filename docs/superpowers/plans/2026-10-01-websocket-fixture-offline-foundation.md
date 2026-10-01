@@ -22,7 +22,11 @@ WS 数据包含四观测点、显式因果依赖与限定动态绑定；一个�
 - `docs/adr/0003-realtime-minimal-session-semantics.md`
 
 **固定基线：** `bacf106ac00968df6acb6ab31e0e55d71be324a5`。
-当前是实施计划草案，未实现；不把已合入设计文件算作 fixture 可用。
+**执行前历史状态：** 此处在执行前是实施计划草案、未实现；当时不能把已合入设计文件算作 fixture 可用。
+
+**2026-10-01 交付注记：** P1 八项本地任务已实现，统一最终修复尚待控制器 scoped 复核。
+原清单保留执行前历史，不将 P2 真实录制器、P3 生产接线/能力投放或 DSP 写成完成。
+当前覆盖与证据边界见 [分期交付状态](../../research/2026-10-01-ws-offline-foundation-delivery.md)。
 
 ## 全局约束
 
@@ -463,4 +467,5 @@ func ReplayWS(ctx context.Context, f Fixture, peers WSReplayEndpoints,
 若用户选择 subagent-driven，则每任务给 fresh worker 的上下文包含本计划全部
 公共类型/预算与此前任务 Interfaces，不复用带旧实现假设的 reviewer。
 
-**执行前等待：用户审阅本计划并选择执行方式。** 当前只完成计划，尚未编码。
+**执行前历史：当时等待用户审阅并选择执行方式，仅有计划、尚未编码。**
+当前分期交付以开头 2026-10-01 注记为准；清单未勾选保留原实施步骤，不表示 P1 仍未实现。

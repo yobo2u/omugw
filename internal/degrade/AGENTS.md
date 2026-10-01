@@ -8,7 +8,7 @@
 | 文件 | 职责 |
 |---|---|
 | `matrix.go` | `Protocol`/`Provider`/`Disposition`/`Rule`/`Route`/`Matrix`/`Verdict` 全部核心类型 + `Check()` |
-| `endpoint.go` | `Endpoint` / `Inbound` 类型、四扇门常量（DashScope 门复用协议包路径常量）与门归属查询 `Protocol()` |
+| `endpoint.go` | `Endpoint` / `Inbound` 类型、七扇已知门常量（Native HTTP 门复用协议包路径常量）与门归属查询 `Protocol()` |
 | `expressible.go` | 可表达性机制：能力落进 `Capabilities` / `Elsewhere` / `Impossible` 三桶之一 |
 | `expressibility_phase1.go` | 六个入站协议的可表达性声明，`init()` 时注册 |
 | `rules_phase1.go` | `Phase1()` 构建全部 14 条路径的处置 |
@@ -59,8 +59,11 @@
 - **Build 还校验处置合法性与门归属**：处置必须是五种之一，未知值报错；已知门
   兑现给非其归属的入站协议也报错——门带着线格式，`/v1/responses` 只能由
   `openai.responses` 路径兑现，错绑会让 `Check` 按别人的可表达性裁决这扇门的
-  请求。归属表（`Endpoint.Protocol()`）只登记四扇已知门，**不是准入名单**：
-  未知门、测试合成门照常放行。
+  请求。归属表（`Endpoint.Protocol()`）登记七扇已知门，**不是准入名单，也不等于开七门**：
+  Chat `/v1/chat/completions`、Responses `/v1/responses`、OpenAI Realtime `/v1/realtime`
+  各归对应 OpenAI 入站协议；Native 文本/多模态 HTTP 两门归 `dashscope.native`；
+  `/api-ws/v1/realtime` 归 `dashscope.realtime`，`/api-ws/v1/inference` 归 `dashscope.inference`。
+  三扇 WS 门只加归属检查，不注册 Mux、不兑现能力；未知门、测试合成门照常放行。
 - 同源快通道（`IsHomogeneous()`）在选路时**永远优先于**全局 `OutboundPreference`。
 
 ## ANTI-PATTERNS
