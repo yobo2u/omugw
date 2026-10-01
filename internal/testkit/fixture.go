@@ -40,12 +40,13 @@ type Request struct {
 	Body    json.RawMessage   `json:"body,omitempty"`
 }
 
-// Response 是上游返回。Body 与 SSE 互斥。
+// Response 是上游返回。Body、SSE 与 WS 互斥，避免回放时静默选错传输分支。
 type Response struct {
 	Status  int               `json:"status"`
 	Headers map[string]string `json:"headers,omitempty"`
 	Body    json.RawMessage   `json:"body,omitempty"`
 	SSE     *SSEBody          `json:"sse,omitempty"`
+	WS      *WSSession        `json:"ws,omitempty"`
 }
 
 // UpstreamExpectation 声明对发往上游请求的预期。
@@ -186,6 +187,11 @@ func (f Fixture) Validate() error {
 	}
 	if f.Response.Body != nil && f.Response.SSE != nil {
 		return fmt.Errorf("fixture %q 同时有 body 和 sse，两者互斥", f.Name)
+	}
+	if f.Response.WS != nil {
+		if err := f.validateWSEnvelope(); err != nil {
+			return err
+		}
 	}
 	if f.Upstream != nil {
 		if f.Upstream.Method == "" {
