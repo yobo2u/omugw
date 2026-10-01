@@ -153,13 +153,20 @@ func (c *Conn) writeFrame(op Opcode, payload []byte) error {
 // 幂等是必须的：关闭路径常被 defer 与错误分支同时触发，第二次发帧会写进
 // 一个已经关掉的连接，在生产里表现为一条毫无意义的 write on closed conn。
 func (c *Conn) Close(code uint16, reason string) error {
+	_, err := c.CloseWithResult(code, reason)
+	return err
+}
+
+// CloseWithResult 防止将幂等关闭的 nil 或被动自动回应误当成本次指定帧发送证据。
+// sent 只在本次 WriteFrame 完整成功后为 true，不保证对端收到；已关闭、放弃写锁
+// 或帧写失败均为 false。底层释放错误独立返回，不抹掉已经实际写完帧的结果。
+func (c *Conn) CloseWithResult(code uint16, reason string) (sent bool, err error) {
 	if !c.closed.CompareAndSwap(false, true) {
-		return nil
+		return false, nil
 	}
 
 	// 已有业务帧阻塞时不能等写锁：直接关底层连接才能把那个写唤醒。
 	// 没有并发写时尽力发送关闭帧，并给这次礼貌收尾一个有限期限。
-	var err error
 	if c.writeMu.TryLock() {
 		deadline := time.Second
 		if c.idle > 0 && c.idle < deadline {
@@ -171,13 +178,14 @@ func (c *Conn) Close(code uint16, reason string) error {
 			Opcode:  OpClose,
 			Payload: EncodeClosePayload(code, reason),
 		}, c.role.masks())
+		sent = err == nil
 		c.writeMu.Unlock()
 	}
 
 	if cerr := c.conn.Close(); err == nil {
 		err = cerr
 	}
-	return err
+	return sent, err
 }
 
 // respondToPeerClose 处理收到的对端 close 帧。

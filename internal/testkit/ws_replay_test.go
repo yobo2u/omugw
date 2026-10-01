@@ -565,6 +565,247 @@ func TestWSReplayReleasesBlockedPeers(t *testing.T) {
 	}
 }
 
+// 已关闭上游不会再发 1011；独立下游的同码 close 不能补造上游的发送证据。
+func TestWSReplayClosedEndpointDoesNotInventClose(t *testing.T) {
+	f := wsReplayFixture(WSUpstreamSend, "failed", 1011)
+	f.Response.WS.Nodes = f.Response.WS.Nodes[4:]
+	f.Response.WS.Nodes[0].After = nil
+	limits := DefaultWSLimits()
+	limits.Replay = 200 * time.Millisecond
+	if ValidateWSSession(f, limits) != nil {
+		t.Fatal("手写关闭 fixture 无效，未覆盖运行态发送证据")
+	}
+	upRaw, upRemote := wsReplayTCPPair(t)
+	clientRaw, clientRemote := wsReplayTCPPair(t)
+	defer upRaw.Close()
+	defer upRemote.Close()
+	defer clientRaw.Close()
+	defer clientRemote.Close()
+	up := ws.NewConn(upRaw, ws.RoleServer, limits.MessageBytes, 0)
+	observer := ws.NewConn(upRemote, ws.RoleClient, limits.MessageBytes, 0)
+	client := ws.NewConn(clientRaw, ws.RoleClient, limits.MessageBytes, 0)
+	down := ws.NewConn(clientRemote, ws.RoleServer, limits.MessageBytes, 0)
+	if up.Close(1000, "") != nil {
+		t.Fatal("预先关闭上游失败")
+	}
+	_, _, observedErr := observer.ReadMessage()
+	var observedClose *ws.CloseError
+	if !errors.As(observedErr, &observedClose) || observedClose.Code != 1000 {
+		t.Fatal("上游没有实际发送预先的 1000 close")
+	}
+	if down.Close(1011, "") != nil {
+		t.Fatal("独立下游关闭注入失败")
+	}
+	result, err := ReplayWS(context.Background(), f, WSReplayEndpoints{Client: client, Upstream: up}, 1, limits)
+	if err == nil || result.Outcome.Kind != "" {
+		t.Fatal("已关闭上游的幂等 Close 补造了不存在的 1011，坏 bridge 得到批准")
+	}
+}
+
+// 回放接管后被动 close 自动回应已关 TCP，后续指定发送不能被幂等成功伪证。
+func TestWSReplayPassiveCloseDoesNotInventLaterSend(t *testing.T) {
+	f := wsReplayFixture(WSUpstreamSend, "interrupted", 1000)
+	recvCode, phantomCode, clientCode := uint16(1000), uint16(1011), uint16(1000)
+	f.Response.WS.Nodes = []WSNode{
+		{ID: "up-receive", Point: WSUpstreamReceive, Source: "synthetic", Kind: "close", CloseCode: &recvCode},
+		{ID: "up-send", Point: WSUpstreamSend, Source: "synthetic", Kind: "close", CloseCode: &phantomCode, After: []string{"up-receive"}},
+		{ID: "client-send", Point: WSClientSend, Source: "synthetic", Kind: "close", CloseCode: &clientCode, After: []string{"up-send"}},
+	}
+	limits := DefaultWSLimits()
+	limits.Replay = 200 * time.Millisecond
+	if ValidateWSSession(f, limits) != nil {
+		t.Fatal("手写关闭 fixture 无效，未覆盖运行态发送证据")
+	}
+	upRaw, upRemote := wsReplayTCPPair(t)
+	clientRaw, clientRemote := wsReplayTCPPair(t)
+	defer upRaw.Close()
+	defer upRemote.Close()
+	defer clientRaw.Close()
+	defer clientRemote.Close()
+	up := ws.NewConn(upRaw, ws.RoleServer, limits.MessageBytes, 0)
+	client := ws.NewConn(clientRaw, ws.RoleClient, limits.MessageBytes, 0)
+	remote := ws.NewConn(upRemote, ws.RoleClient, limits.MessageBytes, 0)
+	if remote.Close(1000, "") != nil {
+		t.Fatal("被动关闭注入失败")
+	}
+	result, err := ReplayWS(context.Background(), f, WSReplayEndpoints{Client: client, Upstream: up}, 1, limits)
+	if err == nil || result.Outcome.Kind != "" {
+		t.Fatal("被动关闭自动回应后的不存在发送仍获批准")
+	}
+}
+
+// 关闭帧及主动端 EOF 可以早于 write-result 投递；只能等真实 sent 结果，不能误报缺证。
+func TestWSReplayCloseBeforeWriteResult(t *testing.T) {
+	for _, side := range []WSPoint{WSClientSend, WSUpstreamSend} {
+		t.Run(string(side), func(t *testing.T) {
+			f := wsReplayFixture(side, "interrupted", 1000)
+			nodes := f.Response.WS.Nodes[4:]
+			nodes[0].After = nil
+			limits := DefaultWSLimits()
+			schedule, err := NewWSSchedule(nodes, 1)
+			if err != nil {
+				t.Fatal("关闭调度初始化失败")
+			}
+			matcher, err := NewWSMatcher(limits)
+			if err != nil {
+				t.Fatal("matcher 初始化失败")
+			}
+			a, b := wsReplayTCPPair(t)
+			defer a.Close()
+			defer b.Close()
+			controller := &wsReplayController{nodes: schedule.nodes, graph: schedule.graph, schedule: schedule, matcher: matcher, limits: limits,
+				completed: make([]bool, 2), observed: make([]*WSMessage, 2), endpoints: [2]*wsReplayEndpoint{
+					{conn: ws.NewConn(a, ws.RoleClient, limits.MessageBytes, 0), inFlight: -1, writes: make(chan wsReplayWrite, 1), written: make(chan wsReplayWritten, 1)},
+					{conn: ws.NewConn(b, ws.RoleServer, limits.MessageBytes, 0), inFlight: -1, writes: make(chan wsReplayWrite, 1), written: make(chan wsReplayWritten, 1)},
+				}}
+			sender := controller.endpoint(side)
+			receiver := controller.endpoint(nodes[1].Point)
+			receiver.receives = []int{1}
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			var workers sync.WaitGroup
+			workers.Add(1)
+			go sender.write(ctx, controller.nodes, &workers)
+			defer func() { cancel(); workers.Wait() }()
+			if controller.dispatch(ctx) != nil {
+				t.Fatal("实际 close 发令失败")
+			}
+			_, _, received := receiver.conn.ReadMessage()
+			var closed *ws.CloseError
+			if !errors.As(received, &closed) || closed.Code != 1000 {
+				t.Fatal("没有实际接收完整关闭帧")
+			}
+			_, _, ended := sender.conn.ReadMessage()
+			if ended == nil {
+				t.Fatal("主动端 socket 没有关闭")
+			}
+			receiver.pending = &wsReplayRead{err: received}
+			sender.pending = &wsReplayRead{err: ended}
+			if controller.consumePending() != nil || controller.completed[1] || sender.readEnded {
+				t.Fatal("真实 write-result 尚未确认便批准或误拒关闭证据")
+			}
+			var result wsReplayWritten
+			select {
+			case result = <-sender.written:
+			case <-ctx.Done():
+				t.Fatal("实际关闭 writer 没有归还结果")
+			}
+			if !result.closeSent || result.err != nil || controller.finishWrite(sender, result) != nil {
+				t.Fatal("真实发送结果不能确认关闭动作")
+			}
+			if controller.consumePending() != nil || !schedule.Done() || !sender.readEnded || !receiver.readEnded || controller.trace != 4 {
+				t.Fatal("实际发送确认后未消费关闭证据或累计预算不符")
+			}
+		})
+	}
+}
+
+// false 的 close 结果不能修改预算、localClose 或节点完成状态，nil error 不是发帧证明。
+func TestWSReplayUnsentCloseDoesNotComplete(t *testing.T) {
+	f := wsReplayFixture(WSUpstreamSend, "interrupted", 1000)
+	nodes := f.Response.WS.Nodes[4:]
+	nodes[0].After = nil
+	schedule, err := NewWSSchedule(nodes, 1)
+	if err != nil || schedule.Start("close-send") != nil {
+		t.Fatal("关闭调度初始化失败")
+	}
+	controller := &wsReplayController{nodes: schedule.nodes, graph: schedule.graph, schedule: schedule, limits: DefaultWSLimits(), completed: make([]bool, 2)}
+	ep := &wsReplayEndpoint{inFlight: 0}
+	if err := controller.finishWrite(ep, wsReplayWritten{job: wsReplayWrite{index: 0}}); err == nil || !strings.Contains(err.Error(), "ws.nodes[0].close_code") {
+		t.Fatal("未发送 close 没有可见节点失败")
+	}
+	if controller.trace != 0 || ep.localClose || controller.completed[0] || !schedule.InFlight("close-send") {
+		t.Fatal("未发送 close 污染了证据、预算或生命周期状态")
+	}
+}
+
+// 早到接收的必要 receive 祖先不能由未来观测补齐，哪怕全部发送均已成功。
+func TestWSReplayReceiveAncestorMustAlreadyBeObserved(t *testing.T) {
+	f := wsReplayFixture(WSClientSend, "completed", 1000)
+	f.Response.WS.Nodes[2].After = nil
+	f.Response.WS.Nodes[3].After = []string{"u-send", "u-receive"}
+	limits := DefaultWSLimits()
+	if ValidateWSSession(f, limits) != nil {
+		t.Fatal("手写接收因果 fixture 无效")
+	}
+	schedule, err := NewWSSchedule(f.Response.WS.Nodes, 1)
+	if err != nil {
+		t.Fatal("手写调度初始化失败")
+	}
+	matcher, err := NewWSMatcher(limits)
+	if err != nil {
+		t.Fatal("matcher 初始化失败")
+	}
+	controller := &wsReplayController{nodes: schedule.nodes, graph: schedule.graph, schedule: schedule, matcher: matcher, limits: limits,
+		completed: make([]bool, 6), observed: make([]*WSMessage, 6), endpoints: [2]*wsReplayEndpoint{
+			{inFlight: -1, receives: []int{3}}, {inFlight: -1, receives: []int{1, 5}},
+		}}
+	for _, i := range []int{0, 2} {
+		if schedule.Start(f.Response.WS.Nodes[i].ID) != nil {
+			t.Fatal("发送启动失败")
+		}
+		ep := controller.endpoint(f.Response.WS.Nodes[i].Point)
+		ep.inFlight = i
+		if controller.finishWrite(ep, wsReplayWritten{job: wsReplayWrite{index: i, message: *f.Response.WS.Nodes[i].Message}}) != nil {
+			t.Fatal("发送完成失败")
+		}
+	}
+	a, b := wsReplayTCPPair(t)
+	defer a.Close()
+	defer b.Close()
+	client := ws.NewConn(a, ws.RoleClient, limits.MessageBytes, 0)
+	server := ws.NewConn(b, ws.RoleServer, limits.MessageBytes, 0)
+	message := f.Response.WS.Nodes[3].Message
+	if server.WriteMessage(message.Opcode, message.Payload) != nil {
+		t.Fatal("早到接收注入失败")
+	}
+	op, payload, err := client.ReadMessage()
+	if err != nil {
+		t.Fatal("早到消息实际接收失败")
+	}
+	controller.endpoints[0].pending = &wsReplayRead{message: WSMessage{Opcode: op, Payload: payload}}
+	if err := controller.consumePending(); err == nil || !strings.Contains(err.Error(), "ws.nodes[3]") || controller.completed[3] {
+		t.Fatal("缺少实际接收祖先的早到消息被缓存等待未来补证")
+	}
+}
+
+// 同端 close 正在发送不能掩盖预期接收 close 缺少 receive 祖先；本地 EOF 宽限只管无剩余接收。
+func TestWSReplaySendingCloseDoesNotHideReceiveAncestor(t *testing.T) {
+	f := wsReplayFixture(WSClientSend, "interrupted", 1000)
+	code := uint16(1000)
+	f.Response.WS.Nodes = []WSNode{
+		{ID: "send-close", Point: WSClientSend, Source: "synthetic", Kind: "close", CloseCode: &code},
+		wsReplayMessage("unobserved", WSUpstreamReceive, ws.OpText, `{"marker":true}`, "json"),
+		{ID: "receive-close", Point: WSClientReceive, Source: "synthetic", Kind: "close", CloseCode: &code, After: []string{"send-close", "unobserved"}},
+	}
+	limits := DefaultWSLimits()
+	if ValidateWSSession(f, limits) != nil {
+		t.Fatal("手写关闭因果 fixture 无效")
+	}
+	schedule, err := NewWSSchedule(f.Response.WS.Nodes, 1)
+	if err != nil || schedule.Start("send-close") != nil {
+		t.Fatal("关闭调度初始化失败")
+	}
+	a, b := wsReplayTCPPair(t)
+	defer a.Close()
+	defer b.Close()
+	client := ws.NewConn(a, ws.RoleClient, limits.MessageBytes, 0)
+	server := ws.NewConn(b, ws.RoleServer, limits.MessageBytes, 0)
+	if server.Close(1000, "") != nil {
+		t.Fatal("早到关闭注入失败")
+	}
+	_, _, observed := client.ReadMessage()
+	var closed *ws.CloseError
+	if !errors.As(observed, &closed) || closed.Code != 1000 {
+		t.Fatal("未实际接收关闭帧")
+	}
+	controller := &wsReplayController{nodes: schedule.nodes, graph: schedule.graph, schedule: schedule, completed: make([]bool, 3), endpoints: [2]*wsReplayEndpoint{
+		{inFlight: 0, receives: []int{2}, pending: &wsReplayRead{err: observed}}, {inFlight: -1},
+	}}
+	if err := controller.consumePending(); err == nil || !strings.Contains(err.Error(), "ws.nodes[2]") {
+		t.Fatal("同端 close in-flight 隐藏了尚未观测的必要接收祖先")
+	}
+}
+
 func wsReplayMessage(id string, point WSPoint, op ws.Opcode, payload, match string, after ...string) WSNode {
 	return WSNode{ID: id, Point: point, Source: "synthetic", After: after, Kind: "message", Message: &WSMessage{Opcode: op, Payload: []byte(payload)}, Match: match}
 }

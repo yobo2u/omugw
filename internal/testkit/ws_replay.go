@@ -21,7 +21,8 @@ type WSReplayEndpoints struct {
 }
 
 // WSReplayResult 只在全部实际证据通过后给出结局；Nodes 按 fixture 顺序及符号归一，
-// SendOrder 仅记录控制器发令次序，不把网络到达时间伪装成可复现调度。
+// SendOrder 仅记录控制器发令次序；seed 只固定就绪集合策略，完整次序仍依赖读写反馈，
+// 不把网络到达时间或任意轨迹的完整历史伪装成可复现调度。
 type WSReplayResult struct {
 	Nodes     []WSNode
 	SendOrder []string
@@ -39,8 +40,9 @@ type wsReplayWrite struct {
 }
 
 type wsReplayWritten struct {
-	job wsReplayWrite
-	err error
+	job       wsReplayWrite
+	closeSent bool
+	err       error
 }
 
 type wsReplayEndpoint struct {
@@ -180,13 +182,14 @@ func (ep *wsReplayEndpoint) write(ctx context.Context, nodes []WSNode, workers *
 		}
 		n := nodes[job.index]
 		var err error
+		var closeSent bool
 		if n.Kind == "close" {
-			err = ep.conn.Close(*n.CloseCode, n.CloseReason)
+			closeSent, err = ep.conn.CloseWithResult(*n.CloseCode, n.CloseReason)
 		} else {
 			err = ep.conn.WriteMessage(job.message.Opcode, job.message.Payload)
 		}
 		select {
-		case ep.written <- wsReplayWritten{job: job, err: err}:
+		case ep.written <- wsReplayWritten{job: job, closeSent: closeSent, err: err}:
 		case <-ctx.Done():
 			return
 		}
@@ -287,6 +290,10 @@ func (c *wsReplayController) finishWrite(ep *wsReplayEndpoint, result wsReplayWr
 			return err
 		}
 	} else {
+		// 已关闭或写锁占用时的幂等 nil 不能记账、放行 EOF 或完成本次发送。
+		if !result.closeSent {
+			return fmt.Errorf("ws.nodes[%d].close_code: 本次没有实际发送关闭帧", i)
+		}
 		if err := c.matchCloseBytes(i, n.CloseReason); err != nil {
 			return err
 		}
@@ -318,7 +325,7 @@ func (c *wsReplayController) consumePending() error {
 			}
 			// 主动 Close 马上关 TCP，不能要求本端看到自动 1000 回应，亦不能拿其
 			// EOF 消费任何尚未匹配的 receive 节点。先等 close 写结果，不误判抢先 EOF。
-			if read.err != nil && ep.inFlight != -1 && c.nodes[ep.inFlight].Kind == "close" {
+			if read.err != nil && ep.next == len(ep.receives) && ep.inFlight != -1 && c.nodes[ep.inFlight].Kind == "close" {
 				continue
 			}
 			if read.err != nil && ep.localClose && ep.next == len(ep.receives) {
@@ -358,9 +365,9 @@ func (c *wsReplayController) consumePending() error {
 				}
 			}
 			if !ready {
-				// 网络可能先于 write-result 到达，但不能先于尚未发令的祖先发送。
-				if !c.sendsStartedBefore(i) {
-					return fmt.Errorf("ws.nodes[%d]: 接收早于因果发送", i)
+				// 只宽限已发令发送的 write-result 竞争；未来接收不能补造先前消息的因果。
+				if !c.onlySendingAncestorsInFlight(i) {
+					return fmt.Errorf("ws.nodes[%d]: 接收早于必要因果证据", i)
 				}
 				continue
 			}
@@ -390,7 +397,7 @@ func (c *wsReplayController) consumePending() error {
 	}
 }
 
-func (c *wsReplayController) sendsStartedBefore(i int) bool {
+func (c *wsReplayController) onlySendingAncestorsInFlight(i int) bool {
 	seen := make([]bool, len(c.nodes))
 	pending := slices.Clone(c.graph.parents[i])
 	for len(pending) != 0 {
@@ -401,7 +408,7 @@ func (c *wsReplayController) sendsStartedBefore(i int) bool {
 		}
 		seen[parent] = true
 		n := c.nodes[parent]
-		if (n.Point == WSClientSend || n.Point == WSUpstreamSend) && !c.schedule.InFlight(n.ID) {
+		if (n.Point != WSClientSend && n.Point != WSUpstreamSend) || !c.schedule.InFlight(n.ID) {
 			return false
 		}
 		pending = append(pending, c.graph.parents[parent]...)
