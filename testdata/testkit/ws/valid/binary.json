@@ -1,0 +1,28 @@
+{
+  "name": "synthetic-negative/binary",
+  "note": "手写双向二进制 00 ff 10 与样本摘要保全机制，非上游能力证据。不是音频样本，也不验证重采样。",
+  "request": {"method": "GET", "path": "/v1/realtime"},
+  "response": {
+    "status": 101,
+    "ws": {
+      "version": 1,
+      "client_protocol": "synthetic",
+      "client_version": "1",
+      "upstream": {"method": "GET", "path": "/v1/realtime"},
+      "upstream_expected_status": 101,
+      "provenance": {"kind": "synthetic-negative", "sample_sha256": {"opaque": "2da45f2cd1f9c8e69a67abf7a6b26c282533d0a7686787a9533265418680d4d2"}},
+      "samples": {"opaque": {"data": "AP8Q", "sha256": "2da45f2cd1f9c8e69a67abf7a6b26c282533d0a7686787a9533265418680d4d2"}},
+      "nodes": [
+        {"id": "binary.c", "point": "client.send", "source": "synthetic", "kind": "message", "message": {"opcode": 2, "payload": "AP8Q"}, "match": "bytes"},
+        {"id": "binary.u", "point": "upstream.receive", "source": "synthetic", "after": ["binary.c"], "kind": "message", "message": {"opcode": 2, "payload": "AP8Q"}, "match": "bytes", "forwarded_from": "binary.c"},
+        {"id": "binary.u.reply", "point": "upstream.send", "source": "synthetic", "after": ["binary.u"], "kind": "message", "message": {"opcode": 2, "payload": "AP8Q"}, "match": "bytes"},
+        {"id": "binary.c.reply", "point": "client.receive", "source": "synthetic", "after": ["binary.u.reply"], "kind": "message", "message": {"opcode": 2, "payload": "AP8Q"}, "match": "bytes", "forwarded_from": "binary.u.reply"},
+        {"id": "binary.u.done", "point": "upstream.send", "source": "synthetic", "after": ["binary.c.reply"], "kind": "message", "message": {"opcode": 1, "payload": "eyJpZCI6ImJpbmFyeS0xIiwic3RhdGUiOiJkb25lIn0="}, "match": "json"},
+        {"id": "binary.c.done", "point": "client.receive", "source": "synthetic", "after": ["binary.u.done"], "kind": "message", "message": {"opcode": 1, "payload": "eyJpZCI6ImJpbmFyeS0xIiwic3RhdGUiOiJkb25lIn0="}, "match": "json", "forwarded_from": "binary.u.done"},
+        {"id": "close.c", "point": "client.send", "source": "synthetic", "after": ["binary.c.done"], "kind": "close", "close_code": 1000},
+        {"id": "close.u", "point": "upstream.receive", "source": "synthetic", "after": ["close.c"], "kind": "close", "close_code": 1000}
+      ],
+      "outcome": {"kind": "completed", "terminal": [{"node": "binary.c.done", "namespace": "response", "symbol": "binary-1", "id_pointer": "/id", "state_pointer": "/state", "state": "done"}]}
+    }
+  }
+}

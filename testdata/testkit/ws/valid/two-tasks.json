@@ -1,0 +1,32 @@
+{
+  "name": "synthetic-negative/two-tasks",
+  "note": "手写同一连接两 task 独立实体及各自业务终态机制，非上游能力证据。",
+  "request": {"method": "GET", "path": "/v1/realtime"},
+  "response": {
+    "status": 101,
+    "ws": {
+      "version": 1,
+      "client_protocol": "synthetic",
+      "client_version": "1",
+      "upstream": {"method": "GET", "path": "/v1/realtime"},
+      "upstream_expected_status": 101,
+      "provenance": {"kind": "synthetic-negative"},
+      "nodes": [
+        {"id": "a.start.c", "point": "client.send", "source": "synthetic", "kind": "message", "message": {"opcode": 1, "payload": "eyJ0eXBlIjoidGFzay5zdGFydCIsImlkIjoidGFzay1hIn0="}, "match": "json", "fields": [{"pointer": "/id", "mode": "bind", "namespace": "task", "symbol": "task-a"}]},
+        {"id": "a.start.u", "point": "upstream.receive", "source": "synthetic", "after": ["a.start.c"], "kind": "message", "message": {"opcode": 1, "payload": "eyJ0eXBlIjoidGFzay5zdGFydCIsImlkIjoicGxhY2Vob2xkZXIifQ=="}, "match": "json", "fields": [{"pointer": "/id", "mode": "reference", "namespace": "task", "symbol": "task-a"}], "forwarded_from": "a.start.c"},
+        {"id": "a.done.u", "point": "upstream.send", "source": "synthetic", "after": ["a.start.u"], "kind": "message", "message": {"opcode": 1, "payload": "eyJ0eXBlIjoidGFzay5kb25lIiwiaWQiOiJwbGFjZWhvbGRlciIsInN0YXRlIjoiZG9uZSJ9"}, "match": "json", "fields": [{"pointer": "/id", "mode": "reference", "namespace": "task", "symbol": "task-a"}]},
+        {"id": "a.done.c", "point": "client.receive", "source": "synthetic", "after": ["a.done.u"], "kind": "message", "message": {"opcode": 1, "payload": "eyJ0eXBlIjoidGFzay5kb25lIiwiaWQiOiJwbGFjZWhvbGRlciIsInN0YXRlIjoiZG9uZSJ9"}, "match": "json", "fields": [{"pointer": "/id", "mode": "reference", "namespace": "task", "symbol": "task-a"}], "forwarded_from": "a.done.u"},
+        {"id": "b.start.c", "point": "client.send", "source": "synthetic", "after": ["a.done.c"], "kind": "message", "message": {"opcode": 1, "payload": "eyJ0eXBlIjoidGFzay5zdGFydCIsImlkIjoidGFzay1iIn0="}, "match": "json", "fields": [{"pointer": "/id", "mode": "bind", "namespace": "task", "symbol": "task-b"}]},
+        {"id": "b.start.u", "point": "upstream.receive", "source": "synthetic", "after": ["b.start.c"], "kind": "message", "message": {"opcode": 1, "payload": "eyJ0eXBlIjoidGFzay5zdGFydCIsImlkIjoicGxhY2Vob2xkZXIifQ=="}, "match": "json", "fields": [{"pointer": "/id", "mode": "reference", "namespace": "task", "symbol": "task-b"}], "forwarded_from": "b.start.c"},
+        {"id": "b.done.u", "point": "upstream.send", "source": "synthetic", "after": ["b.start.u"], "kind": "message", "message": {"opcode": 1, "payload": "eyJ0eXBlIjoidGFzay5kb25lIiwiaWQiOiJwbGFjZWhvbGRlciIsInN0YXRlIjoiZG9uZSJ9"}, "match": "json", "fields": [{"pointer": "/id", "mode": "reference", "namespace": "task", "symbol": "task-b"}]},
+        {"id": "b.done.c", "point": "client.receive", "source": "synthetic", "after": ["b.done.u"], "kind": "message", "message": {"opcode": 1, "payload": "eyJ0eXBlIjoidGFzay5kb25lIiwiaWQiOiJwbGFjZWhvbGRlciIsInN0YXRlIjoiZG9uZSJ9"}, "match": "json", "fields": [{"pointer": "/id", "mode": "reference", "namespace": "task", "symbol": "task-b"}], "forwarded_from": "b.done.u"},
+        {"id": "close.c", "point": "client.send", "source": "synthetic", "after": ["b.done.c"], "kind": "close", "close_code": 1000},
+        {"id": "close.u", "point": "upstream.receive", "source": "synthetic", "after": ["close.c"], "kind": "close", "close_code": 1000}
+      ],
+      "outcome": {"kind": "completed", "terminal": [
+        {"node": "a.done.c", "namespace": "task", "symbol": "task-a", "id_pointer": "/id", "state_pointer": "/state", "state": "done"},
+        {"node": "b.done.c", "namespace": "task", "symbol": "task-b", "id_pointer": "/id", "state_pointer": "/state", "state": "done"}
+      ]}
+    }
+  }
+}

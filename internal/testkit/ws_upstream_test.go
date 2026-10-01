@@ -253,6 +253,12 @@ func TestWSUpstreamClose(t *testing.T) {
 			peer, _ := dialWSUpstreamTest(t, srv, wsUpstreamTestHeaders())
 			if claimed {
 				claimWSUpstreamTest(t, u)
+			} else {
+				// 先等连接真正入槽，防止 unclaimed 分支偶然只测尚未完成的 Accept。
+				waitWSUpstreamSignal(t, u.ready)
+				if u.Err() != nil {
+					t.Fatal("未领取连接就绪前已有错配")
+				}
 			}
 			if u.Close() != nil || u.Close() != nil {
 				t.Fatal("正常关闭失败")

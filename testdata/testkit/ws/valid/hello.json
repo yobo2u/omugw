@@ -1,0 +1,26 @@
+{
+  "name": "synthetic-negative/hello",
+  "note": "手写 hello 四点、业务终态与关闭机制，非上游能力证据。",
+  "request": {"method": "GET", "path": "/v1/realtime"},
+  "response": {
+    "status": 101,
+    "ws": {
+      "version": 1,
+      "client_protocol": "synthetic",
+      "client_version": "1",
+      "upstream": {"method": "GET", "path": "/v1/realtime"},
+      "upstream_expected_status": 101,
+      "provenance": {"kind": "synthetic-negative"},
+      "coverage": [{"capability": "realtime_session", "nodes": ["hello.c", "hello.u", "hello.u.reply", "hello.c.reply"], "note": "只测四点机制，不证明云端会话能力。"}],
+      "nodes": [
+        {"id": "hello.c", "point": "client.send", "source": "synthetic", "kind": "message", "message": {"opcode": 1, "payload": "eyJ0eXBlIjoiaGVsbG8iLCJtb2RlbCI6InN5bnRoZXRpYy1tb2RlbCJ9"}, "match": "json"},
+        {"id": "hello.u", "point": "upstream.receive", "source": "synthetic", "after": ["hello.c"], "kind": "message", "message": {"opcode": 1, "payload": "eyJ0eXBlIjoiaGVsbG8iLCJtb2RlbCI6InN5bnRoZXRpYy1tb2RlbCJ9"}, "match": "json", "forwarded_from": "hello.c"},
+        {"id": "hello.u.reply", "point": "upstream.send", "source": "synthetic", "after": ["hello.u"], "kind": "message", "message": {"opcode": 1, "payload": "eyJpZCI6ImhlbGxvLTEiLCJzdGF0ZSI6ImRvbmUifQ=="}, "match": "json"},
+        {"id": "hello.c.reply", "point": "client.receive", "source": "synthetic", "after": ["hello.u.reply"], "kind": "message", "message": {"opcode": 1, "payload": "eyJpZCI6ImhlbGxvLTEiLCJzdGF0ZSI6ImRvbmUifQ=="}, "match": "json", "forwarded_from": "hello.u.reply"},
+        {"id": "close.c", "point": "client.send", "source": "synthetic", "after": ["hello.c.reply"], "kind": "close", "close_code": 1000},
+        {"id": "close.u", "point": "upstream.receive", "source": "synthetic", "after": ["close.c"], "kind": "close", "close_code": 1000}
+      ],
+      "outcome": {"kind": "completed", "terminal": [{"node": "hello.c.reply", "namespace": "response", "symbol": "hello-1", "id_pointer": "/id", "state_pointer": "/state", "state": "done"}]}
+    }
+  }
+}

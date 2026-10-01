@@ -1,0 +1,30 @@
+{
+  "name": "synthetic-negative/tool-id",
+  "note": "手写工具 ID 绑定、跨消息引用与字节转发机制，非上游能力证据。",
+  "request": {"method": "GET", "path": "/v1/realtime"},
+  "response": {
+    "status": 101,
+    "ws": {
+      "version": 1,
+      "client_protocol": "synthetic",
+      "client_version": "1",
+      "upstream": {"method": "GET", "path": "/v1/realtime"},
+      "upstream_expected_status": 101,
+      "provenance": {"kind": "synthetic-negative"},
+      "coverage": [{"capability": "tool_calling", "nodes": ["tool.u.call", "tool.c.call", "tool.c.result", "tool.u.result"], "note": "只测 ID 关联，不证明任何真实模型会调用工具。"}],
+      "nodes": [
+        {"id": "tool.c", "point": "client.send", "source": "synthetic", "kind": "message", "message": {"opcode": 1, "payload": "eyJ0eXBlIjoidG9vbC5yZXF1ZXN0IiwibW9kZWwiOiJzeW50aGV0aWMtbW9kZWwifQ=="}, "match": "json"},
+        {"id": "tool.u", "point": "upstream.receive", "source": "synthetic", "after": ["tool.c"], "kind": "message", "message": {"opcode": 1, "payload": "eyJ0eXBlIjoidG9vbC5yZXF1ZXN0IiwibW9kZWwiOiJzeW50aGV0aWMtbW9kZWwifQ=="}, "match": "json", "forwarded_from": "tool.c"},
+        {"id": "tool.u.call", "point": "upstream.send", "source": "synthetic", "after": ["tool.u"], "kind": "message", "message": {"opcode": 1, "payload": "eyJ0eXBlIjoidG9vbC5jYWxsIiwiY2FsbF9pZCI6ImNhbGwtNyIsIm5hbWUiOiJzeW50aGV0aWMtdG9vbCJ9"}, "match": "json", "fields": [{"pointer": "/call_id", "mode": "bind", "namespace": "tool", "symbol": "call"}]},
+        {"id": "tool.c.call", "point": "client.receive", "source": "synthetic", "after": ["tool.u.call"], "kind": "message", "message": {"opcode": 1, "payload": "eyJ0eXBlIjoidG9vbC5jYWxsIiwiY2FsbF9pZCI6InBsYWNlaG9sZGVyIiwibmFtZSI6InN5bnRoZXRpYy10b29sIn0="}, "match": "json", "fields": [{"pointer": "/call_id", "mode": "reference", "namespace": "tool", "symbol": "call"}], "forwarded_from": "tool.u.call"},
+        {"id": "tool.c.result", "point": "client.send", "source": "synthetic", "after": ["tool.c.call"], "kind": "message", "message": {"opcode": 1, "payload": "eyJ0eXBlIjoidG9vbC5yZXN1bHQiLCJjYWxsX2lkIjoicGxhY2Vob2xkZXIiLCJyZXN1bHQiOjB9"}, "match": "json", "fields": [{"pointer": "/call_id", "mode": "reference", "namespace": "tool", "symbol": "call"}]},
+        {"id": "tool.u.result", "point": "upstream.receive", "source": "synthetic", "after": ["tool.c.result"], "kind": "message", "message": {"opcode": 1, "payload": "eyJ0eXBlIjoidG9vbC5yZXN1bHQiLCJjYWxsX2lkIjoicGxhY2Vob2xkZXIiLCJyZXN1bHQiOjB9"}, "match": "json", "fields": [{"pointer": "/call_id", "mode": "reference", "namespace": "tool", "symbol": "call"}], "forwarded_from": "tool.c.result"},
+        {"id": "tool.u.done", "point": "upstream.send", "source": "synthetic", "after": ["tool.u.result"], "kind": "message", "message": {"opcode": 1, "payload": "eyJpZCI6InRvb2wtcmVzcG9uc2UiLCJzdGF0ZSI6ImRvbmUifQ=="}, "match": "json"},
+        {"id": "tool.c.done", "point": "client.receive", "source": "synthetic", "after": ["tool.u.done"], "kind": "message", "message": {"opcode": 1, "payload": "eyJpZCI6InRvb2wtcmVzcG9uc2UiLCJzdGF0ZSI6ImRvbmUifQ=="}, "match": "json", "forwarded_from": "tool.u.done"},
+        {"id": "close.c", "point": "client.send", "source": "synthetic", "after": ["tool.c.done"], "kind": "close", "close_code": 1000},
+        {"id": "close.u", "point": "upstream.receive", "source": "synthetic", "after": ["close.c"], "kind": "close", "close_code": 1000}
+      ],
+      "outcome": {"kind": "completed", "terminal": [{"node": "tool.c.done", "namespace": "response", "symbol": "tool-response", "id_pointer": "/id", "state_pointer": "/state", "state": "done"}]}
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "synthetic-negative/bad-sample-hash",
+  "note": "样本 00 ff 10 的摘要故意填零；必须拒绝篡改，非上游能力证据。",
+  "request": {"method": "GET", "path": "/v1/realtime"},
+  "response": {"status": 101, "ws": {
+    "version": 1, "client_protocol": "synthetic", "client_version": "1",
+    "upstream": {"method": "GET", "path": "/v1/realtime"}, "upstream_expected_status": 101,
+    "provenance": {"kind": "synthetic-negative", "sample_sha256": {"opaque": "0000000000000000000000000000000000000000000000000000000000000000"}},
+    "samples": {"opaque": {"data": "AP8Q", "sha256": "0000000000000000000000000000000000000000000000000000000000000000"}},
+    "nodes": [
+      {"id": "close.c", "point": "client.send", "source": "synthetic", "kind": "close", "close_code": 1000},
+      {"id": "close.u", "point": "upstream.receive", "source": "synthetic", "after": ["close.c"], "kind": "close", "close_code": 1000}
+    ], "outcome": {"kind": "interrupted"}
+  }}
+}
