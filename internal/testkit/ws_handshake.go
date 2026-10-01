@@ -227,19 +227,20 @@ func wsRequiredHandshakeHeaders(headers map[string][]string) error {
 	if !upgrade {
 		return errors.New("request.headers.connection")
 	}
+	// HTTP OWS 只有 SP/HTAB，不能将 Unicode 空白修剪成合法 token 或 nonce。
 	values := headers["upgrade"]
-	if len(values) != 1 || !strings.EqualFold(strings.TrimSpace(values[0]), "websocket") {
+	if len(values) != 1 || !strings.EqualFold(strings.Trim(values[0], " \t"), "websocket") {
 		return errors.New("request.headers.upgrade")
 	}
 	values = headers["sec-websocket-version"]
-	if len(values) != 1 || strings.TrimSpace(values[0]) != "13" {
+	if len(values) != 1 || strings.Trim(values[0], " \t") != "13" {
 		return errors.New("request.headers.sec-websocket-version")
 	}
 	values = headers["sec-websocket-key"]
 	if len(values) != 1 {
 		return errors.New("request.headers.sec-websocket-key")
 	}
-	nonce, err := base64.StdEncoding.Strict().DecodeString(strings.TrimSpace(values[0]))
+	nonce, err := base64.StdEncoding.Strict().DecodeString(strings.Trim(values[0], " \t"))
 	if err != nil || len(nonce) != 16 {
 		return errors.New("request.headers.sec-websocket-key")
 	}
@@ -254,7 +255,7 @@ func wsCommaValues(values []string) ([]string, error) {
 		quoted, escaped := false, false
 		for i := 0; i <= len(value); i++ {
 			if i == len(value) || (value[i] == ',' && !quoted) {
-				token := strings.TrimSpace(value[start:i])
+				token := strings.Trim(value[start:i], " \t")
 				if token == "" || quoted || escaped {
 					return nil, errors.New("request.headers")
 				}

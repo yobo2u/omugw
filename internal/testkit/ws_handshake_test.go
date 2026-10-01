@@ -301,6 +301,66 @@ func TestWSHandshakeMatch(t *testing.T) {
 	})
 }
 
+// Unicode 空白不是 HTTP OWS，不能被修剪成合法自动头或协商 token 而制造回放伪绿。
+func TestWSHandshakeHTTPWhitespace(t *testing.T) {
+	want := Request{Method: "GET", Path: "/v1/realtime", Query: "model=qwen+realtime&tag=a&tag=a&tag=b", Headers: map[string]string{
+		"Sec-WebSocket-Protocol":   "realtime, openai-beta.realtime-v1",
+		"Sec-WebSocket-Extensions": "permessage-deflate; client_max_window_bits, x-test-extension",
+	}}
+	for _, space := range []struct {
+		name  string
+		value string
+		valid bool
+	}{
+		{"sp_htab", " \t", true},
+		{"nbsp", "\u00a0", false},
+		{"em_space", "\u2003", false},
+	} {
+		t.Run(space.name, func(t *testing.T) {
+			for _, header := range []struct {
+				name  string
+				value string
+			}{
+				{"Connection", "Upgrade"},
+				{"Upgrade", "WebSocket"},
+				{"Sec-WebSocket-Version", "13"},
+				{"Sec-WebSocket-Key", "AAECAwQFBgcICQoLDA0ODw=="},
+				{"Sec-WebSocket-Protocol", "realtime, " + space.value + "openai-beta.realtime-v1"},
+				{"Sec-WebSocket-Extensions", "permessage-deflate; client_max_window_bits, " + space.value + "x-test-extension"},
+			} {
+				t.Run(header.name, func(t *testing.T) {
+					got := newWSHandshakeRequest(t)
+					got.Header.Set(header.name, space.value+header.value+space.value)
+					err := MatchWSHandshake(want, got)
+					if space.valid {
+						if err != nil {
+							t.Fatal("合法 SP/HTAB OWS 被拒绝")
+						}
+					} else {
+						assertWSHandshakeError(t, err, "request.headers."+strings.ToLower(header.name))
+					}
+				})
+			}
+			t.Run("sanitize_protocol", func(t *testing.T) {
+				input := Request{Method: "GET", Path: "/v1/realtime", Headers: map[string]string{
+					"Sec-WebSocket-Protocol": space.value + "realtime, " + space.value + "openai-insecure-api-key.synthetic-private, " + space.value + "openai-beta.realtime-v1" + space.value,
+				}}
+				got, err := SanitizeWSHandshake(input)
+				if space.valid {
+					if err != nil || got.Headers["sec-websocket-protocol"] != "realtime, openai-beta.realtime-v1" {
+						t.Fatal("合法 OWS 的固定协议或凭据去敏被破坏")
+					}
+				} else {
+					assertWSHandshakeError(t, err, "request.headers.sec-websocket-protocol")
+					if !reflect.DeepEqual(got, Request{}) {
+						t.Fatal("非法 Unicode OWS 去敏返回了握手内容")
+					}
+				}
+			})
+		})
+	}
+}
+
 func newWSHandshakeRequest(t *testing.T) *http.Request {
 	t.Helper()
 	r, err := http.NewRequest(http.MethodGet, "http://fixture.local/v1/realtime?tag=b&model=qwen%20realtime&tag=a&tag=a", nil)
