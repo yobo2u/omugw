@@ -206,18 +206,11 @@ func readFixtureBounded(path string, limit int64) ([]byte, error) {
 	if limit <= 0 || limit == int64(^uint64(0)>>1) {
 		return nil, fmt.Errorf("文件预算不合法")
 	}
-	file, err := os.Open(path)
+	file, err := openFixtureRegular(path)
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
-	info, err := file.Stat()
-	if err != nil {
-		return nil, err
-	}
-	if !info.Mode().IsRegular() {
-		return nil, fmt.Errorf("fixture 必须为普通文件")
-	}
 	raw, err := io.ReadAll(io.LimitReader(file, limit+1))
 	if err != nil {
 		return nil, err
