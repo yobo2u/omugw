@@ -31,15 +31,15 @@ func TestWSTraceValidationBoundaries(t *testing.T) {
 		{"bound state terminal", func(f *Fixture) {
 			f.Response.WS.Nodes[3].Fields = append(f.Response.WS.Nodes[3].Fields, WSFieldRule{Pointer: "/response/status", Mode: "bind", Namespace: "state", Symbol: "completed"})
 		}, true},
-		{"completed valid close", func(f *Fixture) {
+		{"completed non1000 close", func(f *Fixture) {
 			c := uint16(1001)
-			for i := 4; i < 8; i++ {
+			for i := 4; i < len(f.Response.WS.Nodes); i++ {
 				f.Response.WS.Nodes[i].CloseCode = &c
 			}
-		}, true},
+		}, false},
 		{"failed close", func(f *Fixture) {
 			c := uint16(1011)
-			for i := 4; i < 8; i++ {
+			for i := 4; i < len(f.Response.WS.Nodes); i++ {
 				f.Response.WS.Nodes[i].CloseCode = &c
 			}
 			f.Response.WS.Outcome = WSOutcome{Kind: "failed"}
@@ -58,15 +58,14 @@ func TestWSTraceValidationBoundaries(t *testing.T) {
 			f.Response.WS.Nodes = f.Response.WS.Nodes[:4]
 			f.Response.WS.Outcome = WSOutcome{Kind: "interrupted"}
 		}, false},
-		{"failed one endpoint pair", func(f *Fixture) {
+		{"failed same endpoint pair", func(f *Fixture) {
 			c := uint16(1011)
-			for i := 4; i < 8; i++ {
+			for i := 4; i < len(f.Response.WS.Nodes); i++ {
 				f.Response.WS.Nodes[i].CloseCode = &c
 			}
-			f.Response.WS.Nodes = append(f.Response.WS.Nodes[:5], f.Response.WS.Nodes[7])
-			f.Response.WS.Nodes[5].After = []string{"c-close"}
+			f.Response.WS.Nodes[5].Point = WSClientReceive
 			f.Response.WS.Outcome = WSOutcome{Kind: "failed"}
-		}, true},
+		}, false},
 		{"failed no close", func(f *Fixture) {
 			f.Response.WS.Nodes = f.Response.WS.Nodes[:4]
 			f.Response.WS.Outcome = WSOutcome{Kind: "failed"}
@@ -81,7 +80,7 @@ func TestWSTraceValidationBoundaries(t *testing.T) {
 			f.Response.WS.Nodes[3].Message.Payload = []byte(`{"response":{"id":"r-1","status":{}}}`)
 		}, false},
 		{"literal state object", func(f *Fixture) {
-			f.Response.WS.Nodes[3].Fields = append(f.Response.WS.Nodes[3].Fields, WSFieldRule{Pointer: "/response/status", Mode: "literal", Value: json.RawMessage(`{}`)})
+			f.Response.WS.Nodes[3].Fields = append(f.Response.WS.Nodes[3].Fields, WSFieldRule{Pointer: "/response/status", Mode: "equal", Value: json.RawMessage(`{}`)})
 		}, false},
 		{"sample empty", func(f *Fixture) {
 			f.Response.WS.Samples = map[string]WSSample{"empty": {Data: []byte{}, SHA256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}}
@@ -135,8 +134,8 @@ func TestWSValidationExactBudgets(t *testing.T) {
 	}
 	f = syntheticEnvelope()
 	limits = DefaultWSLimits()
-	limits.Nodes = 8
-	limits.Edges = 7
+	limits.Nodes = 6
+	limits.Edges = 5
 	limits.FieldRules = 2
 	limits.Bindings = 1
 	var total int64

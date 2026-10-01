@@ -88,7 +88,7 @@ func TestWSReadLiteralValues(t *testing.T) {
 	for _, value := range []string{"false", "0", "null"} {
 		f := syntheticEnvelope()
 		f.Response.WS.Nodes[0].Message.Payload = []byte(`{"value":` + value + `}`)
-		f.Response.WS.Nodes[0].Fields = []WSFieldRule{{Pointer: "/value", Mode: "literal", Value: json.RawMessage(value)}}
+		f.Response.WS.Nodes[0].Fields = []WSFieldRule{{Pointer: "/value", Mode: "equal", Value: json.RawMessage(value)}}
 		raw, err := json.Marshal(f)
 		if err != nil {
 			t.Fatal(err)

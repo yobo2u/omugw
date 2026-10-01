@@ -42,7 +42,7 @@ func TestWSTraceValidation(t *testing.T) {
 		{"close reserved code", func(f *Fixture) { c := uint16(1006); f.Response.WS.Nodes[4].CloseCode = &c }},
 		{"close invalid utf8", func(f *Fixture) { f.Response.WS.Nodes[4].CloseReason = string([]byte{255}) }},
 		{"close too long", func(f *Fixture) { f.Response.WS.Nodes[4].CloseReason = strings.Repeat("x", 124) }},
-		{"missing close", func(f *Fixture) { f.Response.WS.Nodes = f.Response.WS.Nodes[:7] }},
+		{"missing close", func(f *Fixture) { f.Response.WS.Nodes = f.Response.WS.Nodes[:5] }},
 		{"message after close", func(f *Fixture) {
 			n := f.Response.WS.Nodes[0]
 			n.ID = "late"

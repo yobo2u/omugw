@@ -93,7 +93,7 @@ func ValidateWSSession(f Fixture, limits WSLimits) error {
 			if n.Message.Opcode == ws.OpText && (len(n.Message.Payload) == 0 || !utf8.Valid(n.Message.Payload)) {
 				return fmt.Errorf("WS text 必须为非空 UTF8")
 			}
-			if n.Match != "json" && n.Match != "bytes" {
+			if n.Match != "" && n.Match != "json" && n.Match != "bytes" {
 				return fmt.Errorf("WS message 匹配模式不合法")
 			}
 			if n.Match == "json" {
@@ -136,7 +136,7 @@ func ValidateWSSession(f Fixture, limits WSLimits) error {
 				return fmt.Errorf("WS 字段 pointer 不合法或不存在")
 			}
 			switch field.Mode {
-			case "bind", "ref":
+			case "bind", "reference":
 				if id, ok := fieldValue.(string); !ok || id == "" {
 					return fmt.Errorf("实体绑定与引用必须指向非空字符串")
 				}
@@ -153,7 +153,7 @@ func ValidateWSSession(f Fixture, limits WSLimits) error {
 					}
 					bindings[key] = i
 				}
-			case "literal":
+			case "equal":
 				if field.Namespace != "" || field.Symbol != "" || field.Value == nil {
 					return fmt.Errorf("字面规则必须仅声明 value")
 				}
@@ -168,10 +168,10 @@ func ValidateWSSession(f Fixture, limits WSLimits) error {
 	// 先建立全图再检查引用，避免文件顺序被误用为跨流因果关系。
 	for i, n := range s.Nodes {
 		for _, field := range n.Fields {
-			if field.Mode == "ref" {
+			if field.Mode == "reference" {
 				bound, ok := bindings[wsBinding{field.Namespace, field.Symbol}]
 				if !ok || !graph.precedes(bound, i) {
-					return fmt.Errorf("WS ref 缺少因果在先的绑定")
+					return fmt.Errorf("WS reference 缺少因果在先的绑定")
 				}
 			}
 		}
@@ -201,10 +201,13 @@ func ValidateWSSession(f Fixture, limits WSLimits) error {
 		}
 	}
 	if s.Outcome.Kind == "completed" {
-		for _, point := range []WSPoint{WSClientSend, WSUpstreamReceive, WSUpstreamSend, WSClientReceive} {
-			if !closePoints[point] {
-				return fmt.Errorf("WS 必须定义两端发送及接收 close 结局")
+		for _, n := range s.Nodes {
+			if n.CloseCode != nil && *n.CloseCode != 1000 {
+				return fmt.Errorf("completed 必须预期 1000 close")
 			}
+		}
+		if !wsObservableClosePair(s.Nodes, graph, false) {
+			return fmt.Errorf("completed 缺少主动发送与对侧接收 close 对")
 		}
 	}
 	if s.Outcome.Kind == "completed" && len(s.Outcome.Terminal) == 0 {
@@ -216,29 +219,15 @@ func ValidateWSSession(f Fixture, limits WSLimits) error {
 	if s.Outcome.Kind == "interrupted" && len(closePoints) == 0 {
 		return fmt.Errorf("interrupted 必须预期有效 close，不能用 raw EOF 充当结局")
 	}
-	if s.Outcome.Kind == "failed" {
-		codes := make(map[WSPoint]uint16)
-		for _, n := range s.Nodes {
-			if n.CloseCode != nil {
-				codes[n.Point] = *n.CloseCode
-			}
-		}
-		paired := false
-		for _, pair := range [][2]WSPoint{{WSClientSend, WSClientReceive}, {WSUpstreamSend, WSUpstreamReceive}} {
-			if codes[pair[0]] != 0 && codes[pair[0]] != 1000 && codes[pair[0]] == codes[pair[1]] {
-				paired = true
-			}
-		}
-		if !paired {
-			return fmt.Errorf("failed 缺少非 1000 的 send/receive close 对")
-		}
+	if s.Outcome.Kind == "failed" && !wsObservableClosePair(s.Nodes, graph, true) {
+		return fmt.Errorf("failed 缺少非 1000 的主动发送与对侧接收 close 对")
 	}
 	for _, terminal := range s.Outcome.Terminal {
 		i, ok := graph.index[terminal.Node]
 		if !ok || s.Nodes[i].Kind != "message" || s.Nodes[i].Point != WSClientReceive || terminal.Namespace == "" || terminal.Symbol == "" || terminal.State == "" {
 			return fmt.Errorf("业务终态必须来自客户端接收消息且声明实体与状态")
 		}
-		if payloads[i] == nil && s.Nodes[i].Match == "bytes" {
+		if payloads[i] == nil && (s.Nodes[i].Match == "" || s.Nodes[i].Match == "bytes") {
 			payloads[i], err = strictWSJSON(s.Nodes[i].Message.Payload, limits.JSONDepth)
 			if err != nil {
 				return fmt.Errorf("业务终态需要合法 JSON 字面预期")
@@ -250,7 +239,7 @@ func ValidateWSSession(f Fixture, limits WSLimits) error {
 			return fmt.Errorf("业务终态 pointer 不存在或不合法")
 		}
 		idRule := wsRuleAt(s.Nodes[i].Fields, terminal.IDPointer)
-		if idRule != nil && (idRule.Mode == "bind" || idRule.Mode == "ref") {
+		if idRule != nil && (idRule.Mode == "bind" || idRule.Mode == "reference") {
 			if idRule.Namespace != terminal.Namespace || idRule.Symbol != terminal.Symbol {
 				return fmt.Errorf("业务终态实体与绑定不符")
 			}
@@ -265,7 +254,7 @@ func ValidateWSSession(f Fixture, limits WSLimits) error {
 				return fmt.Errorf("业务终态实体与字面预期不符")
 			}
 		}
-		if rule := wsRuleAt(s.Nodes[i].Fields, terminal.StatePointer); rule != nil && rule.Mode == "literal" {
+		if rule := wsRuleAt(s.Nodes[i].Fields, terminal.StatePointer); rule != nil && rule.Mode == "equal" {
 			state, err = strictWSJSON(rule.Value, limits.JSONDepth)
 			if err != nil {
 				return err
@@ -276,6 +265,28 @@ func ValidateWSSession(f Fixture, limits WSLimits) error {
 		}
 	}
 	return validateWSProvenance(*s, limits, &traceBytes)
+}
+
+// 主动关闭立即释放 TCP，只检查另一端实际收到的同码关闭，防止要求无法观测的自动回应。
+func wsObservableClosePair(nodes []WSNode, graph *wsGraph, failed bool) bool {
+	closes := make(map[WSPoint]int)
+	for i, n := range nodes {
+		if n.Kind == "close" {
+			closes[n.Point] = i
+		}
+	}
+	for _, pair := range [][2]WSPoint{{WSClientSend, WSUpstreamReceive}, {WSUpstreamSend, WSClientReceive}} {
+		send, sendOK := closes[pair[0]]
+		receive, receiveOK := closes[pair[1]]
+		if !sendOK || !receiveOK {
+			continue
+		}
+		code := *nodes[send].CloseCode
+		if code == *nodes[receive].CloseCode && (code != 1000) == failed && graph.precedes(send, receive) {
+			return true
+		}
+	}
+	return false
 }
 
 type wsBinding struct{ namespace, symbol string }
