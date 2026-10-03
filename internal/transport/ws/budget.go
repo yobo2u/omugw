@@ -8,8 +8,8 @@ import (
 // ErrBufferLimit 是共享容量不足，不是对端违反单条消息上限。
 var ErrBufferLimit = errors.New("ws: 共享缓冲容量不足")
 
-// BufferBudget 统计仍由传输层或 Message 调用方持有的 payload 容量，
-// 包括扩容时并存的新旧数组与掩码副本；不代表 Go 堆或进程 RSS。
+// BufferBudget 统计仍由传输层、Message 或 CloseError 调用方持有的 payload 容量，
+// 包括扩容时的新旧数组、掩码副本和关闭原因字符串；不代表 Go 堆或进程 RSS。
 // 零值不提供额度，必须经 NewBufferBudget 构造；开始使用后不得复制。
 type BufferBudget struct {
 	mu          sync.Mutex

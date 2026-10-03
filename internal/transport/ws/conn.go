@@ -42,16 +42,32 @@ var (
 // 独立成类型是为了让上层能拿到状态码：实测中 DashScope 用 1011 +
 // "To many requests..." 表达过载。把它当成普通 EOF 会让网关以为上游正常
 // 收尾从而不重试——而这恰恰是最该换一个凭据重试的场景。
+//
+// 配置 Budget 的 ReadOwnedMessage 会把 Reason 所有权交给调用方，须在使用完后
+// Release；之后本对象、浅拷贝及全部 Reason 别名都不得继续使用（包括 Error）。
+// 无 Budget 的旧调用没有新增释放义务，Release 是空操作。
 type CloseError struct {
 	Code   uint16
 	Reason string
 	// IncompleteMessage 保留关闭前仍在重组的分片证据，不把正常 close 当完整业务终结。
 	// 它不改变关闭码、错误文本或自动回应，也不表示此关闭违反 RFC。
 	IncompleteMessage bool
+	owned             *messageOwnership
 }
 
 func (e *CloseError) Error() string {
 	return fmt.Sprintf("ws: 对端关闭连接 (code=%d reason=%q)", e.Code, e.Reason)
+}
+
+// Release 与浅拷贝共享一次归还；可重复并发调用，但不能与 Reason 的使用并发。
+func (e *CloseError) Release() {
+	if e == nil || e.owned == nil {
+		return
+	}
+	e.owned.once.Do(func() {
+		e.Reason = ""
+		e.owned.budget.release(e.owned.size)
+	})
 }
 
 // Conn 是一条已完成握手的 WebSocket 连接。
@@ -120,7 +136,7 @@ func (c *Conn) WriteMessage(op Opcode, payload []byte) error {
 		return fmt.Errorf("%w: 文本不是合法 UTF-8", ErrProtocol)
 	}
 	if op == OpClose {
-		if _, _, err := DecodeClosePayload(payload); err != nil {
+		if _, _, err := parseClosePayload(payload); err != nil {
 			return err
 		}
 	}

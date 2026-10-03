@@ -11,6 +11,8 @@ import (
 
 // ReadOwnedMessage 只允许一个在途读者；可与写和 Close 并发。预算为 nil 时仍可
 // 使用此接口，但生产 relay 必须配置共享 Budget，并在 payload 使用完后 Release。
+// 返回 CloseError 时同样转交非空 Reason 的所有权，须经 errors.As 取出并 Release；
+// 被取消覆盖的关闭错误不交付，由本层归还容量。
 // 取消只拥有本次读取的关闭权；交付消息前必须撤销并 join 取消回调。
 func (c *Conn) ReadOwnedMessage(ctx context.Context) (*Message, error) {
 	if !c.readMu.TryLock() {
@@ -40,14 +42,24 @@ func (c *Conn) ReadOwnedMessage(ctx context.Context) (*Message, error) {
 	m, err := c.readOwned(ctx)
 	if !claimed.CompareAndSwap(false, true) {
 		m.Release()
+		releaseCloseError(err)
 		return nil, ctx.Err()
 	}
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
+			releaseCloseError(err)
 			return nil, ctxErr
 		}
 	}
 	return m, err
+}
+
+// 错误未交付时上层拿不到释放入口，取消不能把已复制的关闭原因遗留在预算里。
+func releaseCloseError(err error) {
+	var closed *CloseError
+	if errors.As(err, &closed) {
+		closed.Release()
+	}
 }
 
 // 自动 pong 同样可能写超时，只有底层读取的超时才是接收空闲。
@@ -119,15 +131,20 @@ func (c *Conn) readOwned(ctx context.Context) (*Message, error) {
 				case OpPing:
 					err = c.writeFrame(OpPong, control.bytes)
 				case OpClose:
-					code, reason, decodeErr := DecodeClosePayload(control.bytes)
+					code, reason, decodeErr := parseClosePayload(control.bytes)
 					if decodeErr != nil {
 						err = decodeErr
-					} else {
+					} else if err = c.budget.acquire(int64(len(reason))); err == nil {
+						// 字符串确实拥有独立副本，帧缓冲释放前必须同时计入这两份容量。
+						closed := &CloseError{Code: code, Reason: string(reason), IncompleteMessage: fragments}
+						if c.budget != nil && len(reason) != 0 {
+							closed.owned = &messageOwnership{budget: c.budget, size: int64(len(reason))}
+						}
 						// 先解除内部 payload 持有，再礼貌回应，不能用残留分片卡住 close。
 						control.release()
 						partial.release()
 						c.respondToPeerClose(code)
-						err = &CloseError{Code: code, Reason: reason, IncompleteMessage: fragments}
+						err = closed
 					}
 				}
 			}

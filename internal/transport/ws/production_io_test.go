@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -721,3 +722,259 @@ func TestProductionPongTimeoutIsNotReadIdle(t *testing.T) {
 		t.Fatal("pong 失败保留控制帧额度")
 	}
 }
+
+func productionCloseReleaser(t *testing.T, err *CloseError) func() {
+	t.Helper()
+	r, ok := any(err).(interface{ Release() })
+	if !ok {
+		t.Fatal("受控关闭错误缺少 Release 所有权接口")
+	}
+	return r.Release
+}
+
+// 125 字节帧与 123 字节 reason 必须同时预占；仅按帧大小计额会漏掉整份副本。
+func TestProductionCloseReasonBudget(t *testing.T) {
+	reason := strings.Repeat("r", 123)
+	for _, limit := range []int64{125, 247, 248} {
+		t.Run(fmt.Sprint(limit), func(t *testing.T) {
+			b := productionBudget(t, limit)
+			c, raw := productionOwnedConn(t, b, 1024)
+			if err := WriteFrame(raw, Frame{FIN: true, Opcode: OpClose, Payload: EncodeClosePayload(1000, reason)}, false); err != nil {
+				t.Fatal(err)
+			}
+			m, err := c.ReadOwnedMessage(context.Background())
+			if m != nil {
+				m.Release()
+				t.Fatal("关闭帧被交付成业务消息")
+			}
+			if limit < 248 {
+				if !errors.Is(err, ErrBufferLimit) {
+					t.Error("125+123 并存峰值没有在复制前拒绝")
+				}
+				if b.Used() != 0 {
+					t.Error("副本预占失败后遗留控制帧额度")
+				}
+				return
+			}
+			var ce *CloseError
+			if !errors.As(err, &ce) || ce.Code != 1000 || ce.Reason != reason || ce.IncompleteMessage {
+				t.Fatal("正好够的预算没有保全关闭证据")
+			}
+			if b.Used() != 123 {
+				t.Error("已交付 CloseError 的 reason 未继续占额")
+			}
+			copyOfError := *ce
+			release, releaseCopy := productionCloseReleaser(t, ce), productionCloseReleaser(t, &copyOfError)
+			var wg sync.WaitGroup
+			for i := 0; i < 8; i++ {
+				wg.Add(1)
+				go func() { defer wg.Done(); releaseCopy(); release() }()
+			}
+			wg.Wait()
+			if b.Used() != 0 {
+				t.Fatal("浅拷贝并发重复 Release 没有恰好归还一次")
+			}
+			f, err := ReadFrame(raw, 125)
+			if err != nil || f.Opcode != OpClose || !bytes.Equal(f.Payload, []byte{3, 232}) {
+				t.Fatal("关闭原因所有权改变了既有自动回应")
+			}
+			if sent, err := c.CloseWithResult(1000, ""); sent || err != nil {
+				t.Fatal("Release 后补造了关闭发送证据")
+			}
+		})
+	}
+	t.Run("incomplete-message", func(t *testing.T) {
+		b := productionBudget(t, 251)
+		c, raw := productionOwnedConn(t, b, 1024)
+		if err := WriteFrame(raw, Frame{Opcode: OpBinary, Payload: []byte("abc")}, false); err != nil {
+			t.Fatal(err)
+		}
+		if err := WriteFrame(raw, Frame{FIN: true, Opcode: OpClose, Payload: EncodeClosePayload(1001, reason)}, false); err != nil {
+			t.Fatal(err)
+		}
+		_, err := c.ReadOwnedMessage(context.Background())
+		var ce *CloseError
+		if !errors.As(err, &ce) || !ce.IncompleteMessage || ce.Reason != reason {
+			t.Fatal("受控关闭丢失半条消息证据")
+		}
+		if b.Used() != 123 {
+			t.Error("部分消息未归还或 reason 交接未计额")
+		}
+		productionCloseReleaser(t, ce)()
+		if b.Used() != 0 {
+			t.Fatal("释放关闭原因后额度未清空")
+		}
+	})
+	t.Run("invalid-utf8-before-copy", func(t *testing.T) {
+		b := productionBudget(t, 125)
+		c, raw := productionOwnedConn(t, b, 1024)
+		payload := append([]byte{3, 232}, bytes.Repeat([]byte{0xff}, 123)...)
+		if err := WriteFrame(raw, Frame{FIN: true, Opcode: OpClose, Payload: payload}, false); err != nil {
+			t.Fatal(err)
+		}
+		if m, err := c.ReadOwnedMessage(context.Background()); m != nil || !errors.Is(err, ErrProtocol) {
+			t.Fatal("非法 UTF-8 没有先校验就占用 reason 副本额度")
+		}
+		if b.Used() != 0 {
+			t.Fatal("非法 UTF-8 留下了关闭原因容量")
+		}
+	})
+	t.Run("legacy-unbudgeted", func(t *testing.T) {
+		c, raw := pipeRaw(t, time.Second)
+		if err := WriteFrame(raw, Frame{FIN: true, Opcode: OpClose, Payload: EncodeClosePayload(1000, reason)}, false); err != nil {
+			t.Fatal(err)
+		}
+		_, _, err := c.ReadMessage()
+		var ce *CloseError
+		if !errors.As(err, &ce) || ce.Reason != reason {
+			t.Fatal("无 Budget 的旧调用没有保全原因")
+		}
+		productionCloseReleaser(t, ce)()
+		if ce.Reason != reason {
+			t.Fatal("无 Budget 的旧调用被新增了释放义务")
+		}
+	})
+}
+
+// 比较同一合法帧头分支的空/最大原因，专门阻止只校验出站 close 也复制整份 reason。
+func TestProductionCloseReasonValidationAllocations(t *testing.T) {
+	a, _ := tcpPair(t)
+	_ = a.SetWriteDeadline(time.Now().Add(3 * time.Second))
+	c := NewConn(a, RoleServer, 1024, 0)
+	empty := []byte{3, 232}
+	full := append([]byte{3, 232}, bytes.Repeat([]byte{'r'}, 123)...)
+	emptyAllocs := testing.AllocsPerRun(20, func() {
+		if c.WriteMessage(OpClose, empty) != nil {
+			t.Fatal("空 close 实际写失败")
+		}
+	})
+	fullAllocs := testing.AllocsPerRun(20, func() {
+		if c.WriteMessage(OpClose, full) != nil {
+			t.Fatal("最大 close 实际写失败")
+		}
+	})
+	if fullAllocs > emptyAllocs {
+		t.Error("出站 close 仅校验时仍额外分配 reason")
+	}
+	badCode := []byte{3, 238}
+	badUTF8 := append([]byte{3, 232}, bytes.Repeat([]byte{0xff}, 123)...)
+	codeAllocs := testing.AllocsPerRun(20, func() {
+		if _, _, err := DecodeClosePayload(badCode); !errors.Is(err, ErrProtocol) {
+			t.Fatal("非法关闭码未拒绝")
+		}
+	})
+	utf8Allocs := testing.AllocsPerRun(20, func() {
+		if _, _, err := DecodeClosePayload(badUTF8); !errors.Is(err, ErrProtocol) {
+			t.Fatal("非法原因未拒绝")
+		}
+	})
+	if utf8Allocs > codeAllocs {
+		t.Error("拒绝非法 UTF-8 前复制了 reason")
+	}
+}
+
+// 真正读完 payload 才放行取消时序，防止把未读完帧的失败冒充已构造 CloseError 的丢弃。
+type productionCloseReadProbe struct {
+	io.Reader
+	entered, payload chan struct{}
+	first, body      sync.Once
+}
+
+func (r *productionCloseReadProbe) Read(p []byte) (int, error) {
+	r.first.Do(func() { close(r.entered) })
+	n, err := io.ReadFull(r.Reader, p)
+	if len(p) == 125 && n == 125 {
+		r.body.Do(func() { close(r.payload) })
+	}
+	return n, err
+}
+
+func TestProductionCloseReasonCancellation(t *testing.T) {
+	t.Run("callback-claims-before-handoff", func(t *testing.T) {
+		a, raw := tcpPair(t)
+		g := &productionCloseGate{Conn: a, entered: make(chan struct{}), release: make(chan struct{})}
+		probe := &productionCloseReadProbe{Reader: a, entered: make(chan struct{}), payload: make(chan struct{})}
+		b := productionBudget(t, 248)
+		c := newConnBuffered(g, probe, RoleClient, 1024, 0)
+		c.budget = b
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		exited := make(chan struct{})
+		t.Cleanup(func() {
+			cancel()
+			g.open()
+			_ = a.Close()
+			_ = raw.Close()
+			awaitDialHandoff(t, exited, "关闭原因取消读工作者未归还")
+		})
+		go func() { defer close(exited); _, err := c.ReadOwnedMessage(ctx); done <- err }()
+		awaitDialHandoff(t, probe.entered, "关闭帧读取未就绪")
+		cancel()
+		awaitDialHandoff(t, g.entered, "取消未先取得 socket 关闭权")
+		if err := WriteFrame(raw, Frame{FIN: true, Opcode: OpClose, Payload: EncodeClosePayload(1000, strings.Repeat("r", 123))}, false); err != nil {
+			t.Fatal(err)
+		}
+		awaitDialHandoff(t, probe.payload, "取消竞争没有实际读完关闭原因")
+		g.open()
+		err := awaitDialHandoff(t, done, "取消未归还关闭错误")
+		if !errors.Is(err, context.Canceled) {
+			t.Fatal("取消先取得关闭权却交付了 CloseError")
+		}
+		if b.Used() != 0 {
+			t.Fatal("CAS 丢弃 CloseError 时未归还原因额度")
+		}
+	})
+	t.Run("ctx-error-overrides-close-error", func(t *testing.T) {
+		a, raw := tcpPair(t)
+		g := &productionCloseGate{Conn: a, entered: make(chan struct{}), release: make(chan struct{})}
+		b := productionBudget(t, 248)
+		c := NewConn(g, RoleClient, 1024, 0)
+		c.budget = b
+		base, cancel := context.WithCancel(context.Background())
+		ctx := &productionDeferredCancelContext{Context: base, entered: make(chan struct{}), release: make(chan struct{}), exited: make(chan struct{})}
+		done := make(chan error, 1)
+		exited := make(chan struct{})
+		t.Cleanup(func() {
+			cancel()
+			ctx.open()
+			g.open()
+			_ = a.Close()
+			_ = raw.Close()
+			awaitDialHandoff(t, exited, "ctx 覆盖关闭错误的读未归还")
+		})
+		if err := WriteFrame(raw, Frame{FIN: true, Opcode: OpClose, Payload: EncodeClosePayload(1000, strings.Repeat("r", 123))}, false); err != nil {
+			t.Fatal(err)
+		}
+		go func() { defer close(exited); _, err := c.ReadOwnedMessage(ctx); done <- err }()
+		// 被动回应已经走到真正关闭 socket 前：帧缓冲释放，原因仍在等待错误交接。
+		awaitDialHandoff(t, g.entered, "被动回应未到达 socket 关闭")
+		if b.Used() != 123 {
+			t.Error("错误交接前没有持有原因容量")
+		}
+		cancel()
+		awaitDialHandoff(t, ctx.entered, "测试未暂停取消回调调度")
+		g.open()
+		err := awaitDialHandoff(t, done, "ctx.Err 覆盖路径未归还")
+		if !errors.Is(err, context.Canceled) {
+			t.Fatal("取消已可见却交付了 CloseError")
+		}
+		if b.Used() != 0 {
+			t.Error("ctx.Err 覆盖 CloseError 时未归还原因额度")
+		}
+		ctx.open()
+		awaitDialHandoff(t, ctx.exited, "迟到取消调度未归还")
+	})
+}
+
+// 合法的自定义 context 将回调调度门闩与 Done/Err 分离，确定性覆盖取消回调迟到的交错。
+type productionDeferredCancelContext struct {
+	context.Context
+	entered, release, exited chan struct{}
+	once                     sync.Once
+}
+
+func (c *productionDeferredCancelContext) Value(any) any { return nil }
+func (c *productionDeferredCancelContext) AfterFunc(f func()) func() bool {
+	return context.AfterFunc(c.Context, func() { close(c.entered); defer close(c.exited); <-c.release; f() })
+}
+func (c *productionDeferredCancelContext) open() { c.once.Do(func() { close(c.release) }) }

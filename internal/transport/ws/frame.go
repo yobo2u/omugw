@@ -411,20 +411,29 @@ func EncodeClosePayload(code uint16, reason string) []byte {
 // 用 1011 + 文本原因表达过载（"To many requests..."），网关要能读出来
 // 并映射成可重试的上游错误，而不是当成一次无缘无故的断连。
 func DecodeClosePayload(payload []byte) (uint16, string, error) {
+	code, reason, err := parseClosePayload(payload)
+	if err != nil {
+		return 0, "", err
+	}
+	return code, string(reason), nil
+}
+
+// 只借用原因切片，不先复制再校验；受控读取可在复制前预占并存容量，出站校验也不留副本。
+func parseClosePayload(payload []byte) (uint16, []byte, error) {
 	if len(payload) == 0 {
-		return CloseNoStatus, "", nil
+		return CloseNoStatus, nil, nil
 	}
 	if len(payload) == 1 {
-		return 0, "", fmt.Errorf("%w: close 负载只有 1 字节，状态码不完整", ErrProtocol)
+		return 0, nil, fmt.Errorf("%w: close 负载只有 1 字节，状态码不完整", ErrProtocol)
 	}
 
 	code := binary.BigEndian.Uint16(payload)
 	if !validCloseCode(code) {
-		return 0, "", fmt.Errorf("%w: close 状态码非法", ErrProtocol)
+		return 0, nil, fmt.Errorf("%w: close 状态码非法", ErrProtocol)
 	}
-	reason := string(payload[2:])
-	if !utf8.ValidString(reason) {
-		return 0, "", fmt.Errorf("%w: close 原因不是合法 UTF-8", ErrProtocol)
+	reason := payload[2:]
+	if !utf8.Valid(reason) {
+		return 0, nil, fmt.Errorf("%w: close 原因不是合法 UTF-8", ErrProtocol)
 	}
 	return code, reason, nil
 }
