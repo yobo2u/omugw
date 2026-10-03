@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -362,6 +363,39 @@ func TestProductionDialErrorBodyBudget(t *testing.T) {
 	}
 }
 
+// abort 时未读完 TCP 数据可使对端收到 reset；超时或仍读到字节都不能证明释放。
+func productionAbortClosed(n int, err error) bool {
+	return n == 0 && (errors.Is(err, io.EOF) || errors.Is(err, syscall.ECONNRESET))
+}
+
+func TestProductionAbortCloseEvidence(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		n      int
+		err    error
+		closed bool
+	}{
+		{"eof", 0, io.EOF, true},
+		{"reset", 0, syscall.ECONNRESET, true},
+		{"wrapped-reset", 0, &net.OpError{Op: "read", Net: "tcp", Err: syscall.ECONNRESET}, true},
+		{"timeout", 0, &net.OpError{Op: "read", Net: "tcp", Err: syscall.ETIMEDOUT}, false},
+		{"unexpected-eof", 0, io.ErrUnexpectedEOF, false},
+		{"broken-pipe", 0, syscall.EPIPE, false},
+		{"local-closed", 0, net.ErrClosed, false},
+		{"reset-text-only", 0, errors.New("connection reset by peer"), false},
+		{"no-error", 0, nil, false},
+		{"data-with-eof", 1, io.EOF, false},
+		{"data-with-reset", 1, syscall.ECONNRESET, false},
+		{"data-without-error", 1, nil, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if productionAbortClosed(tc.n, tc.err) != tc.closed {
+				t.Fatal("abort 关闭证据判定不符")
+			}
+		})
+	}
+}
+
 // 没有 EOF 的失败 body 仍属于原握手 ctx；只保留已收到的前缀并释放实际 socket。
 func TestProductionDialSlowErrorBodyCancellation(t *testing.T) {
 	ready := make(chan struct{})
@@ -377,7 +411,12 @@ func TestProductionDialSlowErrorBodyCancellation(t *testing.T) {
 			return err
 		}
 		close(ready)
-		return productionExpectEOF(br)
+		var b [1]byte
+		n, err := br.Read(b[:])
+		if !productionAbortClosed(n, err) {
+			return errors.New("取消未实际释放连接")
+		}
+		return nil
 	})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
