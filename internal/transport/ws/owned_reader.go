@@ -30,7 +30,7 @@ func (c *Conn) ReadOwnedMessage(ctx context.Context) (*Message, error) {
 		defer close(done)
 		if claimed.CompareAndSwap(false, true) {
 			c.closed.Store(true)
-			_ = c.conn.Close()
+			_ = abortTransport(c.conn)
 		}
 	})
 	defer func() {
@@ -83,7 +83,8 @@ func (b *payloadBuffer) grow(size, limit int) error {
 		b.bytes = b.bytes[:size]
 		return nil
 	}
-	capacity := size
+	// 先比较半上限再翻倍，避免 int 溢出；接近上限只扩一次，不能逐片整条复制。
+	capacity := limit
 	if cap(b.bytes) <= limit/2 {
 		capacity = max(size, 2*cap(b.bytes))
 	}
@@ -184,7 +185,7 @@ func (c *Conn) readOwned(ctx context.Context) (*Message, error) {
 			continue
 		}
 		if opcode == OpText && !utf8.Valid(partial.bytes) {
-			return nil, fmt.Errorf("%w: 文本不是合法 UTF-8", ErrProtocol)
+			return nil, fmt.Errorf("%w: 文本不是合法 UTF-8", ErrInvalidUTF8)
 		}
 		m := &Message{Opcode: opcode, Payload: partial.bytes, owned: &messageOwnership{budget: c.budget, size: int64(cap(partial.bytes))}}
 		partial.bytes = nil

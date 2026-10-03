@@ -133,7 +133,7 @@ func (c *Conn) ReadMessage() (Opcode, []byte, error) {
 // WriteMessage 发一条业务消息。
 func (c *Conn) WriteMessage(op Opcode, payload []byte) error {
 	if op == OpText && !utf8.Valid(payload) {
-		return fmt.Errorf("%w: 文本不是合法 UTF-8", ErrProtocol)
+		return fmt.Errorf("%w: 文本不是合法 UTF-8", ErrInvalidUTF8)
 	}
 	if op == OpClose {
 		if _, _, err := parseClosePayload(payload); err != nil {
@@ -186,44 +186,52 @@ func (c *Conn) CloseWithResult(code uint16, reason string) (sent bool, err error
 	if !c.closed.CompareAndSwap(false, true) {
 		return false, nil
 	}
+	start := time.Now()
+	if code != CloseNoStatus && !validCloseCode(code) || code == CloseNoStatus && reason != "" {
+		_ = abortTransport(c.conn)
+		return false, fmt.Errorf("%w: 主动关闭状态码或原因非法", ErrProtocol)
+	}
+	if !utf8.ValidString(reason) {
+		_ = abortTransport(c.conn)
+		return false, fmt.Errorf("%w: close 原因不是合法 UTF-8", ErrInvalidUTF8)
+	}
+
+	// 已有业务帧阻塞时不能等写锁：直接关底层连接才能把那个写唤醒。
+	if !c.writeMu.TryLock() {
+		return false, abortTransport(c.conn)
+	}
+	defer c.writeMu.Unlock()
+	timeout := time.Second
+	if c.idle > 0 && c.idle < timeout {
+		timeout = c.idle
+	}
+	if c.writeTimeout > 0 && c.writeTimeout < timeout {
+		timeout = c.writeTimeout
+	}
+	deadline := start.Add(timeout)
+	join := watchTransportClose(c.conn, deadline)
+	defer join()
 	defer func() {
 		if cerr := c.conn.Close(); err == nil {
 			err = cerr
 		}
 	}()
-	if code != CloseNoStatus && !validCloseCode(code) || !utf8.ValidString(reason) || code == CloseNoStatus && reason != "" {
-		return false, fmt.Errorf("%w: 主动关闭状态码或原因非法", ErrProtocol)
+	if err = c.conn.SetWriteDeadline(deadline); err != nil {
+		return false, err
 	}
-
-	// 已有业务帧阻塞时不能等写锁：直接关底层连接才能把那个写唤醒。
-	// 没有并发写时尽力发送关闭帧，并给这次礼貌收尾一个有限期限。
-	if c.writeMu.TryLock() {
-		deadline := time.Second
-		if c.idle > 0 && c.idle < deadline {
-			deadline = c.idle
-		}
-		if c.writeTimeout > 0 && c.writeTimeout < deadline {
-			deadline = c.writeTimeout
-		}
-		defer c.writeMu.Unlock()
-		if err = c.conn.SetWriteDeadline(time.Now().Add(deadline)); err != nil {
-			return false, err
-		}
-		defer c.conn.SetWriteDeadline(time.Time{})
-		// 原因先按协议上限截断，避免超长 reason 让编码器保留一个超大容量。
-		size := closePayloadSize(code, reason)
-		if err = c.budget.acquire(int64(size)); err != nil {
-			return false, err
-		}
-		payload := EncodeClosePayload(code, reason)
-		defer func() { payload = nil; c.budget.release(int64(size)) }()
-		err = writeFrameBudget(c.conn, Frame{
-			FIN:     true,
-			Opcode:  OpClose,
-			Payload: payload,
-		}, c.role.masks(), c.budget)
-		sent = err == nil
+	// 原因先按协议上限截断，避免超长 reason 让编码器保留一个超大容量。
+	size := closePayloadSize(code, reason)
+	if err = c.budget.acquire(int64(size)); err != nil {
+		return false, err
 	}
+	payload := EncodeClosePayload(code, reason)
+	defer func() { payload = nil; c.budget.release(int64(size)) }()
+	err = writeFrameBudget(c.conn, Frame{
+		FIN:     true,
+		Opcode:  OpClose,
+		Payload: payload,
+	}, c.role.masks(), c.budget)
+	sent = err == nil
 	return sent, err
 }
 

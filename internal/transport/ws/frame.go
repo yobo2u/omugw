@@ -75,6 +75,9 @@ var (
 	// 超限只是这一帧太大。前者该断连，后者可以只拒这条消息。
 	ErrProtocol = errors.New("ws: 协议错误")
 
+	// ErrInvalidUTF8 供 relay 区分 1007 与其他 RFC 错误的 1002；仍属于 ErrProtocol。
+	ErrInvalidUTF8 = fmt.Errorf("%w: 非法 UTF-8", ErrProtocol)
+
 	// ErrTooLarge 表示负载超过本地上限。
 	ErrTooLarge = errors.New("ws: 负载超过上限")
 
@@ -255,6 +258,9 @@ func readFrameHeader(r io.Reader) (frameHeader, error) {
 			return frameHeader{}, unexpectedEOF(err)
 		}
 		n = int64(binary.BigEndian.Uint16(b[:]))
+		if n < 126 {
+			return frameHeader{}, fmt.Errorf("%w: 负载长度未使用最小编码", ErrProtocol)
+		}
 	case 127:
 		var b [8]byte
 		if _, err := io.ReadFull(r, b[:]); err != nil {
@@ -266,6 +272,9 @@ func readFrameHeader(r io.Reader) (frameHeader, error) {
 			return frameHeader{}, fmt.Errorf("%w: 负载长度最高位置位", ErrProtocol)
 		}
 		n = int64(v)
+		if n < 65536 {
+			return frameHeader{}, fmt.Errorf("%w: 负载长度未使用最小编码", ErrProtocol)
+		}
 	}
 
 	if uint64(n) > uint64(^uint(0)>>1) {
@@ -342,6 +351,12 @@ func (rd *Reader) ReadMessage() (Opcode, []byte, error) {
 		}
 
 		if f.Opcode.isControl() {
+			if f.Opcode == OpClose {
+				if _, _, err := parseClosePayload(f.Payload); err != nil {
+					rd.reset()
+					return 0, nil, err
+				}
+			}
 			return f.Opcode, f.Payload, nil
 		}
 
@@ -366,6 +381,10 @@ func (rd *Reader) ReadMessage() (Opcode, []byte, error) {
 		if f.FIN {
 			op, payload := rd.msgOp, rd.partial
 			rd.reset()
+			// 只能检查完整消息，不能把合法的跨帧 UTF-8 字符拒绝掉。
+			if op == OpText && !utf8.Valid(payload) {
+				return 0, nil, fmt.Errorf("%w: 文本不是合法 UTF-8", ErrInvalidUTF8)
+			}
 			return op, payload, nil
 		}
 	}
@@ -433,7 +452,7 @@ func parseClosePayload(payload []byte) (uint16, []byte, error) {
 	}
 	reason := payload[2:]
 	if !utf8.Valid(reason) {
-		return 0, nil, fmt.Errorf("%w: close 原因不是合法 UTF-8", ErrProtocol)
+		return 0, nil, fmt.Errorf("%w: close 原因不是合法 UTF-8", ErrInvalidUTF8)
 	}
 	return code, reason, nil
 }

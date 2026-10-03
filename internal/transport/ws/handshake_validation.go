@@ -67,7 +67,7 @@ func retainHandshakeErrorBody(ctx context.Context, conn net.Conn, resp *http.Res
 			readErr = err
 		}
 	}
-	_ = conn.Close()
+	_ = abortTransport(conn)
 	_ = original.Close()
 	resp.Body = io.NopCloser(bytes.NewReader(body))
 	if truncated {

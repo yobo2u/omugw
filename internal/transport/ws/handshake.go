@@ -84,7 +84,7 @@ func Accept(w http.ResponseWriter, r *http.Request, opts AcceptOptions) (*Conn, 
 		return nil, fmt.Errorf("%w: 接管连接失败", ErrHandshake)
 	}
 	if err := netConn.SetWriteDeadline(opts.HandshakeDeadline); err != nil {
-		_ = netConn.Close()
+		_ = abortTransport(netConn)
 		return nil, fmt.Errorf("%w: 设置 101 写期限失败", ErrHandshake)
 	}
 
@@ -94,15 +94,15 @@ func Accept(w http.ResponseWriter, r *http.Request, opts AcceptOptions) (*Conn, 
 		"Connection: Upgrade\r\n" +
 		"Sec-WebSocket-Accept: " + acceptKey(key) + "\r\n\r\n"
 	if _, err := brw.WriteString(resp); err != nil {
-		_ = netConn.Close()
+		_ = abortTransport(netConn)
 		return nil, fmt.Errorf("%w: 写 101 响应失败", ErrHandshake)
 	}
 	if err := brw.Flush(); err != nil {
-		_ = netConn.Close()
+		_ = abortTransport(netConn)
 		return nil, fmt.Errorf("%w: 刷出 101 响应失败", ErrHandshake)
 	}
 	if err := netConn.SetDeadline(time.Time{}); err != nil {
-		_ = netConn.Close()
+		_ = abortTransport(netConn)
 		return nil, fmt.Errorf("%w: 清除握手期限失败", ErrHandshake)
 	}
 
@@ -201,7 +201,7 @@ func Dial(ctx context.Context, rawURL string, opts DialOptions) (*Conn, *http.Re
 		select {
 		case <-ctx.Done():
 			if handshakeClaimed.CompareAndSwap(false, true) {
-				_ = netConn.Close()
+				_ = abortTransport(netConn)
 			}
 		case <-handshakeDone:
 		}
@@ -209,13 +209,13 @@ func Dial(ctx context.Context, rawURL string, opts DialOptions) (*Conn, *http.Re
 
 	var nonce [16]byte
 	if _, err := rand.Read(nonce[:]); err != nil {
-		_ = netConn.Close()
+		_ = abortTransport(netConn)
 		return nil, nil, fmt.Errorf("%w: 生成 Sec-WebSocket-Key 失败", ErrHandshake)
 	}
 	clientKey := base64.StdEncoding.EncodeToString(nonce[:])
 
 	if err := writeHandshakeRequest(netConn, u, clientKey, opts.Header); err != nil {
-		_ = netConn.Close()
+		_ = abortTransport(netConn)
 		return nil, nil, err
 	}
 
@@ -225,7 +225,7 @@ func Dial(ctx context.Context, rawURL string, opts DialOptions) (*Conn, *http.Re
 	br := bufio.NewReader(source)
 	resp, err := http.ReadResponse(br, &http.Request{Method: http.MethodGet})
 	if err != nil {
-		_ = netConn.Close()
+		_ = abortTransport(netConn)
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, nil, fmt.Errorf("%w: %v", ErrHandshake, ctxErr)
 		}
@@ -240,7 +240,7 @@ func Dial(ctx context.Context, rawURL string, opts DialOptions) (*Conn, *http.Re
 	// 校验摘要：一个返回 101 却算错摘要的中间设备，会让我们把帧写进一个
 	// 根本不解析它的端点——表现是「连上了但一条消息都收不到」。
 	if err := validateUpgradeResponse(resp, clientKey); err != nil {
-		_ = netConn.Close()
+		_ = abortTransport(netConn)
 		return nil, resp, err
 	}
 
