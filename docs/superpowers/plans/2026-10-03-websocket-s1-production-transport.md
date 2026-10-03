@@ -73,6 +73,7 @@
 - `NewBufferBudget(limit int64) (*BufferBudget,error)`，limit>0；共享额度，同步 acquire/release，公开`Used() int64`供验收观测。
 - `Message { Opcode Opcode; Payload []byte }`，`(*Message).Release()`恰好归还一次（重复调用安全）；实现中可带非导出owned状态。
 - `(*Conn).ReadOwnedMessage(ctx context.Context) (*Message,error)`：受ctx绝对取消/期限与idle共同限制；成功后由调用者Release，读取失败无泄漏。
+- 复审补充：受控读的`CloseError`增加幂等`Release()`，非空Reason复制先预占、交接后持续计额；调用方通过errors.As取出并在处理完关闭原因后释放。旧无Budget调用不增加释放义务。ctx覆盖/丢弃该错误时由transport释放；先做无分配校验，不能在拒绝非法reason或只验证出站close时额外复制payload。
 - `(*Conn).Ping(payload []byte) error`：复用写锁和有限期限，不得发送>125字节ping。
 - 新增`ErrBufferLimit`、`ErrMessageTooLarge`用于上层区分全局容量与消息超限；保持已有ErrProtocol链兼容。
 - 原`ReadMessage() (Opcode,[]byte,error)`行为兼容；有Budget的Conn禁止通过旧接口绕过所有权（明确报错），生产必须ReadOwnedMessage。

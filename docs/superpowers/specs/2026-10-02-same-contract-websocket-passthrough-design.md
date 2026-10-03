@@ -149,6 +149,11 @@ Go1.25 Hijack实现清空deadline，接口文档仍要求调用方管理；Accep
 min(connect,idle)，只在写锁内设置；close礼貌收尾≤1秒。取消/错误关闭两侧并join。
 读首事件必须服从握手ctx（含不停发ping也不能延长），不能用idle替代绝对期限。
 
+受控读的消息及非空关闭原因均有显式所有权：`Message.Release()`与
+`CloseError.Release()`在使用结束后归还额度；关闭原因的字符串副本也须分配前
+预占，并在交接后持续计额。ctx竞争丢弃结果时由transport归还，不能要求调用方
+释放未收到的对象。旧无Budget读接口不增加释放义务。
+
 分块掩码保持4字节掩码跨块偏移，不原地修改调用方payload；短写不得报成功。
 有效UTF-8文本、合法close与role mask在 transport守住；业务包络/usage只读处理。
 
