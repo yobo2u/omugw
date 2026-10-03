@@ -917,7 +917,8 @@ func wsReplayBridgeMode(t *testing.T, f Fixture, l WSLimits, mutate wsReplayMuta
 					}
 					reason := closed.Reason
 					if mode == "unknown_actual_close" {
-						code = 2999
+						// 合法私用码仍必须匹配 fixture，不能被 RFC 范围校验代替契约断言。
+						code = 3999
 					}
 					if mode == "wrong_reason" {
 						reason = "synthetic-private"

@@ -45,6 +45,11 @@ type AcceptOptions struct {
 
 	// HandshakeDeadline 只约束 101 写入；交付连接前清除，避免截断长会话。
 	HandshakeDeadline time.Time
+
+	// WriteTimeout 限制业务帧与心跳写，0 保持原有合法调用的无期限行为。
+	WriteTimeout time.Duration
+	// Budget 共享 payload 容量；非 nil 时只能通过 ReadOwnedMessage 取得所有权。
+	Budget *BufferBudget
 }
 
 // Accept 把一个 HTTP 升级请求接管成 WebSocket 连接。
@@ -52,7 +57,7 @@ type AcceptOptions struct {
 // 接管之后 net/http 不再管这条连接——它既不会写响应，也不会在 handler
 // 返回时关闭它。因此这里必须自己写完 101 响应，调用方必须自己 Close。
 func Accept(w http.ResponseWriter, r *http.Request, opts AcceptOptions) (*Conn, error) {
-	if opts.MaxPayload < 0 || opts.Idle < 0 {
+	if opts.MaxPayload < 0 || opts.Idle < 0 || opts.WriteTimeout < 0 {
 		http.Error(w, "invalid websocket options", http.StatusInternalServerError)
 		return nil, fmt.Errorf("%w: 负限额或负时长非法", ErrHandshake)
 	}
@@ -103,7 +108,9 @@ func Accept(w http.ResponseWriter, r *http.Request, opts AcceptOptions) (*Conn, 
 
 	// 用 brw.Reader 而不是裸 netConn：握手期间 bufio 可能已经预读了
 	// 客户端紧跟着发来的帧字节。丢掉它等于丢掉客户端的第一条消息。
-	return newConnBuffered(netConn, brw.Reader, RoleServer, opts.MaxPayload, opts.Idle), nil
+	c := newConnBuffered(netConn, brw.Reader, RoleServer, opts.MaxPayload, opts.Idle)
+	c.writeTimeout, c.budget = opts.WriteTimeout, opts.Budget
+	return c, nil
 }
 
 // DialOptions 是客户端拨号的选项。
@@ -131,6 +138,11 @@ type DialOptions struct {
 
 	// MaxErrorBodyBytes 限制失败响应体，0 默认 64 KiB；返回的内存 Body 归调用方。
 	MaxErrorBodyBytes int64
+
+	// WriteTimeout 只在写锁内设置和清除，不能泄漏到后续会话阶段。
+	WriteTimeout time.Duration
+	// Budget 防止多个会话同时持有的大消息越过全局容量。
+	Budget *BufferBudget
 }
 
 // Dial 向 ws:// 或 wss:// 端点发起握手。
@@ -139,7 +151,7 @@ type DialOptions struct {
 // 往往就是唯一的线索：DashScope 对错误的 API Key 返回 401 而不是 101，
 // 吞掉它会让运维只看到「连不上」。
 func Dial(ctx context.Context, rawURL string, opts DialOptions) (*Conn, *http.Response, error) {
-	if opts.ConnectTimeout < 0 || opts.Idle < 0 || opts.MaxPayload < 0 || opts.MaxHandshakeBytes < 0 || opts.MaxErrorBodyBytes < 0 {
+	if opts.ConnectTimeout < 0 || opts.Idle < 0 || opts.MaxPayload < 0 || opts.MaxHandshakeBytes < 0 || opts.MaxErrorBodyBytes < 0 || opts.WriteTimeout < 0 {
 		return nil, nil, fmt.Errorf("%w: 负限额或负时长非法", ErrHandshake)
 	}
 	if opts.MaxHandshakeBytes == 0 {
@@ -237,7 +249,9 @@ func Dial(ctx context.Context, rawURL string, opts DialOptions) (*Conn, *http.Re
 	if !handshakeClaimed.CompareAndSwap(false, true) {
 		return nil, resp, fmt.Errorf("%w: %v", ErrHandshake, ctx.Err())
 	}
-	return newConnBuffered(netConn, br, RoleClient, opts.MaxPayload, opts.Idle), resp, nil
+	c := newConnBuffered(netConn, br, RoleClient, opts.MaxPayload, opts.Idle)
+	c.writeTimeout, c.budget = opts.WriteTimeout, opts.Budget
+	return c, resp, nil
 }
 
 func dialTCP(ctx context.Context, u *url.URL, secure bool, tlsCfg *tls.Config) (net.Conn, error) {
