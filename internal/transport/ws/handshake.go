@@ -106,9 +106,15 @@ func Accept(w http.ResponseWriter, r *http.Request, opts AcceptOptions) (*Conn, 
 		return nil, fmt.Errorf("%w: 清除握手期限失败", ErrHandshake)
 	}
 
-	// 用 brw.Reader 而不是裸 netConn：握手期间 bufio 可能已经预读了
-	// 客户端紧跟着发来的帧字节。丢掉它等于丢掉客户端的第一条消息。
-	c := newConnBuffered(netConn, brw.Reader, RoleServer, opts.MaxPayload, opts.Idle)
+	// 只借用 Hijack 时已缓存的字节，后续必须直接读接管的 socket：旧 HTTP
+	// connReader 在 EOF/超时时会取消请求 context，将中继故障抢先误判成主动取消。
+	// LimitReader 限定在 Buffered 快照内，既不触发旧 reader 补读，也不丢 pipeline
+	// 的半帧；不复制 payload，耗尽后 MultiReader 释放旧缓存及 HTTP reader 引用。
+	var reader io.Reader = netConn
+	if buffered := brw.Reader.Buffered(); buffered > 0 {
+		reader = io.MultiReader(io.LimitReader(brw.Reader, int64(buffered)), netConn)
+	}
+	c := newConnBuffered(netConn, reader, RoleServer, opts.MaxPayload, opts.Idle)
 	c.writeTimeout, c.budget = opts.WriteTimeout, opts.Budget
 	return c, nil
 }

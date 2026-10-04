@@ -37,6 +37,33 @@ jobs:
       - name: 降级矩阵完整性
         run: make matrix
 
+  sdk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.25"
+          cache: true
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: tests/sdk/openai-realtime/package-lock.json
+
+      # 安装只发生在测试目录；缺依赖必须失败，不能将普通 Go 检查冒充 SDK 验收。
+      - name: 安装锁定的官方 SDK 测试依赖
+        working-directory: tests/sdk/openai-realtime
+        run: npm ci --ignore-scripts
+
+      - name: 官方 SDK 本地 WSS 与证书验证
+        run: make test-sdk
+
+      - name: 官方 SDK 链路竞态检测
+        run: go test -race -tags=sdk ./internal/gateway -run '^TestOpenAIRealtimeNodeSDK' -count=1
+
   licenses:
     runs-on: ubuntu-latest
     steps:

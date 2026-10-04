@@ -8,7 +8,6 @@ import (
 	"github.com/yobo2u/omugw/internal/canonical"
 	"github.com/yobo2u/omugw/internal/credential"
 	"github.com/yobo2u/omugw/internal/degrade"
-	"github.com/yobo2u/omugw/internal/protocol/dashscoperealtime"
 	"github.com/yobo2u/omugw/internal/provider"
 	"github.com/yobo2u/omugw/internal/transport/ws"
 )
@@ -28,7 +27,7 @@ func (h *WSHandler) connect(ctx context.Context, session *wsSession, model strin
 	var last error
 	for _, target := range targets {
 		// 同名事件及历史 homogeneous 标记不是同契约证据，不走跨协议偏好排序。
-		if target.Kind != degrade.ProviderDashScopeWSRealtime {
+		if target.Kind != h.profile.outbound {
 			continue
 		}
 		if target.UpstreamModel != model {
@@ -62,6 +61,7 @@ func (h *WSHandler) connect(ctx context.Context, session *wsSession, model strin
 				_ = resp.Body.Close()
 			}
 			if conn != nil && !session.Attach(conn) {
+				releaseWSRelayError(err)
 				err = wsSessionError(session)
 				settleWSLease(lease, err)
 				return nil, outbound, err
@@ -71,14 +71,15 @@ func (h *WSHandler) connect(ctx context.Context, session *wsSession, model strin
 				err = canonical.Newf(canonical.ClassInternal, "Realtime 上游未返回连接")
 			}
 			if err == nil {
-				initial, err = readWSReady(ctx, conn)
+				initial, err = readWSReady(ctx, conn, h.profile.checkReady)
 			}
 			if err == nil {
 				return &wsReady{conn: conn, initial: initial, lease: lease}, outbound, nil
 			}
-			last = wsAttemptError(err)
+			failure := wsUpstreamResult(err, h.profile.classifyClose)
+			last = wsAttemptError(failure)
 			if conn != nil {
-				retireWSAttempt(session, conn, err)
+				retireWSAttempt(session, conn, failure)
 			} else {
 				releaseWSRelayError(err)
 			}
@@ -109,29 +110,26 @@ func (h *WSHandler) connect(ctx context.Context, session *wsSession, model strin
 }
 
 // 只预读一条应用消息；ping 由 transport 消化且不能延长 ctx 的共同截止时间。
-func readWSReady(ctx context.Context, conn *ws.Conn) (*ws.Message, error) {
+func readWSReady(ctx context.Context, conn *ws.Conn, checkReady func([]byte) error) (*ws.Message, error) {
 	m, err := conn.ReadOwnedMessage(ctx)
 	if err != nil {
 		return nil, err
 	}
+	err = errWSRelayPolicy
 	if m.Opcode == ws.OpText {
-		e, err := dashscoperealtime.Inspect(m.Payload)
-		if err == nil && e.Type == "session.created" {
+		err = checkReady(m.Payload)
+		if err == nil {
 			return m, nil
-		}
-		if err == nil && e.Failure != nil {
-			m.Release()
-			return nil, e.Failure
 		}
 	}
 	m.Release()
-	return nil, errWSRelayPolicy
+	return nil, err
 }
 
 // 失败尝试尚无下游段：在 registry 锁内把该段交给尝试级仲裁器，或者加入已经
 // 胜出的 session 关停。不能直接 defer Close(1000/1001)，也不能把可重试失败
 // 报给整个 session 的一次性终止槽（那会拒绝下一次 Attach）。Done 会等本函数返回。
-func retireWSAttempt(s *wsSession, conn *ws.Conn, err error) {
+func retireWSAttempt(s *wsSession, conn *ws.Conn, failure wsRelayResult) {
 	r := s.registry
 	r.mu.Lock()
 	termination := s.shutdown.termination
@@ -141,17 +139,17 @@ func retireWSAttempt(s *wsSession, conn *ws.Conn, err error) {
 		delete(s.conns, conn)
 		termination = newWSTermination(func(code uint16, reason string) { closeWSConnections([]*ws.Conn{conn}, code, reason) })
 	}
-	termination.report(wsRelayResult{err: err, upstream: true})
+	termination.report(failure)
 	r.mu.Unlock()
 	_ = termination.close()
 }
 
-func wsAttemptError(err error) error {
+func wsAttemptError(failure wsRelayResult) error {
 	var known *canonical.Error
-	if errors.As(err, &known) {
+	if errors.As(failure.err, &known) {
 		return safeWSError(known)
 	}
-	_, _, classified := classifyWSRelay(wsRelayResult{err: err, upstream: true})
+	_, _, classified := classifyWSRelay(failure)
 	if classified == nil {
 		return canonical.Newf(canonical.ClassInternal, "Realtime 上游未就绪即关闭")
 	}

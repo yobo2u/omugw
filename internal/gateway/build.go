@@ -18,6 +18,7 @@ import (
 	"github.com/yobo2u/omugw/internal/provider/dashscopecompat"
 	dsnativeprovider "github.com/yobo2u/omugw/internal/provider/dashscopenative"
 	dsws "github.com/yobo2u/omugw/internal/provider/dashscoperealtime"
+	oaws "github.com/yobo2u/omugw/internal/provider/openairealtime"
 	"github.com/yobo2u/omugw/internal/provider/passthrough"
 	"github.com/yobo2u/omugw/internal/router"
 	"github.com/yobo2u/omugw/internal/transport/httpx"
@@ -49,10 +50,10 @@ type Built struct {
 // 空气的网关，比一个起不来的网关难查得多。
 func Build(cfg config.Config, m *degrade.Matrix, metrics *obs.Metrics, log *slog.Logger) (*Built, error) {
 	// 未取得真实整门证据前只装配出站，不注册生产入口。
-	return buildWithWS(cfg, m, metrics, log, false)
+	return buildWithWS(cfg, m, metrics, log)
 }
 
-func buildWithWS(cfg config.Config, m *degrade.Matrix, metrics *obs.Metrics, log *slog.Logger, registerWS bool) (*Built, error) {
+func buildWithWS(cfg config.Config, m *degrade.Matrix, metrics *obs.Metrics, log *slog.Logger, wsEndpoints ...degrade.Endpoint) (*Built, error) {
 	availability := degrade.DefaultAvailability()
 	availability[degrade.FeatureConversationStore] = cfg.ConvStore.Enabled
 	m.WithAvailability(availability)
@@ -80,6 +81,9 @@ func buildWithWS(cfg config.Config, m *degrade.Matrix, metrics *obs.Metrics, log
 
 	// 网关部分没配 = 只提供健康检查。这是合法形态，不是失败。
 	if len(cfg.Models) == 0 {
+		if len(wsEndpoints) != 0 {
+			return nil, fmt.Errorf("gateway: 仅健康检查配置不能注册 WebSocket 门")
+		}
 		return built, nil
 	}
 
@@ -120,12 +124,14 @@ func buildWithWS(cfg config.Config, m *degrade.Matrix, metrics *obs.Metrics, log
 			provs[p.Endpoint] = dashscopecompat.New(client, nil)
 		case degrade.ProviderDashScopeWSRealtime:
 			streams[p.Endpoint] = dsws.New(cfg.Timeouts, cfg.WebSocket, built.wsBudget)
+		case degrade.ProviderOpenAIRealtime:
+			streams[p.Endpoint] = oaws.New(cfg.Timeouts, cfg.WebSocket, built.wsBudget)
 		default:
 			// 未实现的协议族在这里就拒绝，而不是等请求打进来才发现没有适配器。
 			return nil, fmt.Errorf(
-				"gateway: provider %q 的协议族 %q 尚无出站适配器（已实现 %s、%s、%s 与 %s）",
+				"gateway: provider %q 的协议族 %q 尚无出站适配器（已实现 %s、%s、%s、%s 与 %s）",
 				p.Endpoint, p.Kind, degrade.ProviderOpenAICompat,
-				degrade.ProviderDashScopeCompatible, degrade.ProviderDashScopeNative, degrade.ProviderDashScopeWSRealtime)
+				degrade.ProviderDashScopeCompatible, degrade.ProviderDashScopeNative, degrade.ProviderDashScopeWSRealtime, degrade.ProviderOpenAIRealtime)
 		}
 	}
 
@@ -214,12 +220,12 @@ func buildWithWS(cfg config.Config, m *degrade.Matrix, metrics *obs.Metrics, log
 		mux.Handle("POST "+string(d.endpoint), d.handler)
 		registered = append(registered, d.inbound())
 	}
-	if registerWS {
-		h := NewDashScopeRealtimeHandler(WSDeps{Matrix: m, Router: rt, Auth: auth, Metrics: metrics, Log: log,
-			Pools: pools, Providers: streams, Timeouts: cfg.Timeouts, Limits: cfg.WebSocket, Budget: built.wsBudget, Registry: built.wsRegistry})
-		if err := checkWSDoor(m, h); err != nil {
-			return nil, err
-		}
+	wsHandlers, err := buildWSDoors(WSDeps{Matrix: m, Router: rt, Auth: auth, Metrics: metrics, Log: log,
+		Pools: pools, Providers: streams, Timeouts: cfg.Timeouts, Limits: cfg.WebSocket, Budget: built.wsBudget, Registry: built.wsRegistry}, wsEndpoints)
+	if err != nil {
+		return nil, err
+	}
+	for _, h := range wsHandlers {
 		in := h.inbound()
 		mux.Handle(h.method()+" "+string(in.Endpoint), h)
 		registered = append(registered, in)

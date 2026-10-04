@@ -269,11 +269,8 @@ func Phase1() (*Matrix, error) {
 		return nil, err
 	}
 
-	// 近同构快通道——本项目的头牌能力。
-	//
-	// DashScope 的 /api-ws/v1/realtime 与 OpenAI Realtime 事件模型基本一致
-	// （session.update / input_audio_buffer.append / response.create /
-	// response.audio.delta ...），绝大多数事件原样转发即可。
+	// 跨协议设计处置不能由同名事件推导；历史 MarkHomogeneous 标记暂保留，
+	// 但不代表同契约授权或已经投放（见 principles 2.2）。
 	//
 	// audio_input 的处置是**按最坏情况**声明的：实测中 qwen3.5-omni-* 接受新式
 	// audio.input.format.sample_rate=24000，此时音频帧真的是字节直通；其余模型
@@ -304,6 +301,17 @@ func Phase1() (*Matrix, error) {
 			canonical.CapAudioInput).
 		Degrade("DashScope Realtime 未提供并行工具调用开关，行为由上游模型决定",
 			canonical.CapParallelToolCalls).
+		// 三格依据见 docs/research/2026-10-04-openai-realtime-ga-contract.md §7。
+		// 设计拒绝源于契约差异；detail 降级不能抵消图像拒绝，也不是兑现证据。
+		Reject("DashScope Realtime 已文档化的图像入口须先追加音频并随音频缓冲共同提交，"+
+			"不能保留 OpenAI 独立图像消息的无音频输入及提交边界；本路径拒绝将独立图像消息隐式并入音频轮次",
+			canonical.CapVisionInput).
+		Degrade("逐图 detail 的 auto/low/high 档位被丢弃，视觉处理与费用采用 DashScope 的目标策略；"+
+			"会话级视频聚合不等价于逐图档位",
+			canonical.CapImageDetail).
+		Reject("DashScope Omni Realtime 当前公开的 WebSocket 会话与响应参数没有已文档化的 reasoning.effort 或思考开关落点，"+
+			"无法承载调用方显式推理控制",
+			canonical.CapReasoning).
 		Build()); err != nil {
 		return nil, err
 	}
@@ -320,8 +328,8 @@ func Phase1() (*Matrix, error) {
 	}
 
 	// 反向路径：DashScope Realtime 客户端 → OpenAI Realtime 上游。
-	// 与上面那条对称，代价也对称——只是重采样方向反过来，
-	// 且 DashScope 侧多出的两项能力在 OpenAI 侧没有落点。
+	// OpenAI 支持图像 item，仍不等价于来源侧音画共同提交的 buffer；
+	// 拒绝隐式拆分轮次，不能把缺少等价契约写成目标完全没有视觉输入。
 	if err := m.Add(NewRoute(ProtoDashScopeRealtime, ProviderOpenAIRealtime).
 		Pass(
 			canonical.CapTextGeneration,
@@ -338,9 +346,11 @@ func Phase1() (*Matrix, error) {
 		Degrade("输入音频需从 DashScope 的 16 kHz 重采样到 OpenAI 的 24 kHz；"+
 			"上采样补不回原本就没采到的高频信息，只是满足格式要求",
 			canonical.CapAudioInput).
-		Degrade("OpenAI Realtime 未提供并行工具调用开关，行为由上游模型决定",
+		Degrade("两端没有通用的并行调用策略等价保证：DashScope 当前公开 Realtime 契约未定义显式并行开关，"+
+			"OpenAI 的 parallel_tool_calls 仅适用于 reasoning Realtime 模型；并行行为采用目标模型语义，不能保证保留来源模型的调用调度",
 			canonical.CapParallelToolCalls).
-		Reject("OpenAI Realtime 没有 input_image_buffer 事件，图像输入无处安放",
+		Reject("OpenAI Realtime 支持 input_image 消息，但没有 DashScope 的 input_image_buffer 入口及随音频共同提交的缓冲契约；"+
+			"本路径拒绝将音画缓冲轮次拆成独立图像消息，以免改变提交边界和对话项关联",
 			canonical.CapRealtimeImageInput, canonical.CapVisionInput).
 		Reject("server_commit / commit 是 Qwen-TTS-Realtime 特有的提交模式，"+
 			"OpenAI Realtime 协议中没有对应字段",

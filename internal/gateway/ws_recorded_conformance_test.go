@@ -383,7 +383,7 @@ func wsReplayRecorded(t *testing.T, f testkit.Fixture, model string) (testkit.WS
 	cfg.Providers[0].Kind = string(degrade.ProviderDashScopeWSRealtime)
 	cfg.Models[0].Targets[0].UpstreamModel = model
 	cfg.WebSocket = config.WebSocket{MaxMessageBytes: limits.MessageBytes, MaxBufferedBytes: 8 << 20, MaxSessions: 4}
-	b, err := buildWithWS(cfg, wsHandlerMatrix(t, true), obs.NewMetrics(reg), slog.New(slog.NewTextHandler(io.Discard, nil)), true)
+	b, err := buildWithWS(cfg, wsHandlerMatrix(t, true), obs.NewMetrics(reg), slog.New(slog.NewTextHandler(io.Discard, nil)), degrade.EndpointDashScopeRealtime)
 	if err != nil {
 		return result, reg, err
 	}

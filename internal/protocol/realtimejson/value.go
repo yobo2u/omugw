@@ -1,4 +1,5 @@
-package dashscoperealtime
+// Package realtimejson 只共享借用负载的窄扫描，不共享任何协议或计量语义。
+package realtimejson
 
 import (
 	"bytes"
@@ -8,17 +9,25 @@ import (
 	"unicode/utf8"
 )
 
-var errEnvelope = errors.New("dashscope realtime: invalid observation envelope")
+var errValue = errors.New("realtime json: invalid observation value")
 
-// jsonValue 只借用已通过 json.Valid 的负载切片，绝不留在 Event 中。
+// Value 只借用已通过 Parse 的负载切片，绝不留在 Event 中。
 // 未知音频/文本即使占满一帧，也不能经 RawMessage 或 Decoder.Token 复制一遍。
-type jsonValue []byte
+// 调用方不得自行构造或在扫描完成前改写底层字节。
+type Value []byte
 
-func (v jsonValue) field(name string) (jsonValue, error) {
-	if len(v) == 0 || v[0] != '{' {
-		return nil, errEnvelope
+func Parse(raw []byte) (Value, error) {
+	if !json.Valid(raw) {
+		return nil, errValue
 	}
-	var found jsonValue
+	return Value(bytes.TrimSpace(raw)), nil
+}
+
+func (v Value) Field(name string) (Value, error) {
+	if len(v) == 0 || v[0] != '{' {
+		return nil, errValue
+	}
+	var found Value
 	for i := skipSpace(v, 1); v[i] != '}'; {
 		keyEnd := stringEnd(v, i)
 		key := v[i:keyEnd]
@@ -26,13 +35,13 @@ func (v jsonValue) field(name string) (jsonValue, error) {
 		end := valueEnd(v, i)
 		match := bytes.Equal(key[1:len(key)-1], []byte(name))
 		if !match && len(key) <= 6*len(name)+2 && bytes.IndexByte(key, '\\') >= 0 {
-			decoded, err := key.text(len(name))
+			decoded, err := key.Text(len(name))
 			match = err == nil && decoded == name
 		}
 		if match {
 			// last-wins 会把两个不同的计费 ID/数值悄悄折成一份可信记录。
 			if found != nil {
-				return nil, errEnvelope
+				return nil, errValue
 			}
 			found = v[i:end]
 		}
@@ -44,10 +53,10 @@ func (v jsonValue) field(name string) (jsonValue, error) {
 	return found, nil
 }
 
-func (v jsonValue) text(limit int) (string, error) {
+func (v Value) Text(limit int) (string, error) {
 	// 一个 JSON \uXXXX 最多六个源字节；先限源长度，避免解码后才发现超限。
 	if len(v) < 2 || v[0] != '"' || len(v) > 6*limit+2 || !utf8.Valid(v) {
-		return "", errEnvelope
+		return "", errValue
 	}
 	// encoding/json 会把孤立代理项替换成 U+FFFD；ID 不可在这种有损解码后去重。
 	for i := 1; i < len(v)-1; i++ {
@@ -61,27 +70,27 @@ func (v jsonValue) text(limit int) (string, error) {
 		n, _ := strconv.ParseUint(string(v[i+1:i+5]), 16, 16)
 		i += 4
 		if n >= 0xdc00 && n <= 0xdfff {
-			return "", errEnvelope
+			return "", errValue
 		}
 		if n >= 0xd800 && n <= 0xdbff {
 			if i+6 >= len(v) || v[i+1] != '\\' || v[i+2] != 'u' {
-				return "", errEnvelope
+				return "", errValue
 			}
 			low, _ := strconv.ParseUint(string(v[i+3:i+7]), 16, 16)
 			if low < 0xdc00 || low > 0xdfff {
-				return "", errEnvelope
+				return "", errValue
 			}
 			i += 6
 		}
 	}
 	var s string
 	if json.Unmarshal(v, &s) != nil || len(s) > limit {
-		return "", errEnvelope
+		return "", errValue
 	}
 	return s, nil
 }
 
-func (v jsonValue) count() (int64, bool) {
+func (v Value) Count() (int64, bool) {
 	if len(v) == 0 || len(v) > 19 {
 		return 0, false
 	}

@@ -4,12 +4,15 @@ package dashscoperealtime
 
 import (
 	"bytes"
-	"encoding/json"
+	"errors"
 	"math"
 	"strings"
 
 	"github.com/yobo2u/omugw/internal/canonical"
+	"github.com/yobo2u/omugw/internal/protocol/realtimejson"
 )
+
+var errEnvelope = errors.New("dashscope realtime: invalid observation envelope")
 
 // MaxIDBytes 防止长连接的去重键随上游输入无限膨胀。
 const MaxIDBytes = 512
@@ -27,24 +30,24 @@ type Event struct {
 // error 表示包络无法安全关联；未知业务事件与不可核验的用量只观测，不替客户端裁决。
 func Inspect(raw []byte) (Event, error) {
 	e := Event{Usage: canonical.UnavailableUsage()}
-	if !json.Valid(raw) {
-		return e, errEnvelope
-	}
-	root := jsonValue(bytes.TrimSpace(raw))
-	typ, err := root.field("type")
+	root, err := realtimejson.Parse(raw)
 	if err != nil {
 		return e, errEnvelope
 	}
-	e.Type, err = typ.text(128)
+	typ, err := root.Field("type")
+	if err != nil {
+		return e, errEnvelope
+	}
+	e.Type, err = typ.Text(128)
 	if err != nil || e.Type == "" {
 		return e, errEnvelope
 	}
-	var container jsonValue
+	var container realtimejson.Value
 	idField := "id"
 	switch e.Type {
 	case "session.created":
 		e.Source, e.Started = "session", true
-		container, err = root.field("session")
+		container, err = root.Field("session")
 	case "session.finished":
 		// 官方事件没有 session.id，账本必须关联先前唯一的 session.created。
 		e.Source, e.Terminal = "session", true
@@ -53,7 +56,7 @@ func Inspect(raw []byte) (Event, error) {
 	case "response.created", "response.done":
 		e.Source = "response"
 		e.Started, e.Terminal = e.Type == "response.created", e.Type == "response.done"
-		container, err = root.field("response")
+		container, err = root.Field("response")
 	case "input_audio_buffer.committed", "conversation.item.input_audio_transcription.completed", "conversation.item.input_audio_transcription.failed":
 		e.Source = "transcription"
 		e.Started = e.Type == "input_audio_buffer.committed"
@@ -76,27 +79,27 @@ func Inspect(raw []byte) (Event, error) {
 	if err != nil {
 		return e, errEnvelope
 	}
-	id, err := container.field(idField)
+	id, err := container.Field(idField)
 	if err != nil {
 		return e, errEnvelope
 	}
-	e.ID, err = id.text(MaxIDBytes)
+	e.ID, err = id.Text(MaxIDBytes)
 	if err != nil || e.ID == "" {
 		return e, errEnvelope
 	}
 	if e.Source == "response" {
-		status, err := container.field("status")
+		status, err := container.Field("status")
 		if err != nil {
 			return e, errEnvelope
 		}
 		if status != nil {
-			e.Status, err = status.text(128)
+			e.Status, err = status.Text(128)
 			if err != nil {
 				return e, errEnvelope
 			}
 		}
 		if e.Terminal {
-			usage, err := container.field("usage")
+			usage, err := container.Field("usage")
 			if err != nil {
 				e.Diagnostic = "usage_invalid"
 			} else {
@@ -107,15 +110,15 @@ func Inspect(raw []byte) (Event, error) {
 	return e, nil
 }
 
-func unverifiedUsage(v jsonValue) string {
-	u, err := v.field("usage")
+func unverifiedUsage(v realtimejson.Value) string {
+	u, err := v.Field("usage")
 	if err == nil && (u == nil || bytes.Equal(u, []byte("null"))) {
 		return "usage_missing"
 	}
 	return "usage_unverified"
 }
 
-func inspectUsage(v jsonValue) (canonical.Usage, *int64, string) {
+func inspectUsage(v realtimejson.Value) (canonical.Usage, *int64, string) {
 	unavailable := canonical.UnavailableUsage()
 	if v == nil || bytes.Equal(v, []byte("null")) {
 		return unavailable, nil, "usage_missing"
@@ -125,10 +128,10 @@ func inspectUsage(v jsonValue) (canonical.Usage, *int64, string) {
 	}
 	// 两组独立核验：一组坏值不能抹掉另一组已被上游明确报告的计量。
 	var characters *int64
-	raw, err := v.field("characters")
+	raw, err := v.Field("characters")
 	invalidCharacters := err != nil
 	if raw != nil {
-		n, ok := raw.count()
+		n, ok := raw.Count()
 		invalidCharacters = !ok
 		if ok {
 			characters = &n
@@ -144,12 +147,12 @@ func inspectUsage(v jsonValue) (canonical.Usage, *int64, string) {
 	return u, characters, diagnostic
 }
 
-func inspectTokens(v jsonValue) (canonical.Usage, string) {
+func inspectTokens(v realtimejson.Value) (canonical.Usage, string) {
 	unavailable := canonical.UnavailableUsage()
-	var values [5]jsonValue
+	var values [5]realtimejson.Value
 	for i, name := range [...]string{"input_tokens", "output_tokens", "total_tokens", "input_tokens_details", "output_tokens_details"} {
 		var err error
-		values[i], err = v.field(name)
+		values[i], err = v.Field(name)
 		if err != nil {
 			return unavailable, "usage_invalid"
 		}
@@ -157,13 +160,13 @@ func inspectTokens(v jsonValue) (canonical.Usage, string) {
 	if values[0] == nil && values[1] == nil && values[2] == nil && values[3] == nil && values[4] == nil {
 		return unavailable, "usage_unverified"
 	}
-	input, okIn := values[0].count()
-	output, okOut := values[1].count()
+	input, okIn := values[0].Count()
+	output, okOut := values[1].Count()
 	if !okIn || !okOut || input > math.MaxInt64-output {
 		return unavailable, "usage_invalid"
 	}
 	if values[2] != nil {
-		total, ok := values[2].count()
+		total, ok := values[2].Count()
 		if !ok || total != input+output {
 			return unavailable, "usage_invalid"
 		}
@@ -176,14 +179,14 @@ func inspectTokens(v jsonValue) (canonical.Usage, string) {
 	return canonical.Usage{Fidelity: canonical.FidelityAuthoritative, InputTokens: input, OutputTokens: output, AudioInputTokens: audioIn, AudioOutputTokens: audioOut}, ""
 }
 
-func audioTokens(v jsonValue, total int64) (int64, bool) {
+func audioTokens(v realtimejson.Value, total int64) (int64, bool) {
 	if v == nil {
 		return 0, true
 	}
 	var audio, text int64
 	present := false
 	for _, name := range [...]string{"audio_tokens", "text_tokens"} {
-		raw, err := v.field(name)
+		raw, err := v.Field(name)
 		if err != nil {
 			return 0, false
 		}
@@ -191,7 +194,7 @@ func audioTokens(v jsonValue, total int64) (int64, bool) {
 			continue
 		}
 		present = true
-		n, ok := raw.count()
+		n, ok := raw.Count()
 		if !ok || n > total {
 			return 0, false
 		}
@@ -205,19 +208,19 @@ func audioTokens(v jsonValue, total int64) (int64, bool) {
 	return audio, present && audio == total-text
 }
 
-func inspectFailure(root jsonValue) *canonical.Error {
+func inspectFailure(root realtimejson.Value) *canonical.Error {
 	// 官方示例只确认这两个值；不复用 HTTP/message 关键字分类以免误冷却凭据。
 	failure := canonical.Newf(canonical.ClassInternal, "unverified Realtime upstream error")
-	v, err := root.field("error")
+	v, err := root.Field("error")
 	if err != nil {
 		return failure
 	}
 	for _, name := range [...]string{"code", "type"} {
-		raw, err := v.field(name)
+		raw, err := v.Field(name)
 		if err != nil {
 			return failure
 		}
-		s, err := raw.text(128)
+		s, err := raw.Text(128)
 		if err == nil && (name == "code" && s == "invalid_value" || name == "type" && s == "invalid_request_error") {
 			failure = canonical.Newf(canonical.ClassBadRequest, "Realtime upstream rejected request")
 			failure.UpstreamCode = s

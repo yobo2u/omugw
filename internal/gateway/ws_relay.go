@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/yobo2u/omugw/internal/canonical"
-	"github.com/yobo2u/omugw/internal/protocol/dashscoperealtime"
 	"github.com/yobo2u/omugw/internal/transport/ws"
 )
 
@@ -18,8 +17,19 @@ var (
 )
 
 type wsRelayResult struct {
-	err      error
-	upstream bool
+	err             error
+	upstream        bool
+	upstreamFailure *canonical.Error
+}
+
+// 协议分类在所有权交接前完成；仲裁器只保留安全结果，不在 Release 后回看 reason。
+func wsUpstreamResult(err error, classifyClose func(uint16, string) *canonical.Error) wsRelayResult {
+	r := wsRelayResult{err: err, upstream: true}
+	var closed *ws.CloseError
+	if errors.As(err, &closed) {
+		r.upstreamFailure = classifyClose(closed.Code, closed.Reason)
+	}
+	return r
 }
 
 // 原因选择与实际关闭必须属于同一个仲裁器。仅共享返回错误而各自 Close，
@@ -64,7 +74,7 @@ func (t *wsTermination) close() error {
 }
 
 // relayWS 接管 initial；唯一上游 reader 先观测后转发，调用者只在返回后结算 Lease。
-func relayWS(ctx context.Context, downstream, upstream *ws.Conn, initial *ws.Message, usage *wsUsage, idle time.Duration) error {
+func relayWS(ctx context.Context, downstream, upstream *ws.Conn, initial *ws.Message, observer wsEventObserver, classifyClose func(uint16, string) *canonical.Error, idle time.Duration) error {
 	// 请求/registry 的取消先交给协调者发 close，不让 ReadOwnedMessage 的取消
 	// 回调越过礼貌关闭。读 ctx 的取消权只在下方 close 完成之后使用。
 	readCtx, cancelRead := context.WithCancel(context.WithoutCancel(ctx))
@@ -79,7 +89,11 @@ func relayWS(ctx context.Context, downstream, upstream *ws.Conn, initial *ws.Mes
 		termination = notice.termination
 	}
 	report := func(err error, isUpstream bool) {
-		termination.report(wsRelayResult{err, isUpstream})
+		r := wsRelayResult{err: err}
+		if isUpstream {
+			r = wsUpstreamResult(err, classifyClose)
+		}
+		termination.report(r)
 	}
 	var workers sync.WaitGroup
 	forward := func(src, dst *ws.Conn, fromUpstream bool, first *ws.Message) {
@@ -94,14 +108,9 @@ func relayWS(ctx context.Context, downstream, upstream *ws.Conn, initial *ws.Mes
 				report(err, fromUpstream)
 				return
 			}
-			if fromUpstream && m.Opcode == ws.OpText {
-				e, inspectErr := dashscoperealtime.Inspect(m.Payload)
-				if inspectErr != nil {
-					err = errWSRelayPolicy
-				} else if usage != nil {
-					err = usage.Observe(e)
-				}
-				// Event.Failure 只是观测；error/failed/cancelled 仍原字节流过。
+			if fromUpstream && m.Opcode == ws.OpText && observer != nil {
+				err = observer.Observe(m.Payload)
+				// 上游 error/failed/cancelled 只是观测；合法失败事件仍原字节流过。
 				if err != nil {
 					m.Release()
 					report(err, true)
@@ -168,8 +177,8 @@ func relayWS(ctx context.Context, downstream, upstream *ws.Conn, initial *ws.Mes
 	}
 	cancelRead()
 	workers.Wait()
-	if usage != nil {
-		usage.Finish()
+	if observer != nil {
+		observer.Finish()
 	}
 	return result
 }
@@ -186,10 +195,8 @@ func classifyWSRelay(r wsRelayResult) (uint16, string, error) {
 	var closed *ws.CloseError
 	if errors.As(r.err, &closed) {
 		var result error
-		if r.upstream {
-			if failure := dashscoperealtime.ClassifyClose(closed.Code, closed.Reason); failure != nil {
-				result = failure
-			}
+		if r.upstreamFailure != nil {
+			result = r.upstreamFailure
 		}
 		// 分片中合法关闭不违反 RFC，仍转发原 code/reason；但丢弃的半条消息
 		// 不能让 metrics/Lease 记成功。已核验的上游失败分类保留，不从 reason 猜测。

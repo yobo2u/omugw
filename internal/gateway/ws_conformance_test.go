@@ -149,7 +149,7 @@ func TestWSConformanceReplay(t *testing.T) {
 			d := wsHandlerDeps(t, us.URL)
 			reg := prometheus.NewRegistry()
 			d.Metrics = obs.NewMetrics(reg)
-			b, err := buildWithWS(cfg, wsHandlerMatrix(t, true), d.Metrics, d.Log, true)
+			b, err := buildWithWS(cfg, wsHandlerMatrix(t, true), d.Metrics, d.Log, degrade.EndpointDashScopeRealtime)
 			if err != nil {
 				t.Fatal(err)
 			}

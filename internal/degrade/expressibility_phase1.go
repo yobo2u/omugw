@@ -106,6 +106,8 @@ func init() {
 	})
 
 	// —— OpenAI Realtime ——
+	// GA 的图像 item、逐图 detail 与显式 reasoning 控制是协议表达性，
+	// 不等于所有模型都支持，也不把 input_image 当作 DashScope 的音画 buffer。
 	register(&Expressibility{
 		Protocol: ProtoOpenAIRealtime,
 		Capabilities: []canonical.Capability{
@@ -113,6 +115,9 @@ func init() {
 			canonical.CapStreaming,
 			canonical.CapToolCalling,
 			canonical.CapParallelToolCalls,
+			canonical.CapReasoning,
+			canonical.CapVisionInput,
+			canonical.CapImageDetail,
 			canonical.CapAudioInput,
 			canonical.CapAudioOutput,
 			canonical.CapSpeechSynthesis,
@@ -124,9 +129,6 @@ func init() {
 		},
 		Elsewhere: map[canonical.Capability]Protocol{
 			canonical.CapStructuredOutput:    ProtoOpenAIResponses,
-			canonical.CapReasoning:           ProtoOpenAIResponses,
-			canonical.CapVisionInput:         ProtoOpenAIResponses,
-			canonical.CapImageDetail:         ProtoOpenAIResponses,
 			canonical.CapFileInput:           ProtoOpenAIResponses,
 			canonical.CapImageGeneration:     ProtoOpenAIResponses,
 			canonical.CapWebSearch:           ProtoOpenAIResponses,
@@ -191,9 +193,9 @@ func init() {
 
 	// —— DashScope Realtime（B 类，/api-ws/v1/realtime）——
 	//
-	// 与 OpenAI Realtime 事件模型同构，但多出两样 OpenAI 没有的东西：
-	// input_image_buffer 的图像输入，以及 Qwen-TTS 的 server_commit / commit
-	// 提交模式。这两项是 DashScope 侧的净增量。
+	// 同名事件不保证同契约。input_image_buffer 是专用 append 入口，
+	// 须先追加音频并随音频共同提交，不是独立图像 commit；OpenAI 的图像 item
+	// 不能据此计入 buffer 能力。Qwen-TTS 的 server_commit / commit 另计。
 	register(&Expressibility{
 		Protocol: ProtoDashScopeRealtime,
 		Capabilities: []canonical.Capability{
