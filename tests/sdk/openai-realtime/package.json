@@ -1,0 +1,13 @@
+{
+  "name": "omugw-openai-realtime-sdk-test",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "dependencies": {
+    "openai": "7.27.0",
+    "ws": "8.21.0"
+  }
+}

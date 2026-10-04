@@ -24,6 +24,10 @@ test: ## 单元测试 + fixture 矩阵（离线，无需 API Key）
 test-race: ## 带竞态检测的测试
 	$(GO) test -race ./...
 
+.PHONY: test-sdk
+test-sdk: ## 官方 Node SDK 本地 WSS 验收（先在 tests/sdk/openai-realtime 安装锁定依赖）
+	$(GO) test -tags=sdk ./internal/gateway -run '^TestOpenAIRealtimeNodeSDK' -count=1
+
 .PHONY: cover
 cover: ## 生成覆盖率报告
 	$(GO) test -coverprofile=coverage.out ./...
