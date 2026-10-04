@@ -1,0 +1,80 @@
+# S3 Inference 音频子阶段：条件验收与证据缺口
+
+日期：2026-10-04。**离线实现阶段；真实Inference调用0次，最终控制器验收待验。**
+范围仅 `audio/asr/recognition` 与 `audio/tts/SpeechSynthesizer`。
+依据：[批准设计](../superpowers/specs/2026-10-04-dashscope-inference-s3-audio-design.md)、
+[契约研究](2026-10-04-dashscope-inference-s3-contract.md)、[独立录制指南](2026-10-04-dashscope-inference-s3-recording.md)。
+
+## 证据分层
+
+| 维度 | 当前证据 | 仍缺什么 |
+|---|---|---|
+| 文档事实 | 握手无model；run→started；ASR duplex、TTS duplex、Sambert out；原单位及部分累计口径 | 文档不证明该key/地域/型号真实可用 |
+| 合成正式链路 | Task6已报告真实本地TCP下正式Build/Provider/Handler/Policy/Relay链路通过；含无ready预读、鉴权替换、双向字节、门闩、失败/关闭、共享预算、一次结算 | 独立复核后的全分支review/check/race仍待控制器执行 |
+| 独立录制器 | Task7本地脚本独立字面期望；六场景、单次持久Dial、预算、重复键/partial usage、SHA/原文对账、EOF/peer/local/silent分离 | 不含真实上游材料；smoke tag仅选择offline测试 |
+| live支持 | **未测，调用0** | 显式北京workspace端点、非个人固定样本、完整计费依据/manifest及控制器单槽实验 |
+| 原生保全 | 合成五份testkit fixture在正式链路四点严格回放；不是网关生成自己的预期 | 独立真实录制、内容审核与真实轨迹回放；未知字段保全不等于语义验证 |
+| 计量 | 合成累计delta、终态/中断保留、计量单位隔离；独立录制器只识别wire快照、不推算费用 | 真实seconds/characters/tokens累计轨迹、服务端计费取整及最终费用；未证实型号仍unavailable |
+| 投放 | 默认Build三扇WS门仍404，默认Inference矩阵501；无Redeem | 整门六能力证据、控制器最终关口与后续明确投放决策 |
+
+Task6的五份机制样例在 `testdata/testkit/ws/inference-audio/`，来源为 `synthetic-negative`。
+Task7没有增加 `testdata/fixtures/dashscope-inference/`，普通测试不要求这个待录目录存在。
+真实来源标签、摘要和四点candidate也只构成自洽账本，须人工审核；101、价格表及合成成功不补真实支持。
+
+## 六项能力逐项缺口
+
+| 能力 | 文档/合成机制 | 真实支持 | 原生保全与计量缺口 |
+|---|---|---|---|
+| text_generation | multimodal-dialog有独立生成契约，本子阶段明确拒绝该型号与非audio三元组 | 未测，未实现该子契约 | 不能拿ASR转录、翻译或TTS回显顶账；独立状态机及fixture未完成 |
+| streaming | duplex与out脚本/正式接线合成通过 | 未测 | 真实时序、尾消息与有界关闭尚缺 |
+| audio_input | started后上行PCM、消息预算、字节保全合成通过 | 未测 | 固定公开样本与真实识别结果未核；传输字节不认证识别内容 |
+| audio_output | TTS尾binary与finish后继续接收合成通过 | 未测 | 真实音频、格式与内容待核；非空binary不证明合成质量 |
+| speech_synthesis | TTS duplex/out、字符及异常音色脚本合成通过 | 未测 | 精确型号/音色、真实characters累计及failed→close/EOF/silent |
+| speech_recognition | ASR seconds/token快照、同连接两task、先完成后中断合成通过 | 未测 | 真实转录、累计用量和第二task中断证据；token费用硬上界仍缺 |
+
+不缩小ExpressibleSet，不兑现任何S3生产能力；原S1/S2固定终态账与实验ledger保持独立。
+
+## Task7的有界与证据验收
+
+录制器仅依赖标准库、transport及testkit，不import被测gateway/Inference Inspector/Provider。
+普通构建没有live拨号入口，实际云端Dial封装仅在smoke tag文件；专用开关还必须精确为1。
+当前真实费用校验保持拒绝，合成fixture的费用整数不能解锁它。
+
+离线断言覆盖：固定六槽/10task/270秒/100分/45秒，固定音频/文本上界、独占目录与拒链接、
+并发reserve唯一、失败占槽不退款、输出删除后不能二次Dial、样本摘要变更零Dial、
+六场景因果、真实close与本地write分别记录、EOF与静默不补造peer close、
+终态后抢先close竞争、关闭期间安全拒绝不能裁剪成candidate、原始与候选分开预算、raw/candidate逐行对账。
+
+Task7最后一次代码修改后的实际输出（2026-10-04）：
+
+```text
+$ go test ./tests/smoke -run '^TestInferenceRecorderOffline' -count=1
+ok github.com/yobo2u/omugw/tests/smoke 6.545s
+$ go test -race ./tests/smoke -run '^TestInferenceRecorderOffline' -count=1
+ok github.com/yobo2u/omugw/tests/smoke 8.889s
+$ go test -tags=smoke ./tests/smoke -run '^TestInferenceRecorderOffline' -count=1
+ok github.com/yobo2u/omugw/tests/smoke 6.963s
+$ go vet ./tests/smoke
+（无输出，exit 0）
+$ git diff --check
+（无输出，exit 0）
+```
+
+这些检查仅代表Task7，**不代替下面的全分支与SDK关口**。录制器没有使用真实key、公网请求或既有实验ledger。
+
+## 控制器最终关口（均待验）
+
+- 跨Task接口/所有权扫描与全分支独立review。
+- `make check`、`make test-race`，包括矩阵生成文档同步和旧HTTP/SSE、S1/S2回归。
+- `make test-sdk`、`go test -race -tags=sdk ./internal/gateway -run '^TestOpenAIRealtimeNodeSDK' -count=1`；SDK依赖须按锁文件准备。
+- 控制器重跑禁live录制器定向检查；落实费用/端点/样本前置后审核单槽真实材料。当前缺口仍阻止live。
+- PR条件验收与merge判断。不得把本文件或Task6机制结果写成最终review、SDK或PR已经通过。
+
+## 未完成项与暂停
+
+multimodal-dialog、听悟、text_generation独立承载、其余型号精确计量、Paraformer/Fun-ASR累计语义、
+Qwen3.1 TTS中间/终态重叠口径、真实全部六槽材料及生产整门投放均未完成。
+网关120秒draining政策可能截断大文本积压，短录制场景不覆盖此生产边界。
+
+完成**本音频子阶段实现、独立复核与控制器验收后暂停**。整个S3、A包和三门生产投放仍未完成，
+不自动进入下一子契约，也不因条件验收修改Redeem或生产路由。
