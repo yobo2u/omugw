@@ -159,7 +159,8 @@ PR #19 已合并为 `4268fe3`。main CI `37207997625` 的 Ubuntu `make test-race
 | 同两包 `-race -count=1` | 通过，14.536s / 6.915s |
 | `go vet ./internal/gateway ./internal/transport/ws` | 无输出，exit 0 |
 
-本次修复PR、远端Ubuntu CI和控制器独立复核仍待验；此表不宣称合并后全库/SDK或远端CI通过。
+本次超限补丁已独立复核通过：保留最终CloseWrite时旧消息读仍RED，移除ping后GREEN，
+EOF负控拒绝通过，正式Built两次上游鉴权替换亦核实。修复PR及远端Ubuntu CI待验。
 
 ## `1a554eb` 收尾检查：drain 的本地错误后 close EOF
 
@@ -192,7 +193,14 @@ stalled 为“剩余79.94ms即强拆”。恢复修复后的新结果（均 `-co
 
 完整命令、RED/GREEN输出、后续check结果及提交记录见交接目录的
 `postmerge-drain-report.md` 与 `postmerge-drain-*.log`。改变共享生产关闭路径的代价是
-争锁时可等待至既有B而非立即退出；控制器须独立重做全库/SDK回归，远端Ubuntu仍待验。
+争锁时可等待至既有B而非立即退出。另一个明确差异是finish直达物理连接释放，
+不再主动尝试TLS close_notify；不据此放宽WebSocket close的code/reason或期限断言。
+
+独立复核判定Spec/Quality PASS，无阻断/重要问题；上述TLS差异已补记。
+控制器在最终代码`f1831f5`运行并核对：`make check`通过（包测试为有效缓存）、
+`make test-race`通过（gateway17.586s）、官方SDK真实本地WSS普通3.949s/race5.025s通过。
+日志`postmerge-f1831f5-{check,race,sdk,sdk-race}.log`，未使用真实上游凭据。
+补丁PR及远端Ubuntu CI仍待验，最新远端结论以Issue #7阶段评论为准。
 
 ## 未完成项与暂停
 
@@ -200,7 +208,7 @@ multimodal-dialog、听悟、text_generation独立承载、其余型号精确计
 Qwen3.1 TTS中间/终态重叠口径、真实全部六槽材料及生产整门投放均未完成。
 网关120秒draining政策可能截断大文本积压，短录制场景不覆盖此生产边界。
 
-**本音频子阶段已完成合并前实现、独立复核与控制器本地验收；PR #19 合并后仍须完成上述同阶段故障复核及修复PR/CI收尾，再暂停。**
+**本音频子阶段及合并后两项故障已完成实现、独立复核与控制器本地验收；完成修复PR/CI收尾后暂停。**
 整个S3、A包和三门生产投放仍未完成，不自动进入下一子契约，也不因条件验收修改Redeem或生产路由。
 
 ## 执行裁决（按作出顺序）
