@@ -10,6 +10,23 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-02-same-contract-websocket-passthrough-design.md`；传输交接见 `2026-10-03-websocket-s1-production-transport.md`。
 
+## 执行验收状态（2026-10-04）
+
+以下汇总是当前状态；后面的分步清单保留初始实施要求。实录揭示的契约修订以
+[验收记录](../../research/2026-10-04-dashscope-realtime-s1-acceptance.md)及
+[证据账本](../../research/2026-10-04-dashscope-realtime-evidence.md)为准。
+
+- [x] Task1–5：配置、Provider、只读用量、registry/relay、handler/Build/main、录制器均完成且经独立复核。
+- [x] Task6.1：固定北京批次8/8次已执行，保留真实失败，取得三份完整候选。
+- [x] Task6.2：原则2.2/2.4/2.7独立修订与独立复核通过，本地提交，尚未发布。
+- [x] Task6.3：三份原字节归档及正式handler离线回放通过；缺少整门证据，按条件保持PLANNED。
+- [x] Task6.4：`make check`及全库`make test-race`通过；未启门，不执行真实gateway冒烟。
+- [ ] Task6.5：本批最终跨层复核与发布收尾。
+
+实施修订：双单位usage可同时合法，分别校验和计量；自动提交在finish前已有同实体音频，
+完成终态允许在finish后到达；上游文本item ID由服务端生成。上述修订均以真实录制为依据，
+并经独立复核，不修改网关应用消息字节或降低能力兑现门槛。
+
 ## Global Constraints
 
 - 注释、文档用中文；同协议同契约完整应用消息的 opcode、字节、单向顺序原样保全，不经 IR/Extensions 重建。
@@ -61,6 +78,8 @@
 
 ### Task 2: 只读事件窥探与可信用量
 
+**验收：全部步骤已完成**（`f8d8f08`，独立复核Spec/Quality通过；含token/字符分单位、4096去重与大字段不复制验收）。
+
 **Files:** Create `internal/protocol/dashscoperealtime/{event.go,event_test.go}`（扫描辅助可另建 `json.go`）；Create `internal/gateway/{ws_usage.go,ws_usage_test.go}`；Modify `internal/obs/{metrics.go,metrics_test.go}`；Create `docs/research/2026-10-04-dashscope-realtime-usage-contract.md`。
 
 **Interfaces:**
@@ -75,6 +94,8 @@
 - [ ] **Step 5:** 提交 `feat: observe bounded Realtime usage without rewriting messages`。
 
 ### Task 3: 有界双向relay与会话关停
+
+**验收：全部步骤已完成**（`d212c08` + `ecc5cd5`；独立复核发现的关闭原因竞争已修复并经同一回归旧版失败/新版通过核验）。
 
 **Files:** Create `internal/gateway/{ws_registry.go,ws_registry_test.go,ws_relay.go,ws_relay_test.go}`。
 
@@ -91,6 +112,8 @@
 
 ### Task 4: 握手协调、凭据结算与Build接线
 
+**验收：全部步骤已完成**（`d8235d3`，独立复核Spec/Quality通过；含Accept中断窗口、TLS关闭、lease generation和prelude回放）。
+
 **Files:** Create `internal/gateway/{ws_handler.go,ws_handler_test.go,build_ws.go,ws_conformance_test.go}`；Modify `internal/gateway/{auth.go,auth_test.go,build.go,build_provider_test.go}`、`cmd/omugw/main.go`。
 
 **Interfaces:**
@@ -106,6 +129,8 @@
 - [ ] **Step 6:** 提交 `feat: wire DashScope Realtime handshake and lifecycle`。
 
 ### Task 5: 独立真实录制工具与候选审核
+
+**验收：工具与离线步骤已完成**（`959522a` + `ea4e97e`；三项证据边界修复已独立复核，真实执行进入Task6）。
 
 **Files:** Create `tests/smoke/record_dsrealtime_live_test.go`、`tests/smoke/dsrealtime_recording_test.go`（纯离线辅助必要时移入独立文件）；Create `docs/research/2026-10-04-dashscope-realtime-evidence.md`。
 
