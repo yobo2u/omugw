@@ -168,6 +168,17 @@ func DefaultConvStore() ConvStore {
 // 是把一个查半天的运行时故障换成一行启动期配置错误。
 func validateBaseURL(p ProviderSpec) error {
 	u, err := url.Parse(p.BaseURL)
+	// WS 的握手地址不得夹带第二条鉴权或 query 通道；错误不回显可能含密钥的 URL。
+	// HTTP 保留既有校验，避免新增协议改变合法部署的地址契约。
+	switch p.Kind {
+	case "openai.realtime", "dashscope.ws.realtime", "dashscope.ws.inference":
+		if err != nil || u.Opaque != "" || u.Hostname() == "" || u.User != nil ||
+			u.RawQuery != "" || u.ForceQuery || strings.Contains(p.BaseURL, "#") ||
+			(u.Scheme != "http" && u.Scheme != "https" && u.Scheme != "ws" && u.Scheme != "wss") {
+			return fmt.Errorf("config: provider %q 的 WebSocket base_url 必须是无 userinfo/query/fragment/opaque 的 http/https/ws/wss 地址", p.Endpoint)
+		}
+		return nil
+	}
 	if err != nil {
 		return fmt.Errorf("config: provider %q 的 base_url %q 不是合法 URL: %w",
 			p.Endpoint, p.BaseURL, err)

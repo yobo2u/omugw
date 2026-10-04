@@ -12,10 +12,11 @@ import (
 
 // Config 是网关的全部配置。
 type Config struct {
-	Server   Server   `yaml:"server"`
-	Timeouts Timeouts `yaml:"timeouts"`
-	Log      Log      `yaml:"log"`
-	Limits   Limits   `yaml:"limits"`
+	Server    Server    `yaml:"server"`
+	Timeouts  Timeouts  `yaml:"timeouts"`
+	Log       Log       `yaml:"log"`
+	Limits    Limits    `yaml:"limits"`
+	WebSocket WebSocket `yaml:"websocket"`
 
 	Auth        Auth                        `yaml:"auth"`
 	Credentials map[string][]CredentialSpec `yaml:"credentials"`
@@ -92,6 +93,7 @@ func Default() Config {
 		},
 		ConvStore: DefaultConvStore(),
 		Discovery: DefaultDiscovery(),
+		WebSocket: DefaultWebSocket(),
 	}
 }
 
@@ -172,6 +174,9 @@ func (c Config) Validate() error {
 		return fmt.Errorf("config: server.addr 不得为空")
 	}
 	if err := c.Timeouts.Validate(); err != nil {
+		return err
+	}
+	if err := c.WebSocket.Validate(); err != nil {
 		return err
 	}
 	switch c.Log.Level {
