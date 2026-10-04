@@ -43,6 +43,8 @@
 
 ### Task 1: WS配置与DashScope出站适配器
 
+**验收：已完成**（`a6ecdbb`，独立复核Spec/Quality通过；步骤与RED/GREEN证据见本计划SDD报告）。
+
 **Files:** Create `internal/config/websocket.go`, `internal/config/websocket_test.go`, `internal/provider/stream.go`, `internal/provider/dashscoperealtime/{provider.go,provider_test.go}`；Modify `internal/config/{config.go,gateway.go}`, `config.example.yaml`。
 
 **Interfaces:**
@@ -51,24 +53,24 @@
 - `dashscoperealtime.New(timeouts config.Timeouts, limits config.WebSocket, budget *ws.BufferBudget) *Provider`。
 - `dashscoperealtime.ValidateHeaders(http.Header) error` 供handler在Dial前调用；Provider重复防御。
 
-- [ ] **Step 1:** 添加表测 `TestWebSocketConfig`（默认、零负值、上下限、两倍关系）；`TestRealtimeProviderHandshake` 用TCP服务端断言前缀/完整路径不重复、model转义、替换Authorization、固定UA、仅两个DS白名单头、Origin/压缩/secret子协议未转发；`TestRealtimeProviderRejectsUnsafeHeadersAndURL` 覆盖userinfo/query/fragment/opaque、重复/控制字符头；`TestRealtimeProviderFailure` 覆盖401/403/429/503、Retry-After、畸形101、重定向不跟随、无正文/URL/secret泄漏。
-- [ ] **Step 2:** `go test ./internal/config ./internal/provider/dashscoperealtime -count=1`，记录缺类型/行为失败。
-- [ ] **Step 3:** 实现上述接口；配置仅WS kind允许ws/wss，HTTP既有合法部署保持兼容。WS地址支持http→ws/https→wss；固定 `/api-ws/v1/realtime`，query仅target真实model；固定UA `omugw`。无Canonical要求；拒绝错误kind/inbound。Dial设置共享预算/ConnectTimeout/Idle/WriteTimeout及64 KiB上限。已知HTTP状态用dashscopewire分类但将本地message/上游code过滤为固定安全值，不传播原body；未知握手失败非重试，明确超时可归upstream unavailable。
-- [ ] **Step 4:** 定向普通测试与该包race通过，`git diff --check`。
-- [ ] **Step 5:** 提交 `feat: add bounded DashScope Realtime stream provider`，报告RED/GREEN证据。
+- [x] **Step 1:** 添加表测 `TestWebSocketConfig`（默认、零负值、上下限、两倍关系）；`TestRealtimeProviderHandshake` 用TCP服务端断言前缀/完整路径不重复、model转义、替换Authorization、固定UA、仅两个DS白名单头、Origin/压缩/secret子协议未转发；`TestRealtimeProviderRejectsUnsafeHeadersAndURL` 覆盖userinfo/query/fragment/opaque、重复/控制字符头；`TestRealtimeProviderFailure` 覆盖401/403/429/503、Retry-After、畸形101、重定向不跟随、无正文/URL/secret泄漏。
+- [x] **Step 2:** `go test ./internal/config ./internal/provider/dashscoperealtime -count=1`，记录缺类型/行为失败。
+- [x] **Step 3:** 实现上述接口；配置仅WS kind允许ws/wss，HTTP既有合法部署保持兼容。WS地址支持http→ws/https→wss；固定 `/api-ws/v1/realtime`，query仅target真实model；固定UA `omugw`。无Canonical要求；拒绝错误kind/inbound。Dial设置共享预算/ConnectTimeout/Idle/WriteTimeout及64 KiB上限。已知HTTP状态用dashscopewire分类但将本地message/上游code过滤为固定安全值，不传播原body；未知握手失败非重试，明确超时可归upstream unavailable。
+- [x] **Step 4:** 定向普通测试与该包race通过，`git diff --check`。
+- [x] **Step 5:** 提交 `feat: add bounded DashScope Realtime stream provider`，报告RED/GREEN证据。
 
 ### Task 2: 只读事件窥探与可信用量
 
 **Files:** Create `internal/protocol/dashscoperealtime/{event.go,event_test.go}`（扫描辅助可另建 `json.go`）；Create `internal/gateway/{ws_usage.go,ws_usage_test.go}`；Modify `internal/obs/{metrics.go,metrics_test.go}`；Create `docs/research/2026-10-04-dashscope-realtime-usage-contract.md`。
 
 **Interfaces:**
-- `dashscoperealtime.Event{Type, ID, Source, Status string; Started, Terminal bool; Usage canonical.Usage; Diagnostic string; Failure *canonical.Error}`，`Inspect([]byte) (Event, error)`、`ClassifyClose(code uint16, reason string) *canonical.Error`。
+- `dashscoperealtime.Event{Type, ID, Source, Status string; Started, Terminal bool; Usage canonical.Usage; Characters *int64; Diagnostic string; Failure *canonical.Error}`，`Inspect([]byte) (Event, error)`、`ClassifyClose(code uint16, reason string) *canonical.Error`。
 - `newWSUsage(metrics *obs.Metrics, protocol, outbound string) *wsUsage`，`(*wsUsage).Observe(event dashscoperealtime.Event) error`，`(*wsUsage).Finish()`；单goroutine调用，Finish幂等。
-- `obs.Metrics.ObserveWSUsage(protocol, source string, u canonical.Usage)`、`ObserveWSDiagnostic(protocol, reason string)`；固定来源response/transcription/session与固定诊断值。
+- `obs.Metrics.ObserveWSUsage(protocol, source string, u canonical.Usage)`、`ObserveWSCharacters(protocol, source string, characters int64)`、`ObserveWSDiagnostic(protocol, reason string)`；固定来源response/transcription/session与固定诊断值。字符计量独立authoritative记录，不发布虚构的0 token记录。
 
 - [ ] **Step 1:** `TestInspectRealtimeEvent` 验证session.created、response.created/done（response.id/status/usage）、input_audio_buffer.committed与conversation.item.input_audio_transcription.completed/failed（item_id，独立来源），unknown事件、非法JSON、超长ID、负数/溢出/浮点/缺失/nullusage、合法0、cancelled带usage；`TestWSUsageLedger` 覆盖同来源同ID重复/矛盾、跨来源同ID、未结Finish、4096边界、不淘汰重新计数、权威总计不被断开清零；指标不存在动态ID/model标签。窥探大audio delta不能复制audio字符串。
 - [ ] **Step 2:** `go test ./internal/protocol/dashscoperealtime ./internal/gateway ./internal/obs -run 'Test(InspectRealtime|WSUsage|ObserveWS)' -count=1` 记录RED。
-- [ ] **Step 3:** 只读解析，不重编码；必要字段限长，忽略未知大字段避免整帧map/RawMessage复制；输入JSON保持原样。以阿里云server-events官方页为依据记录response.done的input/output与audio分项；未验证usage形状标unavailable、固定诊断，不能套用OpenAI。缺ID无法安全去重时明确策略错误。安全关闭分类只认已实测1011+`To many requests`限流组合，其他close不推断auth/quota。事件error仅观察已知code/type，不能日志输出message。同ID重复比较结构化Usage；未结最多4096与已结共享有界记录。error/业务未知事件照原样流过。
+- [ ] **Step 3:** 只读解析，不重编码；必要字段限长，忽略未知大字段避免整帧map/RawMessage复制；输入JSON保持原样。以阿里云server-events官方页为依据记录response.done的input/output与audio分项；Qwen3-TTS的`usage.characters`按官方qwen-tts-realtime-server-events单列字符，不转换为token，字符与token形状同时出现视歧义并诊断。字符0/负数/溢出/缺失和矛盾重复也要测试；token不适用保持Unavailable但只发authoritative字符记录。未验证usage形状标unavailable、固定诊断，不能套用OpenAI。缺ID无法安全去重时明确策略错误。安全关闭分类只认已实测1011+`To many requests`限流组合，其他close不推断auth/quota。事件error仅观察已知code/type，不能日志输出message。同ID重复比较结构化Usage与字符值；未结最多4096与已结共享有界记录。error/业务未知事件照原样流过。
 - [ ] **Step 4:** 定向普通与race通过；研究文档明确官方依据与真实证据尚待录制的边界。
 - [ ] **Step 5:** 提交 `feat: observe bounded Realtime usage without rewriting messages`。
 
@@ -100,7 +102,7 @@
 - [ ] **Step 2:** `go test ./internal/gateway -run 'TestWSHandler|TestWSBuild' -count=1` 记录RED。
 - [ ] **Step 3:** 先auth/RFC/头/query/Hijacker再占名额、路由/整门矩阵、依次有限候选与Lease、Dial/Attach、有界预读session.created、Accept/Attach/relay。共享握手ctx来自会话context，Accept明确deadline并在进入前置committed。尝试失败关闭/释放，已确认Retryable才换key；同协议另target仍必须逐个矩阵与真模型匹配。单handler协调Lease.Succeed/Fail，不将客户端取消/本地容量/协议错误误分类为可重试凭据故障；未知上游断流结束Lease但不凭close猜auth。WS metrics请求/首字节/耗时用安全固定分类；本地HTTP错误使用DashScope信封及已过滤错误头。
 - [ ] **Step 4:** Build创建全进程一个budget/registry，HTTP Provider表与StreamProvider表并行，门对账仍按handler身份；测试启门也必须通过整门检查和reconcileDoors，不能直接绕过。main关停先封WS（异步join与HTTP Shutdown并行使用同一退出预算），设置请求MaxHeaderBytes=64KiB，清理pending与Hijacked连接。正式门此阶段不注册，配置WS provider可以装配但默认矩阵不宣称可用。
-- [ ] **Step 5:** 合成因果回放用testkit WSReplayUpstream/ReplayWS端到端覆盖未知字段/二进制/错误；留在gateway测试目录。`go test ./internal/gateway ./cmd/omugw -count=1`、相关race、`make check`。
+- [ ] **Step 5:** 合成因果回放用testkit WSReplayUpstream/ReplayWS端到端覆盖未知字段/二进制/错误；留在gateway测试目录。启动须处理就绪预读：客户端Dial尚未返回时，上游先发送fixture中唯一首条session.created；客户端升级后先逐字节核验该初始事件，再对余下轨迹运行ReplayWS。测试专用tail视图移除已独立验证的两个prelude节点及关联边/coverage，重算其摘要；原fixture先整体Validate且不修改，prelude不绑定后续动态规则（S1回放使用录下的字面ID）。不发两次session.created，也不等待双端齐备才驱动首事件。`go test ./internal/gateway ./cmd/omugw -count=1`、相关race、`make check`。
 - [ ] **Step 6:** 提交 `feat: wire DashScope Realtime handshake and lifecycle`。
 
 ### Task 5: 独立真实录制工具与候选审核
