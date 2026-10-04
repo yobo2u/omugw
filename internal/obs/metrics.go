@@ -1,6 +1,8 @@
 package obs
 
 import (
+	"math"
+
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/yobo2u/omugw/internal/canonical"
@@ -8,19 +10,20 @@ import (
 
 // Metrics 是网关的核心指标集。
 type Metrics struct {
-	Requests       *prometheus.CounterVec
-	Duration       *prometheus.HistogramVec
-	FirstByte      *prometheus.HistogramVec
-	UpstreamError  *prometheus.CounterVec
-	Degradations   *prometheus.CounterVec
-	Emulations     *prometheus.CounterVec
-	NotImplemented *prometheus.CounterVec
-	Tokens         *prometheus.CounterVec
-	StreamAborted  *prometheus.CounterVec
-	WSUsageRecords *prometheus.CounterVec
-	WSTokens       *prometheus.CounterVec
-	WSCharacters   *prometheus.CounterVec
-	WSDiagnostics  *prometheus.CounterVec
+	Requests            *prometheus.CounterVec
+	Duration            *prometheus.HistogramVec
+	FirstByte           *prometheus.HistogramVec
+	UpstreamError       *prometheus.CounterVec
+	Degradations        *prometheus.CounterVec
+	Emulations          *prometheus.CounterVec
+	NotImplemented      *prometheus.CounterVec
+	Tokens              *prometheus.CounterVec
+	StreamAborted       *prometheus.CounterVec
+	WSUsageRecords      *prometheus.CounterVec
+	WSTokens            *prometheus.CounterVec
+	WSCharacters        *prometheus.CounterVec
+	WSAudioInputSeconds *prometheus.CounterVec
+	WSDiagnostics       *prometheus.CounterVec
 }
 
 // NewMetrics 注册全部指标。
@@ -101,11 +104,15 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 		}, []string{"protocol", "source", "unit", "fidelity"}),
 		WSTokens: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "omugw_ws_tokens_total",
-			Help: "WebSocket 已结用量的 token 分项；音频分项已包含在输入输出总数内。",
+			Help: "WebSocket 已结用量的 token 分项；模态与缓存分项已包含在输入输出总数内。",
 		}, []string{"protocol", "source", "fidelity", "kind"}),
 		WSCharacters: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "omugw_ws_characters_total",
 			Help: "WebSocket 上游权威字符计量，不能换算或叠加到 token。",
+		}, []string{"protocol", "source", "fidelity"}),
+		WSAudioInputSeconds: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "omugw_ws_audio_input_seconds_total",
+			Help: "WebSocket 上游权威输入音频秒数，不能换算或叠加到 token。",
 		}, []string{"protocol", "source", "fidelity"}),
 		WSDiagnostics: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "omugw_ws_diagnostics_total",
@@ -117,7 +124,7 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 		m.Requests, m.Duration, m.FirstByte,
 		m.UpstreamError, m.Degradations, m.Emulations, m.NotImplemented,
 		m.Tokens, m.StreamAborted,
-		m.WSUsageRecords, m.WSTokens, m.WSCharacters, m.WSDiagnostics,
+		m.WSUsageRecords, m.WSTokens, m.WSCharacters, m.WSAudioInputSeconds, m.WSDiagnostics,
 	)
 	return m
 }
@@ -191,7 +198,7 @@ func (m *Metrics) ObserveWSUsage(protocol, source string, u canonical.Usage) {
 		{"input", u.InputTokens}, {"output", u.OutputTokens},
 		{"audio_input", u.AudioInputTokens}, {"audio_output", u.AudioOutputTokens},
 	} {
-		if item.n > 0 {
+		if item.n > 0 || item.n == 0 && (item.kind == "input" || item.kind == "output") {
 			m.WSTokens.WithLabelValues(protocol, source, f, item.kind).Add(float64(item.n))
 		}
 	}
@@ -207,6 +214,49 @@ func (m *Metrics) ObserveWSCharacters(protocol, source string, characters int64)
 	m.WSCharacters.WithLabelValues(protocol, source, f).Add(float64(characters))
 }
 
+// ObserveWSSeconds 独立保留秒单位与显式零；不制造一份不可知的 token 账。
+func (m *Metrics) ObserveWSSeconds(protocol, source string, seconds float64) {
+	if !wsProtocol(protocol) || !wsSource(source) || seconds < 0 || math.IsNaN(seconds) || math.IsInf(seconds, 0) {
+		return
+	}
+	f := string(canonical.FidelityAuthoritative)
+	m.WSUsageRecords.WithLabelValues(protocol, source, "seconds", f).Inc()
+	m.WSAudioInputSeconds.WithLabelValues(protocol, source, f).Add(seconds)
+}
+
+// WSTokenCount 以值和 presence 区分零与缺失，也避免借用解析器的临时指针。
+type WSTokenCount struct {
+	Value   int64
+	Present bool
+}
+
+// WSTokenDetails 只允许固定模态，不能用上游任意键生成高基数 kind。
+type WSTokenDetails struct {
+	TextInput, AudioInput, ImageInput                                WSTokenCount
+	CachedInput, CachedTextInput, CachedAudioInput, CachedImageInput WSTokenCount
+	TextOutput, AudioOutput                                          WSTokenCount
+}
+
+// ObserveWSTokenDetails 发布已核验的权威子集；不增加记录数或与 input/output 再相加。
+func (m *Metrics) ObserveWSTokenDetails(protocol, source string, d WSTokenDetails) {
+	if !wsProtocol(protocol) || !wsSource(source) {
+		return
+	}
+	for _, item := range [...]struct {
+		kind  string
+		count WSTokenCount
+	}{
+		{"text_input", d.TextInput}, {"audio_input", d.AudioInput}, {"image_input", d.ImageInput},
+		{"cache_read", d.CachedInput}, {"cached_text_input", d.CachedTextInput},
+		{"cached_audio_input", d.CachedAudioInput}, {"cached_image_input", d.CachedImageInput},
+		{"text_output", d.TextOutput}, {"audio_output", d.AudioOutput},
+	} {
+		if item.count.Present && item.count.Value >= 0 {
+			m.WSTokens.WithLabelValues(protocol, source, string(canonical.FidelityAuthoritative), item.kind).Add(float64(item.count.Value))
+		}
+	}
+}
+
 // ObserveWSDiagnostic 的白名单避免把上游错误文本扩成无限标签集。
 func (m *Metrics) ObserveWSDiagnostic(protocol, reason string) {
 	if !wsProtocol(protocol) {
@@ -214,7 +264,7 @@ func (m *Metrics) ObserveWSDiagnostic(protocol, reason string) {
 	}
 	switch reason {
 	case "usage_missing", "usage_unverified", "usage_invalid", "usage_ambiguous",
-		"usage_conflict", "usage_unfinished", "ledger_limit", "invalid_event":
+		"usage_conflict", "usage_unfinished", "ledger_limit", "invalid_event", "transcription_config_unknown":
 	default:
 		reason = "unknown"
 	}

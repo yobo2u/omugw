@@ -253,7 +253,7 @@ func TestWSRelayPreservesMessagesAndUsage(t *testing.T) {
 	if err := x.joined(t); err != nil {
 		t.Fatal(err)
 	}
-	if len(x.usage.records) != 1 || !x.usage.records[wsUsageKey{"session", "s"}].terminal {
+	if len(x.usage.records) != 1 || !x.usage.records[wsUsageKey{source: "session", id: "s"}].terminal {
 		t.Fatal("初始会话未 Observe，或误观测下游伪造 usage")
 	}
 }
@@ -329,8 +329,8 @@ func TestWSRelayIncompleteClose(t *testing.T) {
 					} else if errors.Is(err, ws.ErrProtocol) || canonical.AsError(err).Retryable || strings.Contains(err.Error(), "private") {
 						t.Errorf("合法关闭应为安全非重试中断: %v", err)
 					}
-					complete := x.usage.records[wsUsageKey{"response", "complete"}]
-					pending := x.usage.records[wsUsageKey{"response", "pending"}]
+					complete := x.usage.records[wsUsageKey{source: "response", id: "complete"}]
+					pending := x.usage.records[wsUsageKey{source: "response", id: "pending"}]
 					if complete.usage.Fidelity != canonical.FidelityAuthoritative || complete.usage.InputTokens != 7 || complete.usage.OutputTokens != 3 {
 						t.Error("中断抹掉已结权威用量")
 					}
@@ -504,7 +504,7 @@ func TestWSRelayObserveBeforeFailedWrite(t *testing.T) {
 	if err == nil || strings.Contains(err.Error(), "private") {
 		t.Fatalf("本地写失败分类不安全: %v", err)
 	}
-	record := x.usage.records[wsUsageKey{"response", "r"}]
+	record := x.usage.records[wsUsageKey{source: "response", id: "r"}]
 	if record.usage.Fidelity != canonical.FidelityAuthoritative || record.usage.InputTokens != 7 || record.usage.OutputTokens != 3 {
 		t.Fatal("下游断开抹掉已收到的权威用量")
 	}
@@ -532,7 +532,7 @@ func TestWSRelayBlockedWriteCancelAndConcurrentClose(t *testing.T) {
 			if time.Since(start) > 1500*time.Millisecond {
 				t.Fatal("close 未打断阻塞写")
 			}
-			if _, ok := x.usage.records[wsUsageKey{"response", "queued"}]; ok {
+			if _, ok := x.usage.records[wsUsageKey{source: "response", id: "queued"}]; ok {
 				t.Fatal("慢下游时仍提前读取并累计消息")
 			}
 		})
@@ -565,7 +565,7 @@ func TestWSRelayUsageCapacityPolicy(t *testing.T) {
 	up, server := wsTestLink(t, true, b, 1<<18, 0, nil)
 	u := newWSUsage(nil, "dashscope.realtime", "dashscope.realtime")
 	for i := 0; i < 4096; i++ {
-		if err := u.Observe(dashscoperealtime.Event{Source: "response", ID: fmt.Sprint(i), Started: true}); err != nil {
+		if err := u.Observe(wsUsageEvent{Source: "response", ID: fmt.Sprint(i), Started: true}); err != nil {
 			t.Fatal(err)
 		}
 	}

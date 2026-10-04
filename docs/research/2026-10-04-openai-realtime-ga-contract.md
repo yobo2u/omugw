@@ -1,7 +1,7 @@
 # OpenAI Realtime GA：S2 握手与观测契约
 
 核验日期：2026-10-04。适用坐标：`openai.realtime → openai.realtime`，
-`GET /v1/realtime`。本页固定官方证据、Task 1 Provider 与 Task 2 只读观测的边界，防止将
+`GET /v1/realtime`。本页固定官方证据、Task 1 Provider、Task 2 只读事实与 Task 4 账本观测的边界，防止将
 DashScope、Beta 或 GPT-Live 的同名字段当作 GA 契约。
 
 ## 1. 官方证据
@@ -115,7 +115,7 @@ reasoning token 明细，不能从差额猜数。
 关联保留 item_id/content_index；转写可晚于 response.done。默认未启用转写时，
 不能把每次音频 commit 记为 ASR pending。OpenAI 无 DashScope 的
 `session.finished` 计费终态，不能在 session.created 凭空登记 session 账。
-这些条款由 Task 2 只读解析提供小事实，pending/去重/指标发布仍由后续 observer 负责。
+这些条款由 Task 2 只读解析提供小事实，Task 4 observer 负责 pending/去重/指标发布。
 
 ### 4.1 Task 2 固定接口与观测值
 
@@ -201,6 +201,44 @@ ValidateReady 复用身份校验并要求 type=session.created；操作码验证
 - Event 不含原始负载、音频、转写全文或动态容器。返回标量可在归还帧缓冲后保留；
   原始应用消息与未知字段均由中继原字节保全，不从本观测重新编码。
 
+### 4.3 Task 4 关联、容量与发布
+
+- `NewOpenAIRealtimeHandler(WSDeps) *WSHandler` 固定绑定 GA Provider 头校验、
+  ready 身份校验、OpenAI 错误信封、GA observer 与安全 close 分类。构造器存在不等于
+  生产 `Build` 已注册，也不修改矩阵的门禁与兑现名单。
+- observer 只在上游 reader 的观测点运行。`session.created/updated` 的合法有效配置
+  覆盖已确认 ASR 状态；未知回显清除旧 enabled，记录固定
+  `transcription_config_unknown` 诊断。客户端 `session.update` 不能确认配置。
+  disabled commit 不建账；unknown commit 仅诊断；实际 delta/segment/终态事件
+  自身足以开启或结算转写观测，不依赖曾见 commit 或 enabled。
+- 共享入口为 gateway 私有 `wsUsage.Observe(wsUsageEvent) error`，两协议仅做
+  事实映射，DS `Inspect/Event` API 和字符 + token 独立合法的行为不变。
+  记录键为 `(source, id, part, hasPart)`；event_id、模型、状态文本与转写全文不入账。
+  数值与 presence 复制到固定值记录；terminal 去重比较 Usage、全部九项明细、
+  characters、seconds 及诊断，冲突只记录 `usage_conflict`，不重算已结用量。
+- 关联只用一张最多 **4096** 项的表：response、明确 part、未明确 part 的 item
+  pending、DS session 与已结键共用名额，无额外 item/part 辅助表。首次明确 part
+  在同一方法内删除未结 item 占位并原位迁移，到限仍允许迁移与结算既有记录。
+  迟到的无 index 事件在这张表内有界查找：已有明确 part 时不重新建 item 占位；
+  多 part 的无 index delta/segment 只报 `usage_ambiguous`，不猜归属或另造费用。
+  有界查找最坏扫描 4096 键，不持有原 payload 或新增动态索引。
+- 未知 part 不是 part 0；id 非空且最多 512 字节，明确 part 为 0..2147483647。
+  新关联超限触发既定 1008 policy；旧键不淘汰，防迟到重发重新计费。
+  response.done 不结清同 item 的 ASR；Finish 幂等且仅将未结记录发布为 unavailable。
+  全部权威观测先于下游 Write；随后写失败、断流或晚到重复不翻账。
+- `ObserveWSSeconds(protocol, source string, seconds float64)` 发布
+  `omugw_ws_audio_input_seconds_total{protocol,source,fidelity="authoritative"}` 和
+  `omugw_ws_usage_records_total{unit="seconds",...}`；显式 0 有记录，非有限/负值拒绝。
+  duration-only 不产生 token 记录，秒数不写 Canonical token 投影。
+- `obs.WSTokenCount{Value,Present}` / `WSTokenDetails` 与
+  `ObserveWSTokenDetails(protocol, source string, details WSTokenDetails)` 固定发布
+  `text_input`、`audio_input`、`image_input`、`cache_read`、`cached_text_input`、
+  `cached_audio_input`、`cached_image_input`、`text_output`、`audio_output` 到
+  `omugw_ws_tokens_total`。仅明确合法值发布，包括 0；缺失不补齐，明细不另增记录数，
+  audio/image/cache 不与 input/output 总量相加。没有 ID/model/part 标签。
+- 合法上游 error/failed 与坏明细仅观测，消息仍原字节转发；不安全包络/关联错误
+  遵循共享 relay 的既定 1008 policy，不生成改写后的业务消息。
+
 ## 5. 资源、期限与安全错误
 
 复用 `config.Timeouts`、`config.WebSocket` 与调用方共享的 `*ws.BufferBudget`。
@@ -262,6 +300,12 @@ Task 2 的证据是字面合成 JSON 测试：官方示例 132/121/253、ASR 13/
 1.25/0 秒、GA 身份、presence/duplicate/part/config 边界，以及 scanner/两协议
 普通与 race 测试、有界 fuzz、4 MiB 未知字段分配上限和归还帧后标量所有权。
 DS 网关回归仅验证纯扫描迁移未改变原行为；不代表 OpenAI handler 已接线。
+
+Task 4 的证据为合成事件的三态配置、item/part 迁移、4096 总容量、全单位及 presence
+去重、1.25/0 秒与 132/121、13/9 的独立字面指标断言；真实本地 TCP 验证固定 GA
+profile 的握手、双向原消息、带内错误与原 close 保全，以及下游写失败前的权威记账。
+S1 DashScope 实录离线回放继续作为共享账本与中继的回归依据。以上均不是 OpenAI
+云端证据，生产 Build 接线仍属后续任务。
 
 尚未做 OpenAI 云端调用、真实模型权限/地域核验、完整有效配置实录、逐能力实录、
 官方 Node SDK + 网关 TLS 集成或生产代理验收。测试中的假凭据和合成消息不是

@@ -20,7 +20,7 @@ func TestWSUsageLedger(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := ledger.Observe(e); err != nil {
+		if err := ledger.Observe(dashScopeUsageEvent(e)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -56,7 +56,7 @@ func TestWSUsageLedger(t *testing.T) {
 			t.Errorf("%s %v = %v, want %v", tt.name, tt.labels, got, tt.want)
 		}
 	}
-	if err := ledger.Observe(dashscoperealtime.Event{Source: "response", ID: "late", Started: true}); err == nil {
+	if err := ledger.Observe(wsUsageEvent{Source: "response", ID: "late", Started: true}); err == nil {
 		t.Fatal("Finish 后不应重新开账")
 	}
 }
@@ -67,17 +67,17 @@ func TestWSUsageLedgerCharacters(t *testing.T) {
 	chars := int64(25)
 	e := dashscoperealtime.Event{Source: "response", ID: "r", Terminal: true, Usage: canonical.UnavailableUsage(), Characters: &chars}
 	for i := 0; i < 2; i++ {
-		if err := ledger.Observe(e); err != nil {
+		if err := ledger.Observe(dashScopeUsageEvent(e)); err != nil {
 			t.Fatal(err)
 		}
 	}
 	// 调用方复用指针不能改写账本中的已结值。
 	chars = 30
-	if err := ledger.Observe(e); err != nil {
+	if err := ledger.Observe(dashScopeUsageEvent(e)); err != nil {
 		t.Fatal(err)
 	}
 	e.ID, chars = "zero", 0
-	if err := ledger.Observe(e); err != nil {
+	if err := ledger.Observe(dashScopeUsageEvent(e)); err != nil {
 		t.Fatal(err)
 	}
 	ledger.Finish()
@@ -101,16 +101,16 @@ func TestWSUsageLedgerDualUnits(t *testing.T) {
 	chars := int64(25)
 	e := dashscoperealtime.Event{Source: "response", ID: "r", Terminal: true, Usage: canonical.Usage{Fidelity: canonical.FidelityAuthoritative, InputTokens: 8, OutputTokens: 32, AudioOutputTokens: 32}, Characters: &chars}
 	for _, next := range []dashscoperealtime.Event{e, e, {Source: "response", ID: "pending", Started: true}} {
-		if err := ledger.Observe(next); err != nil {
+		if err := ledger.Observe(dashScopeUsageEvent(next)); err != nil {
 			t.Fatal(err)
 		}
 	}
 	chars = 26
-	if err := ledger.Observe(e); err != nil {
+	if err := ledger.Observe(dashScopeUsageEvent(e)); err != nil {
 		t.Fatal(err)
 	}
 	chars, e.Usage.OutputTokens = 25, 33
-	if err := ledger.Observe(e); err != nil {
+	if err := ledger.Observe(dashScopeUsageEvent(e)); err != nil {
 		t.Fatal(err)
 	}
 	ledger.Finish()
@@ -156,7 +156,7 @@ func TestWSUsageLedgerInspectedUnits(t *testing.T) {
 				t.Fatal(err)
 			}
 			for i := 0; i < 2; i++ {
-				if err := ledger.Observe(e); err != nil {
+				if err := ledger.Observe(dashScopeUsageEvent(e)); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -181,7 +181,7 @@ func TestWSUsageLedgerLateInvalidUnit(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := ledger.Observe(e); err != nil {
+		if err := ledger.Observe(dashScopeUsageEvent(e)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -205,17 +205,17 @@ func TestWSUsageLedgerBoundaries(t *testing.T) {
 			reg := prometheus.NewRegistry()
 			ledger := newWSUsage(obs.NewMetrics(reg), "dashscope.realtime", "dashscope.realtime")
 			for i := 0; i < 4096; i++ {
-				e := dashscoperealtime.Event{Source: "response", ID: fmt.Sprint(i), Started: pending, Terminal: !pending, Usage: canonical.Usage{Fidelity: canonical.FidelityAuthoritative, InputTokens: 1}}
+				e := wsUsageEvent{Source: "response", ID: fmt.Sprint(i), Started: pending, Terminal: !pending, Usage: canonical.Usage{Fidelity: canonical.FidelityAuthoritative, InputTokens: 1}}
 				if err := ledger.Observe(e); err != nil {
 					t.Fatalf("第 %d 笔: %v", i+1, err)
 				}
 			}
-			if err := ledger.Observe(dashscoperealtime.Event{Source: "transcription", ID: "0", Started: true}); err == nil {
+			if err := ledger.Observe(wsUsageEvent{Source: "transcription", ID: "0", Started: true}); err == nil {
 				t.Fatal("跨来源新记录应与已结/未结记录共享 4096 上限")
 			}
 			// 到限也不淘汰第一笔；已存在的未结项仍可收取最后的权威用量。
 			for i := 0; i < 2; i++ {
-				if err := ledger.Observe(dashscoperealtime.Event{Source: "response", ID: "0", Terminal: true, Usage: canonical.Usage{Fidelity: canonical.FidelityAuthoritative, InputTokens: 1}}); err != nil {
+				if err := ledger.Observe(wsUsageEvent{Source: "response", ID: "0", Terminal: true, Usage: canonical.Usage{Fidelity: canonical.FidelityAuthoritative, InputTokens: 1}}); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -234,7 +234,7 @@ func TestWSUsageLedgerBoundaries(t *testing.T) {
 	}
 	for _, id := range []string{"", strings.Repeat("s", 513)} {
 		ledger := newWSUsage(nil, "dashscope.realtime", "dashscope.realtime")
-		if err := ledger.Observe(dashscoperealtime.Event{Source: "response", ID: id, Terminal: true}); err == nil {
+		if err := ledger.Observe(wsUsageEvent{Source: "response", ID: id, Terminal: true}); err == nil {
 			t.Fatal("关联 ID 不合法时不能默默漏账")
 		}
 	}
@@ -252,7 +252,7 @@ func TestWSUsageLedgerSessionFinishedAndFailure(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := ledger.Observe(e); err != nil {
+		if err := ledger.Observe(dashScopeUsageEvent(e)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -264,7 +264,7 @@ func TestWSUsageLedgerSessionFinishedAndFailure(t *testing.T) {
 		t.Fatal(got)
 	}
 	ledger = newWSUsage(nil, "dashscope.realtime", "dashscope.realtime")
-	if err := ledger.Observe(dashscoperealtime.Event{Source: "session", Terminal: true}); err == nil {
+	if err := ledger.Observe(wsUsageEvent{Source: "session", Terminal: true}); err == nil {
 		t.Fatal("未创建会话时不能凭 event_id 代替 session.id")
 	}
 	ledger.Finish()
@@ -277,18 +277,18 @@ func TestWSUsageLedgerStructuredComparison(t *testing.T) {
 	e := dashscoperealtime.Event{Source: "response", ID: "shared", Terminal: true, Usage: canonical.Usage{Fidelity: canonical.FidelityAuthoritative, InputTokens: 3, OutputTokens: 2, AudioInputTokens: 1}}
 	for _, source := range []string{"response", "transcription"} {
 		e.Source = source
-		if err := ledger.Observe(e); err != nil {
+		if err := ledger.Observe(dashScopeUsageEvent(e)); err != nil {
 			t.Fatal(err)
 		}
 	}
 	e.Source = "response"
 	e.Usage.AudioInputTokens = 2
-	if err := ledger.Observe(e); err != nil {
+	if err := ledger.Observe(dashScopeUsageEvent(e)); err != nil {
 		t.Fatal(err)
 	}
 	chars := int64(3)
 	e.Characters, e.Usage = &chars, canonical.UnavailableUsage()
-	if err := ledger.Observe(e); err != nil {
+	if err := ledger.Observe(dashScopeUsageEvent(e)); err != nil {
 		t.Fatal(err)
 	}
 	ledger.Finish()
