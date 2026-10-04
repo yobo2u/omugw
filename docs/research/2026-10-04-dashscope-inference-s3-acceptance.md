@@ -1,6 +1,6 @@
 # S3 Inference 音频子阶段：条件验收与证据缺口
 
-日期：2026-10-04。**本音频子阶段通过离线条件验收：七项实现、最终修复独立复审及新HEAD全库/SDK回归通过。真实Inference调用0次，整门仍未投放。**
+日期：2026-10-04。**本音频子阶段及合并后两项修复均已完成独立复核，并通过控制器本地全库与SDK的普通/race验收；PR #19 已合并，修复 PR #20 的最终远端 CI 与合并仍待收尾。真实Inference调用0次，整门仍未投放。**
 范围仅 `audio/asr/recognition` 与 `audio/tts/SpeechSynthesizer`。
 依据：[批准设计](../superpowers/specs/2026-10-04-dashscope-inference-s3-audio-design.md)、
 [契约研究](2026-10-04-dashscope-inference-s3-contract.md)、[独立录制指南](2026-10-04-dashscope-inference-s3-recording.md)。
@@ -10,7 +10,7 @@
 | 维度 | 当前证据 | 仍缺什么 |
 |---|---|---|
 | 文档事实 | 握手无model；run→started；ASR duplex、TTS duplex、Sambert out；原单位及部分累计口径 | 文档不证明该key/地域/型号真实可用 |
-| 合成正式链路 | 正式Build/Provider/Handler/Policy/Relay本地TCP、逐任务及全分支修复复审通过；含无ready预读、鉴权替换、双向字节、门闩、失败/关闭、共享预算、一次结算；新HEAD全库check/race通过 | 本地对端不替代真实上游 |
+| 合成正式链路 | 正式Build/Provider/Handler/Policy/Relay本地TCP、逐任务及全分支修复复审通过；含无ready预读、鉴权替换、双向字节、门闩、失败/关闭、共享预算、一次结算；合并前HEAD全库check/race通过，合并后关闭取证故障与本次回归见下节 | 本地对端不替代真实上游；修复 PR/CI 待验 |
 | 独立录制器 | Task7本地脚本独立字面期望；六场景、单次持久Dial、预算、重复键/partial usage、SHA/原文对账、EOF/peer/local/silent分离 | 不含真实上游材料；smoke tag仅选择offline测试 |
 | live支持 | **未测，调用0** | 显式北京workspace端点、非个人固定样本、完整计费依据/manifest及控制器单槽实验 |
 | 原生保全 | 合成五份testkit fixture在正式链路四点严格回放；不是网关生成自己的预期 | 独立真实录制、内容审核与真实轨迹回放；未知字段保全不等于语义验证 |
@@ -89,7 +89,7 @@ $ git diff --check
 
 Fix round2最终定向验证：Metadata/MetadataBounds及Evidence中raw对账、终态篡改与分开预算、合法raw超candidate预算、凭据不落盘四例，
 普通`go test`通过（1.483s），`-race`通过（3.099s）；`go test -tags=smoke ./tests/smoke -run '^$' -count=1`
-通过（0.986s，未执行测试），`go vet -tags=smoke ./tests/smoke`无输出/exit 0。N1待控制器同范围独立复审。
+通过（0.986s，未执行测试），`go vet -tags=smoke ./tests/smoke`无输出/exit 0。N1已由控制器同范围独立复审判定PASS（合并前事实）。
 
 ## 控制器最终关口
 
@@ -132,13 +132,83 @@ Fix round2最终定向验证：Metadata/MetadataBounds及Evidence中raw对账、
 本文件记录本地验收时点；PR、远端CI及合并证据以关联工作项的阶段收尾评论为准。
 真实费用/端点/样本仍须落实，现有缺口如实保留；当前本地通过不构成整门投放证据。
 
+## PR #19 合并后故障与修复时点
+
+PR #19 已合并为 `4268fe3`。main CI `37207997625` 的 Ubuntu `make test-race`
+在 `TestOpenAIRealtimeBinaryLargeAndTotal` 失败：超限负载发送报 broken pipe，随后
+消息级读取未取得预期1009。此前本地和PR通过不能覆盖本次真实失败。
+
+在该基线的新分支 `fix/ws-oversize-close-evidence-20261004` 上，本地TCP屏障已复现：
+先排入真实ping，超限帧头触发网关关闭后再发送负载，完整发送与自动pong分别报写错误。
+二者不是同一缓存错误；独立帧读取仍取得 `1009 / message too large`，relay已join且预算归零。
+根因是测试把拒绝后的消息级读取当作独立关闭证据；未发现该窗口中网关漏发close。
+
+本次仅修改测试：健康大消息/HTTP total回环保留，另连接只发1 MiB+1的掩码长度头，
+要求网关在没有负载时拒绝；固定三秒期限内被动越过控制心跳，严格核对实际1009与原因，
+不接受EOF/broken pipe替代。永久屏障回归固定失败发送窗口，原读取断言实际RED，新帧断言GREEN。
+永久例在网关关闭完成后半关闭测试端写侧，排除各内核暂收剩余负载的差异；初始根因探针未作此半关闭。
+自然退出后检查registry/预算归零；生产的超限预分配拒绝、共享关闭预算与worker join保持原实现。
+
+本次环境为 `go1.25.0 darwin/arm64`，下面的测试命令均使用 `-count=1`，完整日志与RED证据位于
+阶段交接目录的 `postmerge-*.log`，分析见 `postmerge-fix-report.md`：
+
+| 检查 | 本次本地结果 |
+|---|---|
+| 指定大消息例与新增屏障例普通 / race | 通过，1.332s / 1.925s |
+| `go test ./internal/gateway ./internal/transport/ws -count=1` | 通过，11.407s / 5.715s |
+| 同两包 `-race -count=1` | 通过，14.536s / 6.915s |
+| `go vet ./internal/gateway ./internal/transport/ws` | 无输出，exit 0 |
+
+本次超限补丁已独立复核通过：保留最终CloseWrite时旧消息读仍RED，移除ping后GREEN，
+EOF负控拒绝通过，正式Built两次上游鉴权替换亦核实。修复PR及远端Ubuntu CI待验。
+
+## `1a554eb` 收尾检查：drain 的本地错误后 close EOF
+
+控制器 `make check` 在 `TestInferenceHandlerLifecycle/绝对阶段超时/drain`
+的 `inferenceLocalFailure` 成功后，于下一条严格 close 断言读到 EOF（0.17s）。
+原配置 Connect=80ms、FirstByte=Idle=160ms、Total=300ms；本次保留原配置及
+`1011 / task_drain_timeout`，也保留三个阶段的持续心跳与绝对期限断言。
+
+源码与真实 TCP 屏障证明另一处生产竞争：`closeWSConnections` 调用
+`CloseWithResult`，后者遇到 heartbeat 的写锁会立即强拆。屏障先交付本地
+`Gateway.TaskDrainTimeout`，再固定 Ping 持锁，旧代码在尚余约79ms关闭预算时
+直接 EOF；这不是测试端自动 pong 读错。隔离反例没有传输 idle，故其强拆不能归因
+于 idle 与业务 timer 同时到期。原控制器日志未记录栈与帧，本证据不伪称恢复了那次调度。
+
+最小修复让共享协调器改用已有 `BeginClose(code, reason, deadline)` 并调用 finish：
+在相同绝对期限内等锁、发送并物理释放；真正阻塞写仍由原守卫到期强拆。
+W/B/G/Dall 及只收紧规则、本地/原文先交付、peer与业务分槽、Cancel/Stop顺序保持。
+新增 `TestWSTerminationLocalFailureHeartbeatClose` 的 released/stalled 两例：前者
+解除门闩后被动核对 Ping 与精确1011，后者核对到期强拆；二者都 join 工作者并检查预算0。
+20ms观察窗口只检验剩余B内不得提前强拆，不充当关闭预算或新增调度容差。
+
+最终测试版本回退生产修复后再次实测 RED：released 为“剩余79.54ms即强拆”与EOF，
+stalled 为“剩余79.94ms即强拆”。恢复修复后的新结果（均 `-count=1`）：
+
+| 检查 | 结果 |
+|---|---|
+| 新屏障例 + 原三个阶段超时例普通 / race | 通过，0.968s / 2.062s |
+| gateway + transport/ws 普通 | 通过，13.756s / 5.731s |
+| gateway + transport/ws race | 通过，16.954s / 6.949s |
+
+完整命令、RED/GREEN输出、后续check结果及提交记录见交接目录的
+`postmerge-drain-report.md` 与 `postmerge-drain-*.log`。改变共享生产关闭路径的代价是
+争锁时可等待至既有B而非立即退出。另一个明确差异是finish直达物理连接释放，
+不再主动尝试TLS close_notify；不据此放宽WebSocket close的code/reason或期限断言。
+
+独立复核判定Spec/Quality PASS，无阻断/重要问题；上述TLS差异已补记。
+控制器在最终代码`f1831f5`运行并核对：`make check`通过（包测试为有效缓存）、
+`make test-race`通过（gateway17.586s）、官方SDK真实本地WSS普通3.949s/race5.025s通过。
+日志`postmerge-f1831f5-{check,race,sdk,sdk-race}.log`，未使用真实上游凭据。
+补丁PR及远端Ubuntu CI仍待验，最新远端结论以Issue #7阶段评论为准。
+
 ## 未完成项与暂停
 
 multimodal-dialog、听悟、text_generation独立承载、其余型号精确计量、Paraformer/Fun-ASR累计语义、
 Qwen3.1 TTS中间/终态重叠口径、真实全部六槽材料及生产整门投放均未完成。
 网关120秒draining政策可能截断大文本积压，短录制场景不覆盖此生产边界。
 
-**本音频子阶段已完成实现、独立复核与控制器本地验收；完成PR收尾后暂停。**
+**本音频子阶段及合并后两项故障已完成实现、独立复核与控制器本地验收；完成修复PR/CI收尾后暂停。**
 整个S3、A包和三门生产投放仍未完成，不自动进入下一子契约，也不因条件验收修改Redeem或生产路由。
 
 ## 执行裁决（按作出顺序）

@@ -265,9 +265,13 @@ End.At取Before入口或Expire传入的now，不能到实际close时重新起算
 2. 原文成功交付于 t0 后收紧 `D=min(Dall,t0+B)`，被动等 `G=min(100ms,(D-t0)/4)`；G 在 B 内。
 3. 原上游 reader 在 G 内继续读；收到合法 close（含空1005本地表示）保存原 code/reason，尽力转发。
    尾消息/ping 不续时；慢下游/EOF/写失败只用剩余 D。写失败不再被动等 G。
-4. G 内无真实 close则本地1011、reason=`upstream task failed`；两段以已经arm的CloseWithResult收尾，
+4. G 内无真实 close则本地1011、reason=`upstream task failed`；两段以已经arm的BeginClose收尾，
    共用D覆盖发送/释放，不另加等待或reader，到D强制释放，最后调用全部arm返回的finish/join。
    不能把此close标为上游事实，不能重开一秒。新task始终不放行。
+
+收尾等写锁也属于同一 D：心跳暂占锁时不能在尚余预算的情况下立即强拆。
+`BeginClose` 的 finish 直接释放物理连接并 join 守卫，不另行尝试 TLS close_notify；
+WebSocket close 必须在原期限内尽力交付，WSS 消费者的 code/reason 与退出仍需独立回归。
 
 本地失败也先 arm `At+W+B`、尽力交付后收紧至 `min(Dall,now+B)`，不等 G；无合法 ID只关闭。
 普通关闭从首次选择起共用 B。registry 与 relay 共用该绝对值，并行关闭两段而非每段重新计时。

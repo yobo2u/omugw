@@ -211,13 +211,32 @@ func TestOpenAIRealtimeBinaryLargeAndTotal(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := c.WriteMessage(ws.OpBinary, bytes.Repeat([]byte{0xa5}, limit+1)); err != nil {
-		t.Log("超限发送时对端已关闭:", err)
+	if err := c.Close(1000, ""); err != nil {
+		t.Fatal(err)
 	}
-	assertOpenAITestClose(t, c, 1009)
 	awaitWSTest(t, done)
 	if err := receiveWSTest(t, upDone); err != nil {
 		t.Fatal(err)
+	}
+	// 健康大消息已完整回环；另用原始连接只发 1 MiB+1 长度头，要求网关
+	// 不等待负载就拒绝，避免整条超限发送与早关闭竞争污染接收证据。
+	peer := openAITestRawPeer(t, s.URL)
+	if f := peer.read(t); f.Opcode != ws.OpText || string(f.Payload) != openAIReady {
+		t.Fatal("超限会话首事件不符")
+	}
+	if _, err := peer.Write([]byte{0x82, 0xff, 0, 0, 0, 0, 0, 0x10, 0, 1, 1, 2, 3, 4}); err != nil {
+		t.Fatal(err)
+	}
+	assertWSOversizeClose(t, peer)
+	awaitWSTest(t, done)
+	if err := receiveWSTest(t, upDone); err != nil {
+		t.Fatal(err)
+	}
+	b.wsRegistry.mu.Lock()
+	remaining := len(b.wsRegistry.sessions)
+	b.wsRegistry.mu.Unlock()
+	if remaining != 0 || b.wsBudget.Used() != 0 {
+		t.Fatal("超限会话自然退出后 registry/预算未归零")
 	}
 }
 
