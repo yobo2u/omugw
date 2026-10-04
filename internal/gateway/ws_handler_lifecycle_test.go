@@ -223,6 +223,91 @@ func TestWSHandlerHandshakeStopsWhenShutdownSelected(t *testing.T) {
 	}
 }
 
+// 预留已经冷却完的失败历史：误走 Succeed 会清零，误冷却会增加，两者均可从真实池观察。
+func TestWSHandlerIncompleteCloseSettlement(t *testing.T) {
+	for _, upstream := range []bool{false, true} {
+		t.Run(fmt.Sprint("upstream=", upstream), func(t *testing.T) {
+			peers := make(chan *wsTestPeer, 1)
+			var calls atomic.Int32
+			u := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				hj := &wsTestHijacker{ResponseWriter: w}
+				c, err := ws.Accept(hj, r, ws.AcceptOptions{MaxPayload: 1 << 20, WriteTimeout: time.Second})
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				t.Cleanup(func() { _ = hj.raw.Close() })
+				if err := c.WriteMessage(ws.OpText, []byte(wsTestInitial)); err != nil {
+					t.Error(err)
+					return
+				}
+				peers <- &wsTestPeer{Conn: hj.raw, reader: bufio.NewReader(hj.raw)}
+			}))
+			defer u.Close()
+			d := wsHandlerDeps(t, u.URL)
+			var clock atomic.Int64
+			clock.Store(time.Now().UnixNano())
+			pool, err := credential.NewPool("pool", []credential.Credential{{ID: "a", Secret: "synthetic-a"}}, credential.DefaultPolicy(), func() time.Time { return time.Unix(0, clock.Load()) })
+			if err != nil {
+				t.Fatal(err)
+			}
+			lease, err := pool.Acquire(nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			lease.Fail(canonical.Newf(canonical.ClassRateLimit, "synthetic"))
+			clock.Add(int64(time.Hour))
+			before := pool.Stats()[0]
+			d.Pools["pool"] = pool
+			reg := prometheus.NewRegistry()
+			d.Metrics = obs.NewMetrics(reg)
+			s, done := wsHandlerServer(t, d)
+			raw, err := net.DialTimeout("tcp", strings.TrimPrefix(s.URL, "http://"), time.Second)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer raw.Close()
+			_ = raw.SetDeadline(time.Now().Add(4 * time.Second))
+			if err := wsHandlerRequest().Write(raw); err != nil {
+				t.Fatal(err)
+			}
+			client := &wsTestPeer{Conn: raw, reader: bufio.NewReader(raw), masked: true}
+			resp, err := http.ReadResponse(client.reader, nil)
+			if err != nil || resp.StatusCode != 101 {
+				t.Fatalf("升级: %v %v", resp, err)
+			}
+			_ = resp.Body.Close()
+			if f := client.read(t); string(f.Payload) != wsTestInitial {
+				t.Fatal("初始事件未交付")
+			}
+			server := receiveWSTest(t, peers)
+			defer server.Close()
+			source, other := client, server
+			if upstream {
+				source, other = other, source
+			}
+			if err := ws.WriteFrame(source.Conn, ws.Frame{Opcode: ws.OpText, Payload: []byte(`{"type":"`)}, source.masked); err != nil {
+				t.Fatal(err)
+			}
+			const reason = "private auth quota To many requests"
+			source.send(t, ws.OpClose, ws.EncodeClosePayload(1000, reason))
+			assertWSTestClose(t, other, 1000, reason)
+			awaitWSTest(t, done)
+			st := pool.Stats()[0]
+			if st.ConsecutiveFails != before.ConsecutiveFails || !st.Available || !st.CooldownUntil.Equal(before.CooldownUntil) || st.Picks != 2 || calls.Load() != 1 {
+				t.Errorf("中断应归还 lease，不能 Succeed 清历史/冷却/重拨: before=%+v after=%+v calls=%d", before, st, calls.Load())
+			}
+			if wsUsageMetricSum(t, reg, "omugw_requests_total", map[string]string{"outcome": "ok"}) != 0 || wsUsageMetricSum(t, reg, "omugw_requests_total", map[string]string{"outcome": "internal"}) != 1 {
+				t.Error("未完成消息仍计为成功请求")
+			}
+			if d.Budget.Used() != 0 {
+				t.Fatal("handler 返回后仍持有预算")
+			}
+		})
+	}
+}
+
 func TestWSHandlerFailoverMetrics(t *testing.T) {
 	u := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(429) }))
 	defer u.Close()

@@ -31,7 +31,7 @@
 
 - 注释、文档用中文；同协议同契约完整应用消息的 opcode、字节、单向顺序原样保全，不经 IR/Extensions 重建。
 - 整门矩阵检查使用 `degrade.ExpressibleSet(degrade.ProtoDashScopeRealtime)`；不以历史 homogeneous 标记接受跨协议候选。
-- 默认消息32 MiB（最大64 MiB）、pending+active会话128（最大4096）、受控payload预算256 MiB（最大2 GiB）；预算至少是消息上限的两倍。
+- 默认消息32 MiB（最大64 MiB）、pending+active会话128（最大4096）、受控payload预算256 MiB（最大2 GiB）；最低预算为2*M+min(M,32 KiB)，M为消息上限，含双向完整消息与出站掩码工作区。多会话聚合、临时扩容、控制帧和关闭原因仍真实计额；“至少两倍”仅是下界，不保证任意128并发满额或进程RSS。
 - 去重记录4096、关联ID512字节、失败握手body64 KiB、握手头64 KiB；日志与本地错误无消息正文、URL、secret、close reason。
 - 仅唯一请求头鉴权；Origin允许、扩展提议忽略、所有子协议拒绝；租户白名单值唯一且无控制字符。
 - 无模型别名；Dial前核验请求model等于target.UpstreamModel；所有候选共用first_byte，HTTP total不套会话。
@@ -70,7 +70,7 @@
 - `dashscoperealtime.New(timeouts config.Timeouts, limits config.WebSocket, budget *ws.BufferBudget) *Provider`。
 - `dashscoperealtime.ValidateHeaders(http.Header) error` 供handler在Dial前调用；Provider重复防御。
 
-- [x] **Step 1:** 添加表测 `TestWebSocketConfig`（默认、零负值、上下限、两倍关系）；`TestRealtimeProviderHandshake` 用TCP服务端断言前缀/完整路径不重复、model转义、替换Authorization、固定UA、仅两个DS白名单头、Origin/压缩/secret子协议未转发；`TestRealtimeProviderRejectsUnsafeHeadersAndURL` 覆盖userinfo/query/fragment/opaque、重复/控制字符头；`TestRealtimeProviderFailure` 覆盖401/403/429/503、Retry-After、畸形101、重定向不跟随、无正文/URL/secret泄漏。
+- [x] **Step 1:** 添加表测 `TestWebSocketConfig`（默认、零负值、上下限、双消息加掩码工作区的最低预算）；`TestRealtimeProviderHandshake` 用TCP服务端断言前缀/完整路径不重复、model转义、替换Authorization、固定UA、仅两个DS白名单头、Origin/压缩/secret子协议未转发；`TestRealtimeProviderRejectsUnsafeHeadersAndURL` 覆盖userinfo/query/fragment/opaque、重复/控制字符头；`TestRealtimeProviderFailure` 覆盖401/403/429/503、Retry-After、畸形101、重定向不跟随、无正文/URL/secret泄漏。
 - [x] **Step 2:** `go test ./internal/config ./internal/provider/dashscoperealtime -count=1`，记录缺类型/行为失败。
 - [x] **Step 3:** 实现上述接口；配置仅WS kind允许ws/wss，HTTP既有合法部署保持兼容。WS地址支持http→ws/https→wss；固定 `/api-ws/v1/realtime`，query仅target真实model；固定UA `omugw`。无Canonical要求；拒绝错误kind/inbound。Dial设置共享预算/ConnectTimeout/Idle/WriteTimeout及64 KiB上限。已知HTTP状态用dashscopewire分类但将本地message/上游code过滤为固定安全值，不传播原body；未知握手失败非重试，明确超时可归upstream unavailable。
 - [x] **Step 4:** 定向普通测试与该包race通过，`git diff --check`。

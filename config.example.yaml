@@ -15,7 +15,8 @@ server:
   metrics_addr: "127.0.0.1:9090"
 
 # WS 的单消息、pending+active 会话与全进程受控 payload 分开限额，防止连接数放大内存。
-# 预算含扩容时的新旧数组和关闭原因，不是进程 RSS；至少为单消息上限的两倍。
+# 最低为 2*M + min(M, 32 KiB)，M 为单消息上限，含双向完整消息和出站掩码工作区。
+# 多会话聚合、扩容时的新旧数组、控制帧与关闭原因仍计额；不保证任意并发满额，也不是 RSS。
 websocket:
   max_message_bytes: 33554432 # 32 MiB，最大 64 MiB
   max_sessions: 128 # 最大 4096，含等待握手的会话

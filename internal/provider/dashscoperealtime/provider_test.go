@@ -318,7 +318,7 @@ func TestRealtimeProviderBounds(t *testing.T) {
 		}))
 		defer s.Close()
 		_, b := newProvider(t)
-		p := New(config.Default().Timeouts, config.WebSocket{MaxMessageBytes: 4, MaxSessions: 1, MaxBufferedBytes: 8}, b)
+		p := New(config.Default().Timeouts, config.WebSocket{MaxMessageBytes: 4, MaxSessions: 1, MaxBufferedBytes: 12}, b)
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
 		c, _, err := p.Dial(ctx, request(s.URL))

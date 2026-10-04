@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/yobo2u/omugw/internal/canonical"
+	"github.com/yobo2u/omugw/internal/config"
 	"github.com/yobo2u/omugw/internal/protocol/dashscoperealtime"
 	"github.com/yobo2u/omugw/internal/transport/ws"
 )
@@ -286,6 +287,60 @@ func TestWSRelayCloseMapping(t *testing.T) {
 	}
 }
 
+// 合法 close 不能把未 FIN 的消息变成成功；通过 pong 确认分片已进入真实受控读。
+func TestWSRelayIncompleteClose(t *testing.T) {
+	for _, upstream := range []bool{false, true} {
+		for _, op := range []ws.Opcode{ws.OpText, ws.OpBinary} {
+			for _, payload := range [][]byte{nil, []byte("partial")} {
+				t.Run(fmt.Sprintf("upstream=%v/%s/bytes=%d", upstream, op, len(payload)), func(t *testing.T) {
+					x := startWSTestRelay(t, 4096, 1024, 0, nil)
+					for _, event := range []string{
+						`{"type":"response.done","response":{"id":"complete","status":"completed","usage":{"input_tokens":7,"output_tokens":3}}}`,
+						`{"type":"response.created","response":{"id":"pending"}}`,
+					} {
+						x.server.send(t, ws.OpText, []byte(event))
+						if got := x.client.read(t); string(got.Payload) != event {
+							t.Fatal("完整事件未原样转发")
+						}
+					}
+					source, other := x.client, x.server
+					if upstream {
+						source, other = other, source
+					}
+					if err := ws.WriteFrame(source.Conn, ws.Frame{Opcode: op, Payload: payload}, source.masked); err != nil {
+						t.Fatal(err)
+					}
+					source.send(t, ws.OpPing, []byte("barrier"))
+					if f := source.read(t); f.Opcode != ws.OpPong || string(f.Payload) != "barrier" {
+						t.Fatal("分片读屏障未到达")
+					}
+					if x.b.Used() < int64(len(payload)) {
+						t.Fatal("未 FIN 的分片未计额")
+					}
+					const reason = "private auth quota To many requests"
+					source.send(t, ws.OpClose, ws.EncodeClosePayload(1000, reason))
+					assertWSTestClose(t, other, 1000, reason)
+					assertWSTestClose(t, source, 1000, "")
+					err := x.joined(t)
+					if err == nil {
+						t.Error("未完成分片随 close1000 被误判为清洁成功")
+					} else if errors.Is(err, ws.ErrProtocol) || canonical.AsError(err).Retryable || strings.Contains(err.Error(), "private") {
+						t.Errorf("合法关闭应为安全非重试中断: %v", err)
+					}
+					complete := x.usage.records[wsUsageKey{"response", "complete"}]
+					pending := x.usage.records[wsUsageKey{"response", "pending"}]
+					if complete.usage.Fidelity != canonical.FidelityAuthoritative || complete.usage.InputTokens != 7 || complete.usage.OutputTokens != 3 {
+						t.Error("中断抹掉已结权威用量")
+					}
+					if pending.usage.Fidelity != canonical.FidelityUnavailable {
+						t.Error("未结轮次没有标为 unavailable")
+					}
+				})
+			}
+		}
+	}
+}
+
 func TestWSRelayProtocolAndLocalLimits(t *testing.T) {
 	for _, tc := range []struct {
 		name          string
@@ -318,6 +373,88 @@ func TestWSRelayProtocolAndLocalLimits(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// 先实际持有双向最大消息，再同时转发；不能靠调度先释放一条替缺失的掩码空间顶账。
+func TestWSConfiguredBudgetConcurrentForwarding(t *testing.T) {
+	for _, tc := range []struct {
+		message, budget int64
+		valid           bool
+	}{
+		{1, 2, false}, {1, 3, true},
+		{7, 14, false}, {7, 20, false}, {7, 21, true},
+		{65537, 131074, false}, {65537, 163841, false}, {65537, 163842, true},
+	} {
+		t.Run(fmt.Sprintf("message=%d/budget=%d", tc.message, tc.budget), func(t *testing.T) {
+			limits := config.WebSocket{MaxMessageBytes: tc.message, MaxSessions: 1, MaxBufferedBytes: tc.budget}
+			validation := limits.Validate()
+			b := wsTestBudget(t, limits.MaxBufferedBytes)
+			down, client := wsTestLink(t, false, b, limits.MaxMessageBytes, 0, nil)
+			up, server := wsTestLink(t, true, b, limits.MaxMessageBytes, 0, nil)
+			toUp := bytes.Repeat([]byte{0xa5}, int(tc.message))
+			toDown := bytes.Repeat([]byte{0x5a}, int(tc.message))
+			client.send(t, ws.OpBinary, toUp)
+			server.send(t, ws.OpBinary, toDown)
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			clientMessage, err := down.ReadOwnedMessage(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer clientMessage.Release()
+			serverMessage, err := up.ReadOwnedMessage(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer serverMessage.Release()
+			if b.Used() != 2*tc.message {
+				t.Fatal("完整消息实际容量未计额")
+			}
+			start := make(chan struct{})
+			upDone, downDone := make(chan error, 1), make(chan error, 1)
+			var writers sync.WaitGroup
+			writers.Add(2)
+			// 断言失败时也先 join 再 Release，避免测试自身制造借用负载的数据竞争。
+			defer writers.Wait()
+			go func() {
+				defer writers.Done()
+				<-start
+				upDone <- up.WriteMessage(clientMessage.Opcode, clientMessage.Payload)
+			}()
+			go func() {
+				defer writers.Done()
+				<-start
+				downDone <- down.WriteMessage(serverMessage.Opcode, serverMessage.Payload)
+			}()
+			close(start)
+			if f := client.read(t); f.Opcode != ws.OpBinary || !bytes.Equal(f.Payload, toDown) {
+				t.Fatal("未掩码方向负载丢失")
+			}
+			if tc.valid {
+				if f := server.read(t); f.Opcode != ws.OpBinary || !bytes.Equal(f.Payload, toUp) {
+					t.Fatal("掩码方向负载丢失")
+				}
+			}
+			upErr := receiveWSTest(t, upDone)
+			if err := receiveWSTest(t, downDone); err != nil {
+				t.Fatal(err)
+			}
+			if tc.valid && upErr != nil || !tc.valid && !errors.Is(upErr, ws.ErrBufferLimit) {
+				t.Fatalf("真实掩码写结果=%v valid=%v", upErr, tc.valid)
+			}
+			if (validation == nil) != tc.valid {
+				t.Errorf("配置与真实分配不一致: Validate=%v, maskedWrite=%v", validation, upErr)
+			}
+			if !bytes.Equal(clientMessage.Payload, toUp) || !bytes.Equal(serverMessage.Payload, toDown) || b.Used() != 2*tc.message {
+				t.Fatal("转发改写借用负载或未释放掩码工作区")
+			}
+			clientMessage.Release()
+			serverMessage.Release()
+			if b.Used() != 0 {
+				t.Fatal("并发转发结束遗留消息预算")
+			}
+		})
 	}
 }
 

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,18 +19,25 @@ func TestWebSocketConfig(t *testing.T) {
 		valid  bool
 	}{
 		{"默认", want, true},
-		{"最小", WebSocket{1, 1, 2}, true},
+		{"最小", WebSocket{1, 1, 3}, true},
+		{"最小缺掩码空间", WebSocket{1, 1, 2}, false},
+		{"小消息恰好", WebSocket{7, 1, 21}, true},
+		{"小消息差一字节", WebSocket{7, 1, 20}, false},
 		{"最大", WebSocket{64 << 20, 4096, 2 << 30}, true},
-		{"恰好两倍", WebSocket{64 << 20, 1, 128 << 20}, true},
+		{"恰好两倍缺掩码空间", WebSocket{64 << 20, 1, 128 << 20}, false},
+		{"最大消息恰好", WebSocket{64 << 20, 1, (128 << 20) + (32 << 10)}, true},
+		{"最大消息差一字节", WebSocket{64 << 20, 1, (128 << 20) + (32 << 10) - 1}, false},
 		{"消息零", WebSocket{0, 128, 256 << 20}, false},
 		{"消息负", WebSocket{-1, 128, 256 << 20}, false},
 		{"消息超限", WebSocket{64<<20 + 1, 128, 256 << 20}, false},
+		{"消息溢出边界", WebSocket{math.MaxInt64, 1, math.MaxInt64}, false},
 		{"会话零", WebSocket{32 << 20, 0, 256 << 20}, false},
 		{"会话负", WebSocket{32 << 20, -1, 256 << 20}, false},
 		{"会话超限", WebSocket{32 << 20, 4097, 256 << 20}, false},
 		{"预算零", WebSocket{32 << 20, 128, 0}, false},
 		{"预算负", WebSocket{32 << 20, 128, -1}, false},
 		{"预算超限", WebSocket{32 << 20, 128, 2<<30 + 1}, false},
+		{"预算溢出边界", WebSocket{1, 1, math.MaxInt64}, false},
 		{"不足两倍", WebSocket{32 << 20, 128, 64<<20 - 1}, false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

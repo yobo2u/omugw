@@ -14,6 +14,7 @@ import (
 var (
 	errWSRelayPolicy     = errors.New("websocket invalid event correlation")
 	errWSRelayDownstream = errors.New("websocket downstream connection failed")
+	errWSRelayIncomplete = errors.New("websocket closed with incomplete message")
 )
 
 type wsRelayResult struct {
@@ -189,6 +190,11 @@ func classifyWSRelay(r wsRelayResult) (uint16, string, error) {
 			if failure := dashscoperealtime.ClassifyClose(closed.Code, closed.Reason); failure != nil {
 				result = failure
 			}
+		}
+		// 分片中合法关闭不违反 RFC，仍转发原 code/reason；但丢弃的半条消息
+		// 不能让 metrics/Lease 记成功。已核验的上游失败分类保留，不从 reason 猜测。
+		if result == nil && closed.IncompleteMessage {
+			result = errWSRelayIncomplete
 		}
 		return closed.Code, closed.Reason, result
 	}

@@ -103,6 +103,12 @@ func WriteFrame(w io.Writer, f Frame, masked bool) error {
 
 const maskChunkBytes = 32 << 10
 
+// MaskWorkspaceBytes 供配置与实际掩码分配共用，防止最低预算与分块大小漂移。
+// payloadBytes 是非负的单帧负载长度；工作区不改变调用方持有的原始负载。
+func MaskWorkspaceBytes(payloadBytes int64) int64 {
+	return min(payloadBytes, maskChunkBytes)
+}
+
 func writeFrameBudget(w io.Writer, f Frame, masked bool, budget *BufferBudget) error {
 	if f.Opcode.isControl() {
 		if len(f.Payload) > maxControlPayload {
@@ -151,12 +157,12 @@ func writeFrameBudget(w io.Writer, f Frame, masked bool, budget *BufferBudget) e
 		hdr = append(hdr, key[:]...)
 
 		// 先拿到整个临时块的容量，再写帧头；额度不足时不留下半个线上帧。
-		size := min(n, maskChunkBytes)
-		if err := budget.acquire(int64(size)); err != nil {
+		size := MaskWorkspaceBytes(int64(n))
+		if err := budget.acquire(size); err != nil {
 			return err
 		}
 		scratch = make([]byte, size)
-		defer func() { scratch = nil; budget.release(int64(size)) }()
+		defer func() { scratch = nil; budget.release(size) }()
 	}
 
 	if err := writeFull(w, hdr); err != nil {
