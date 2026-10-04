@@ -17,6 +17,10 @@ type Metrics struct {
 	NotImplemented *prometheus.CounterVec
 	Tokens         *prometheus.CounterVec
 	StreamAborted  *prometheus.CounterVec
+	WSUsageRecords *prometheus.CounterVec
+	WSTokens       *prometheus.CounterVec
+	WSCharacters   *prometheus.CounterVec
+	WSDiagnostics  *prometheus.CounterVec
 }
 
 // NewMetrics 注册全部指标。
@@ -89,12 +93,31 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 			Name: "omugw_stream_aborted_total",
 			Help: "首字节发出后被中断的流式请求数（不可重试，用量不可知）。",
 		}, []string{"inbound", "outbound", "class"}),
+
+		// 单独计记录数，才能区分权威零值、字符计价与根本没拿到用量。
+		WSUsageRecords: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "omugw_ws_usage_records_total",
+			Help: "按协议、来源、原始单位与可信等级统计的 WebSocket 用量记录数。",
+		}, []string{"protocol", "source", "unit", "fidelity"}),
+		WSTokens: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "omugw_ws_tokens_total",
+			Help: "WebSocket 已结用量的 token 分项；音频分项已包含在输入输出总数内。",
+		}, []string{"protocol", "source", "fidelity", "kind"}),
+		WSCharacters: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "omugw_ws_characters_total",
+			Help: "WebSocket 上游权威字符计量，不能换算或叠加到 token。",
+		}, []string{"protocol", "source", "fidelity"}),
+		WSDiagnostics: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "omugw_ws_diagnostics_total",
+			Help: "WebSocket 用量观测诊断，不包含 ID、模型或上游正文。",
+		}, []string{"protocol", "reason"}),
 	}
 
 	reg.MustRegister(
 		m.Requests, m.Duration, m.FirstByte,
 		m.UpstreamError, m.Degradations, m.Emulations, m.NotImplemented,
 		m.Tokens, m.StreamAborted,
+		m.WSUsageRecords, m.WSTokens, m.WSCharacters, m.WSDiagnostics,
 	)
 	return m
 }
@@ -149,4 +172,59 @@ func (m *Metrics) ObserveError(outbound string, e *canonical.Error) {
 		retryable = "true"
 	}
 	m.UpstreamError.WithLabelValues(outbound, string(e.Class), retryable).Inc()
+}
+
+// ObserveWSUsage 保留来源与可信等级；未知不是数值零。
+func (m *Metrics) ObserveWSUsage(protocol, source string, u canonical.Usage) {
+	if !wsProtocol(protocol) || !wsSource(source) || u.Validate() != nil {
+		return
+	}
+	f := string(u.Fidelity)
+	m.WSUsageRecords.WithLabelValues(protocol, source, "tokens", f).Inc()
+	if u.Fidelity == canonical.FidelityUnavailable {
+		return
+	}
+	for _, item := range [...]struct {
+		kind string
+		n    int64
+	}{
+		{"input", u.InputTokens}, {"output", u.OutputTokens},
+		{"audio_input", u.AudioInputTokens}, {"audio_output", u.AudioOutputTokens},
+	} {
+		if item.n > 0 {
+			m.WSTokens.WithLabelValues(protocol, source, f, item.kind).Add(float64(item.n))
+		}
+	}
+}
+
+// ObserveWSCharacters 不调用 ObserveWSUsage，防止产生一份虚构的零 token 账。
+func (m *Metrics) ObserveWSCharacters(protocol, source string, characters int64) {
+	if !wsProtocol(protocol) || !wsSource(source) || characters < 0 {
+		return
+	}
+	f := string(canonical.FidelityAuthoritative)
+	m.WSUsageRecords.WithLabelValues(protocol, source, "characters", f).Inc()
+	m.WSCharacters.WithLabelValues(protocol, source, f).Add(float64(characters))
+}
+
+// ObserveWSDiagnostic 的白名单避免把上游错误文本扩成无限标签集。
+func (m *Metrics) ObserveWSDiagnostic(protocol, reason string) {
+	if !wsProtocol(protocol) {
+		return
+	}
+	switch reason {
+	case "usage_missing", "usage_unverified", "usage_invalid", "usage_ambiguous",
+		"usage_conflict", "usage_unfinished", "ledger_limit", "invalid_event":
+	default:
+		reason = "unknown"
+	}
+	m.WSDiagnostics.WithLabelValues(protocol, reason).Inc()
+}
+
+func wsProtocol(protocol string) bool {
+	return protocol == "dashscope.realtime" || protocol == "openai.realtime" || protocol == "dashscope.inference"
+}
+
+func wsSource(source string) bool {
+	return source == "response" || source == "transcription" || source == "session"
 }
