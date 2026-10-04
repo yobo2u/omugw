@@ -1,7 +1,7 @@
 # OpenAI Realtime GA：S2 握手与观测契约
 
 核验日期：2026-10-04。适用坐标：`openai.realtime → openai.realtime`，
-`GET /v1/realtime`。本页固定官方证据与 Task 1 Provider 的边界，防止将
+`GET /v1/realtime`。本页固定官方证据、Task 1 Provider 与 Task 2 只读观测的边界，防止将
 DashScope、Beta 或 GPT-Live 的同名字段当作 GA 契约。
 
 ## 1. 官方证据
@@ -115,7 +115,87 @@ reasoning token 明细，不能从差额猜数。
 关联保留 item_id/content_index；转写可晚于 response.done。默认未启用转写时，
 不能把每次音频 commit 记为 ASR pending。OpenAI 无 DashScope 的
 `session.finished` 计费终态，不能在 session.created 凭空登记 session 账。
-这些条款为后续 observer 提供证据，Task 1 不实现计量解析。
+这些条款由 Task 2 只读解析提供小事实，pending/去重/指标发布仍由后续 observer 负责。
+
+### 4.1 Task 2 固定接口与观测值
+
+共享包 `internal/protocol/realtimejson` 仅抽取 DashScope 已有的 JSON 扫描：
+`Parse([]byte) (Value,error)`、`Value.Field(string) (Value,error)`、
+`Value.Text(int) (string,error)`、`Value.Count() (int64,bool)`。
+`Value` 借用已验证帧切片，仅可由 Parse/Field 取得，扫描期间不能改写底层字节；
+不得进入 Event 或账本。Field 对所查询键拒绝重复（包括转义等价键），Text 拒绝
+有损 UTF-8/孤立 surrogate 与超长字符串并返回独立副本。未知负载只跳过，不复制。
+DashScope 的 Inspect、错误及计量规则不改变，两个协议不共享业务语义。
+
+`internal/protocol/openairealtime` 导出：
+
+```go
+const MaxIDBytes = 512
+func Inspect([]byte) (Event, error)
+func ValidateReady([]byte) error
+func ClassifyClose(uint16, string) *canonical.Error
+
+type Event struct {
+    Type, ID, Source, Status string
+    Started, Terminal bool
+    ContentIndex *int64
+    ItemPending bool
+    Usage canonical.Usage
+    Details TokenDetails
+    Seconds *float64
+    Diagnostic string
+    Failure *canonical.Error
+    Transcription *bool
+}
+type TokenDetails struct {
+    TextInput, AudioInput, ImageInput *int64
+    CachedInput, CachedTextInput, CachedAudioInput, CachedImageInput *int64
+    TextOutput, AudioOutput *int64
+}
+```
+
+Type/Status 最多 128 字节，ID 非空且最多 512 字节；ContentIndex 为
+0..2147483647，nil 与显式 0 严格区分。返回错误表示无法安全关联，不表示有权改写
+或丢弃原始消息；调用方应忽略该次观测。Usage 在所有返回路径均有显式 Fidelity。
+
+| 事件 | 固定事实 |
+|---|---|
+| session.created / session.updated | Source=session，ID=session.id，Started/Terminal=false；严格核验 session.type/object/id，Transcription 为有效回显配置 |
+| response.created | Source=response，ID=response.id，Started=true；不从非终态 usage 计费 |
+| response.done | Source=response，Terminal=true，Status 原值；任何终态状态都独立核验 usage，failed 从 status_details.error 分类 |
+| input_audio_buffer.committed | Source=transcription，ID=item_id，ItemPending=true，Started=false，ContentIndex=nil；仅候选，由 observer 结合配置决定是否启用 |
+| conversation.item.input_audio_transcription.delta / segment | Source=transcription，Started=true；可缺 content_index，缺时 ItemPending=true，不虚构 part 0 |
+| conversation.item.input_audio_transcription.completed / failed | Source=transcription，Terminal=true，Status=completed/failed；必须有合法 content_index，failed 独立报告 Failure |
+| error | 只报告安全 Failure，不凭 event_id 打开计费 pending |
+| 其他（含输出 transcript 与 session.finished） | 仅保留 Type，Source 为空，无 pending/terminal/usage 推断 |
+
+Transcription 只读 `session.audio.input.transcription`：null → false；含非空
+有界 model 的对象 → true；缺失、错误类型、空对象、重复相关键 → nil（未知）。
+legacy 顶层字段不替代 GA 配置；nil 不表示关闭，不沿用上一次 enabled 来猜费用。
+配置未知本身不设置 usage Diagnostic，observer 据 nil 产生配置不可知诊断。
+ValidateReady 复用身份校验并要求 type=session.created；操作码验证由调用方完成。
+
+### 4.2 计量可信边界
+
+- Diagnostic 固定为 `""`、`usage_missing`、`usage_unverified`、`usage_invalid`。
+  usage 缺失/null 为 missing；非对象或未知 ASR 单位为 unverified；已识别字段重复、
+  损坏、越界或矛盾为 invalid。不会把原文放进诊断。
+- token 总量要求 input/output 同时存在、严格非负整数、相加不溢出；total 可省略，
+  提供则须严格相等。总量非法时 Usage=unavailable，Details 全 nil。
+- 可选明细缺失或未知明细为空不破坏总量，不推算缺项。给出的已知分项不得超过
+  父项，已知分项和不得超过父项；已知模态齐全时才要求和相等。response 输入
+  按 text/audio/image 三项，输出按 text/audio 两项；ASR tokens 输入按 text/audio。
+- 任一已知明细非法时，保留合法 input/output 总量，Diagnostic=usage_invalid，
+  整组 Details 不发布，Canonical 的 audio/cache 明细保持 0。合法明细通过后才投影
+  audio in/out 与 cache read；消费者应以 Details 指针判断 presence。
+- cached 分项同时受 cached 总量与已提供同模态 input 约束。cached 总量缺失时，
+  仍检查已给分项和不超过 input 及同模态子集，但不推算 cached 总量，也不要求
+  cache 分项和等于 input。未知 reasoning 明细不参与计量或补差。
+- ASR `type=tokens` 与 `type=duration` 严格分支；duration 仅产出 Seconds，
+  Usage=unavailable，不写 AudioInputSeconds、不制造零 token 记录。seconds 必须是
+  有限非负数，显式 0 有 presence；数字文本最多 128 字节，超出保守标 invalid。
+- Event 不含原始负载、音频、转写全文或动态容器。返回标量可在归还帧缓冲后保留；
+  原始应用消息与未知字段均由中继原字节保全，不从本观测重新编码。
 
 ## 5. 资源、期限与安全错误
 
@@ -138,11 +218,46 @@ connect 覆盖 TCP/TLS；握手 ctx 的共同 first_byte 截止由协调器传�
 只保留状态码及重新编码的数值 Retry-After/RateLimit 头，Body 为 `http.NoBody`。
 原 message/code/param、Location、任意头、Request/URL 和原体均不能流到调用方。
 
+### 5.1 Task 2 带内错误与关闭
+
+只读分类先按明确 code，再按明确 type；不调用 HTTP decoder，不制造 400/500
+作为回退，不从 message/reason 猜 auth/quota。相关 code/type 重复或损坏时保守
+internal；可选 code 的 missing/null 可回退到明确 type。只保存表内已识别字面量
+到 UpstreamCode，UpstreamStatus=0，message 固定，param/request ID/cause 清空。
+
+| code | Class |
+|---|---|
+| invalid_value | bad_request |
+| invalid_api_key | auth |
+| context_length_exceeded / string_above_max_length | context_length |
+| content_filter / content_policy_violation | content_filter |
+| insufficient_quota / billing_hard_limit_reached | quota |
+| rate_limit_exceeded | rate_limit |
+
+| type（无已识别 code 时） | Class |
+|---|---|
+| invalid_request_error | bad_request |
+| authentication_error / permission_error | auth |
+| rate_limit_error | rate_limit |
+| insufficient_quota | quota |
+| server_error | upstream_unavailable |
+
+以上为显式分类白名单：通用 OpenAI 已知 code/type 的精确匹配加 GA 带内
+invalid_request_error/server_error；并非宣称每个值均已在 GA 云端观察到。
+Retryable 遵从 canonical 类别，未知为 internal/nonretryable。
+ClassifyClose 仅 1000/1001 返回 nil，其余全部 internal/nonretryable；不套用
+DashScope 的 1011 + `To many requests` 实录结论。此分类不能绕过首字节边界。
+
 ## 6. 证据边界
 
 Task 1 的自动化证据是本地 TCP/TLS：握手头/地址、零拨号拒绝、64 KiB 精确
 边界、原 socket 关闭、不重定向、不信任 TLS 证书拒绝、期限及预算接线。
 `internal/config/websocket_test.go` 已覆盖 OpenAI 的四种配置 scheme 与共享默认值。
+
+Task 2 的证据是字面合成 JSON 测试：官方示例 132/121/253、ASR 13/9/22、
+1.25/0 秒、GA 身份、presence/duplicate/part/config 边界，以及 scanner/两协议
+普通与 race 测试、有界 fuzz、4 MiB 未知字段分配上限和归还帧后标量所有权。
+DS 网关回归仅验证纯扫描迁移未改变原行为；不代表 OpenAI handler 已接线。
 
 尚未做 OpenAI 云端调用、真实模型权限/地域核验、完整有效配置实录、逐能力实录、
 官方 Node SDK + 网关 TLS 集成或生产代理验收。测试中的假凭据和合成消息不是
