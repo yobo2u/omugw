@@ -74,14 +74,39 @@ func inferenceCandidate(r inferenceRecording) (testkit.Fixture, error) {
 	}
 	peer := false
 	local := false
+	var failed, lastUsage inferenceEvent
+	if outcome == "failed" {
+		// drive已验证到这条真实failed；不能把第二task的失败硬绑成第一task。
+		failed, err = inferenceDecode(r.Records[i-1].Payload, r.Model)
+		if err != nil || failed.Event != "task-failed" {
+			return empty, bad
+		}
+		for _, rec := range r.Records[:i] {
+			if rec.Direction == "receive" && rec.Opcode == ws.OpText {
+				e, eerr := inferenceDecode(rec.Payload, r.Model)
+				if eerr == nil && e.TaskID == failed.TaskID {
+					if inferenceAdvanceUsage(&lastUsage, e) != nil {
+						return empty, bad
+					}
+				}
+			}
+		}
+	}
 	for _, rec := range r.Records[i:] {
 		if rec.Opcode != ws.OpClose {
 			// failed后的尾消息保留但不补终态；本槽无效音色没有已启动的binary契约。
 			if outcome != "failed" || rec.Direction != "receive" || rec.Opcode != ws.OpText {
 				return empty, bad
 			}
-			e, err := inferenceDecode(rec.Payload, r.Model)
-			if err != nil || e.TaskID != fmt.Sprintf("s3-%d-1", r.Slot) || e.Event == "task-finished" || e.Event == "task-started" {
+			e, err := inferenceBoundEvent(c, rec.Payload, failed.TaskID)
+			if err != nil || e.Event == "task-finished" || e.Event == "task-started" {
+				return empty, bad
+			}
+			if inferenceAdvanceUsage(&lastUsage, e) != nil {
+				return empty, bad
+			}
+			// 终态已冻结：同值重复可保全；增长、回退、presence改变均不能重结成新证据。
+			if (e.Event == "task-failed" || e.Usage) && !inferenceSameUsage(e, failed) {
 				return empty, bad
 			}
 			continue

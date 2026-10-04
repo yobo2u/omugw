@@ -44,6 +44,9 @@ func inferenceOfflineConfig(t *testing.T, slot int) inferenceRecordingConfig {
 		{Slot: 5, Model: "qwen-audio-3.1-asr-flash-streaming", MaxTasks: 2, MaxInputAudioSeconds: 6, WorstCaseTokens: 2000, WorstCaseFen: 1},
 		{Slot: 6, Model: "qwen-audio-3.0-tts-flash", Voice: "omugw-invalid-voice-s3", MaxTasks: 1, MaxInputCharacters: 40, WorstCaseFen: 1},
 	}
+	for slot := 1; slot <= 6; slot++ {
+		m.CostEvidence = append(m.CostEvidence, inferenceSyntheticCost(m, slot))
+	}
 	b, _ := json.Marshal(m)
 	mp := filepath.Join(root, "manifest.json")
 	if err := os.WriteFile(mp, b, 0600); err != nil {
@@ -198,6 +201,12 @@ func TestInferenceRecorderOfflineLimits(t *testing.T) {
 	})
 	t.Run("manifest完整但合成费用仍不能授权", func(t *testing.T) {
 		c := inferenceOfflineConfig(t, 1)
+		// 只有预算数字，没有结构化依据；synthetic位也不能绕过费用验证。
+		c.Manifest.CostEvidence = nil
+		b, _ := json.Marshal(c.Manifest)
+		if err := os.WriteFile(c.ManifestPath, b, 0600); err != nil {
+			t.Fatal(err)
+		}
 		env := map[string]string{"OMUGW_RECORD_DS_INFERENCE": "1", "OMUGW_DS_INFERENCE_SLOT": "1", "OMUGW_DS_INFERENCE_OUTPUT": c.Output, "OMUGW_DS_INFERENCE_MANIFEST": c.ManifestPath, "OMUGW_SMOKE": "1"}
 		_, err := inferenceRecordConfig(c.Root, func(k string) string {
 			if k == "DASHSCOPE_API_KEY" {
@@ -321,7 +330,7 @@ func TestInferenceRecorderOfflineLimits(t *testing.T) {
 			func(c *inferenceRecordingConfig) { c.Manifest.Slots[0].MaxTasks = 3 },
 			func(c *inferenceRecordingConfig) { c.Manifest.Slots[0].MaxInputAudioSeconds = 7 },
 			func(c *inferenceRecordingConfig) { c.Manifest.Slots[1].MaxInputCharacters = 81 },
-			func(c *inferenceRecordingConfig) { c.Manifest.Slots[3].WorstCaseTokens = 0 },
+			func(c *inferenceRecordingConfig) { c.Manifest.Slots[3].WorstCaseTokens = -1 },
 			func(c *inferenceRecordingConfig) { c.Manifest.Slots[0].WorstCaseFen = 0 },
 			func(c *inferenceRecordingConfig) { c.Manifest.Region = "ap-southeast-1" },
 			func(c *inferenceRecordingConfig) {
@@ -343,6 +352,7 @@ func TestInferenceRecorderOfflineLimits(t *testing.T) {
 		}
 		c := inferenceOfflineConfig(t, 1)
 		c.synthetic = false
+		c.Manifest.CostEvidence = nil
 		if err := inferenceReserve(c); err == nil {
 			t.Fatal("合成数字冒充真实token费用证明")
 		}

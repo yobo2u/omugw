@@ -38,6 +38,7 @@ type inferenceRecordingManifest struct {
 	Batch, Region, Endpoint, SamplePath, SampleSHA256, PriceSource, PriceCheckedAt string
 	WorstCaseFen                                                                   int64
 	Slots                                                                          [6]inferenceRecordingSlot
+	CostEvidence                                                                   []inferenceCostEvidence `json:",omitempty"`
 }
 
 type inferenceRecordingConfig struct {
@@ -65,7 +66,7 @@ func inferenceRecordConfig(root string, getenv func(string) string) (inferenceRe
 		return c, errors.New("必须显式指定1到6单槽")
 	}
 	c = inferenceRecordingConfig{Root: root, Batch: inferenceBatch, Slot: slot, Scenario: inferenceScenarioName(slot), Output: getenv("OMUGW_DS_INFERENCE_OUTPUT"), ManifestPath: getenv("OMUGW_DS_INFERENCE_MANIFEST")}
-	b, err := inferenceReadFile(c.ManifestPath, 16<<10)
+	b, err := inferenceReadFile(c.ManifestPath, inferenceManifestLimit)
 	if err != nil {
 		return c, errors.New("缺少有界绝对路径 manifest")
 	}
@@ -122,8 +123,8 @@ func inferenceValidate(c inferenceRecordingConfig) error {
 		return errors.New("缺少固定官方价格来源")
 	}
 	checked, err := time.Parse(time.RFC3339, m.PriceCheckedAt)
-	if err != nil || checked.After(time.Now()) || time.Since(checked) > 24*time.Hour {
-		return errors.New("价格必须在24小时内核对")
+	if err != nil || checked.After(time.Now()) {
+		return errors.New("批次价格参考时间非法")
 	}
 	models := [6]string{"qwen-audio-3.0-asr-flash-streaming", "qwen-audio-3.0-tts-flash", "sambert-zhichu-v1", "qwen-audio-3.1-asr-flash-message", "qwen-audio-3.1-asr-flash-streaming", "qwen-audio-3.0-tts-flash"}
 	voices := [6]string{"", "longanlingxi", "", "", "", "omugw-invalid-voice-s3"}
@@ -142,7 +143,7 @@ func inferenceValidate(c inferenceRecordingConfig) error {
 			return errors.New("TTS文本上限不符")
 		}
 		if i == 3 || i == 4 {
-			if s.WorstCaseTokens <= 0 {
+			if s.WorstCaseTokens < 0 {
 				return errors.New("token费用上界未知或越界")
 			}
 		} else if s.WorstCaseTokens != 0 {
@@ -169,16 +170,13 @@ func inferenceValidate(c inferenceRecordingConfig) error {
 	if c.Key != "" && (!inferenceKeyValid(c.Key) || bytes.Contains(b, []byte(c.Key))) {
 		return errors.New("凭据格式或样本安全检查失败")
 	}
-	if c.Key != "" {
-		metadata, _ := json.Marshal(m)
-		if _, err := inferenceJSON(metadata, c.Key); err != nil {
-			return errors.New("manifest含凭据或不安全字段")
-		}
+	metadata, _ := json.Marshal(m)
+	if len(metadata) > inferenceManifestLimit {
+		return errors.New("manifest超过独立64KiB上限")
 	}
-	if !c.synthetic {
-		// 2026-10-04 研究未找到两个token ASR的服务端最坏输入/输出限制。
-		// 任何自填数字、45秒截止或轨迹大小都不是已核实的计价证明；补证需独立审核代码。
-		return errors.New("缺少经核实的token ASR最坏费用依据，六槽live manifest暂不可授权")
+	if _, err := inferenceJSON(metadata, c.Key); err != nil {
+		return errors.New("manifest含凭据或不安全字段")
 	}
-	return nil
+	_, err = inferenceAuthorizeCost(m, c.Slot, time.Now())
+	return err
 }

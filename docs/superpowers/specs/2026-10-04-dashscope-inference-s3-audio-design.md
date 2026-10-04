@@ -321,8 +321,23 @@ S3 token delta 另调用 ObserveUsage(outbound, authoritative tokens)，total �
 manifest固定字段：Batch、Region（`cn-beijing`）、Endpoint、SamplePath、SampleSHA256、PriceSource、
 PriceCheckedAt（RFC3339）、WorstCaseFen（全批≤100），以及六项Slots（Slot、Model、Voice、MaxTasks、
 MaxInputAudioSeconds、MaxInputCharacters、WorstCaseTokens、WorstCaseFen）；逐项必须等于场景表的模型/
-音色及其硬上限内数值。未知计价边界用错误阻止reserve，不能用0充当未知。每槽费用上限至少1分，
+音色及其硬上限内数值。未知计价边界阻止**该槽**reserve，不能以0作为已证明的token上限。每槽费用上限至少1分，
 reserve预占本槽最坏费用/时长/task，失败不退款，持久槽总和也不能超批次上限。
+
+**Task7复核后载体补全（控制器裁决，非新增真实费用授权）：** manifest可选新增 `CostEvidence`（至多六项、按Slot唯一），
+仅本次指定槽须有完整证据；其他未选择token槽的WorstCaseTokens=0只表示未知，不阻断已证明槽，也不能授权自身。
+证据绑定Slot/Region/Model/Voice/SampleSHA256/MaxTasks、官方PriceSource和独立CheckedAt（RFC3339，过去24小时内），
+声明Unit、取整Rounding及RoundingSource；Components按input/output声明MaxPerTask、PriceFenPerUnit、Quantum、
+MaxBasis和价格/最大量来源。数值用正int64分子/分母，内部精确有理数计算，不用float或可能溢出的int64中间乘加。
+来源载体包含官方URL、非空原文摘录及摘录SHA；真实性/适用性由控制器对照官方材料核验，工具不联网认证文档语义。
+seconds/characters按完整允许输入上限、`bounded_input`依据计算，另须输出不收费来源；token必须提供两路完整
+`server_limit`最大量与价格，不能凭短音频、45秒或轨迹字节猜测。逐task按Quantum向上取整，随后按声明的
+逐槽或逐task分币ceil规则计算费用，结果须落在本槽WorstCaseFen及批次持久预算内。正整数或verified布尔不足以授权。
+具体字段及公式见[录制指南](../../research/2026-10-04-dashscope-inference-s3-recording.md#本槽costevidence载体)。
+
+冻结的批次身份/共享预算投影不含可补齐的CostEvidence及token最大量；完整选中Slot、费用材料、计算分值随reserve封存，
+Dial前逐字节重核。token最大量只可在该槽未占用前补齐，不改变固定人民币/task/墙钟预算；已占槽不可替换证明或退款。
+顶层PriceCheckedAt记录批次初始参考日，本槽CheckedAt承担当前价格核对新鲜度。当前取整/token依据仍缺，真实调用保持0。
 
 | 槽 | 固定场景 / 模型 | 目标证据 |
 |---|---|---|
@@ -341,6 +356,8 @@ reserve预占本槽最坏费用/时长/task，失败不退款，持久槽总和�
 文件 exclusive-create、目录0700/文件0600，握手先脱敏，不保存 key/header secret，不把内容打到日志。
 原始材料按上限流式落盘；候选另限testkit默认8MiB文件/4MiB轨迹/1MiB消息，超限保留私有原始材料并
 报告候选未生成，不能删事件或修改字节挤进上限。记录发送完成与对端close接收是不同证据。
+failed后的尾文本继续执行同一窄绑定检查；实际失败task ID及冻结终态usage不能被重复failed改写，矛盾只留raw。
+主动BeginClose之前检查本地close及必要peer-close记录/编码额度；不足明确预算失败并强制释放、join，不能先发后拒。
 只在专用 smoke tag+开关+批次/槽/manifest 完整时发起；普通/race 测试不能触公网。
 
 验收表分列文档事实、synthetic机制通过、真实支持/未测、网关保全、计量证据、逐能力缺口。

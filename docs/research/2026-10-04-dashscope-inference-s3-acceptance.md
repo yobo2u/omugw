@@ -38,14 +38,18 @@ Task7没有增加 `testdata/fixtures/dashscope-inference/`，普通测试不要�
 
 录制器仅依赖标准库、transport及testkit，不import被测gateway/Inference Inspector/Provider。
 普通构建没有live拨号入口，实际云端Dial封装仅在smoke tag文件；专用开关还必须精确为1。
-当前真实费用校验保持拒绝，合成fixture的费用整数不能解锁它。
+费用入口按本槽CostEvidence核验完整结构、精确身份和有理数/ceil算术；未知其他槽不阻断已证明槽。
+来源摘录真实性/适用性仍由控制器核验；没有实际来源材料时拒绝该槽，正整数或verified布尔不能代替证据。
+离线正例含显式SYNTHETIC来源载体，覆盖真实配置解析/reserve路径，不是云端证明或新增费用授权。
 
 离线断言覆盖：固定六槽/10task/270秒/100分/45秒，固定音频/文本上界、独占目录与拒链接、
 并发reserve唯一、失败占槽不退款、输出删除后不能二次Dial、样本摘要变更零Dial、
 六场景因果、真实close与本地write分别记录、EOF与静默不补造peer close、
 终态后抢先close竞争、关闭期间安全拒绝不能裁剪成candidate、原始与候选分开预算、raw/candidate逐行对账。
+Fix round1另覆盖failed尾部model/task/streaming重申、重复failed的累计/presence冲突；矛盾raw保留而candidate unavailable。
+1024记录满时真实本地peer不得收到额外close；关闭额度在BeginClose前检查，失败强制释放/join，预留不记作已发送。
 
-Task7最后一次代码修改后的实际输出（2026-10-04）：
+Task7初次提交的历史输出（485e195；不代表fix round1复核）：
 
 ```text
 $ go test ./tests/smoke -run '^TestInferenceRecorderOffline' -count=1
@@ -61,6 +65,24 @@ $ git diff --check
 ```
 
 这些检查仅代表Task7，**不代替下面的全分支与SDK关口**。录制器没有使用真实key、公网请求或既有实验ledger。
+
+Fix round1最后一次代码修改后的验证（I1/I2/I3修复仍待控制器独立复审）：
+
+```text
+$ go test ./tests/smoke -run '^TestInferenceRecorderOffline' -count=1
+ok github.com/yobo2u/omugw/tests/smoke 17.915s
+$ go test -race ./tests/smoke -run '^TestInferenceRecorderOffline' -count=1
+ok github.com/yobo2u/omugw/tests/smoke 22.559s
+$ go test -tags=smoke ./tests/smoke -run '^TestInferenceRecorderOffline' -count=1
+ok github.com/yobo2u/omugw/tests/smoke 19.102s
+$ go vet ./tests/smoke
+（无输出，exit 0）
+$ git diff --check
+（无输出，exit 0）
+```
+
+费用测试包括本槽可达且其他token槽未知、两种ceil范围、2^53边界、缺证/假verified/错绑/不够费用/量与费溢出、
+补证明不重置批次、Dial前证据封存与共享分币预算不可提高。成功数据均为SYNTHETIC，不认证真实计费材料。
 
 ## 控制器最终关口（均待验）
 

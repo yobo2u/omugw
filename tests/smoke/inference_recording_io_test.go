@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 	"unicode/utf8"
 )
 
@@ -133,9 +134,38 @@ func inferenceWrite(r *os.Root, name string, b []byte) error {
 	return nil
 }
 
-// 固定manifest冻结整个批次，六个唯一槽的预算总和已预检；并发不需可回收锁或退款。
+// 冻结身份和六槽预算；未占槽的费用材料可补齐，已占槽的具体材料固定在reserve中。
+// 六个唯一槽的预算总和已预检；并发不需可回收锁或退款。
+func inferenceReservation(c inferenceRecordingConfig) (budget, claim []byte, err error) {
+	a, err := inferenceAuthorizeCost(c.Manifest, c.Slot, time.Now())
+	if err != nil {
+		return nil, nil, err
+	}
+	m := c.Manifest
+	m.CostEvidence = nil
+	// token最大量是本槽费用证明的一部分，不是六槽共享的退款额度。
+	// 未占槽的0表示未知，后补正数不改固定人民币/task/时长预算；占槽后按完整Slot封存。
+	m.Slots[3].WorstCaseTokens = 0
+	m.Slots[4].WorstCaseTokens = 0
+	budget, _ = json.Marshal(m)
+	claim, _ = json.Marshal(struct {
+		Slot           inferenceRecordingSlot
+		WallSeconds    int64
+		ManifestSHA256 string
+		Cost           inferenceCostAuthorization
+	}{c.Manifest.Slots[c.Slot-1], 45, inferenceSHA(budget), a})
+	if len(claim) > inferenceManifestLimit {
+		return nil, nil, errors.New("费用占槽记录超限")
+	}
+	return budget, claim, nil
+}
+
 func inferenceReserve(c inferenceRecordingConfig) error {
 	if err := inferenceValidate(c); err != nil {
+		return err
+	}
+	b, claim, err := inferenceReservation(c)
+	if err != nil {
 		return err
 	}
 	root := filepath.Dir(c.Output)
@@ -151,23 +181,16 @@ func inferenceReserve(c inferenceRecordingConfig) error {
 	if _, err := r.Lstat(name); !os.IsNotExist(err) {
 		return errors.New("输出必须不存在")
 	}
-	b, _ := json.Marshal(c.Manifest)
 	if _, err := r.Lstat("manifest.json"); os.IsNotExist(err) {
 		if err := inferenceWrite(r, "manifest.json", b); err != nil {
 			return err
 		}
 	} else {
-		old, err := inferenceReadFile(filepath.Join(root, "manifest.json"), 16<<10)
+		old, err := inferenceReadFile(filepath.Join(root, "manifest.json"), inferenceManifestLimit)
 		if err != nil || !bytes.Equal(old, b) {
 			return errors.New("批次manifest已冻结或损坏")
 		}
 	}
-	slot := c.Manifest.Slots[c.Slot-1]
-	claim, _ := json.Marshal(struct {
-		Slot           inferenceRecordingSlot
-		WallSeconds    int64
-		ManifestSHA256 string
-	}{slot, 45, inferenceSHA(b)})
 	if err := inferenceWrite(r, fmt.Sprintf("reserve-%d.json", c.Slot), claim); err != nil {
 		return err
 	}
@@ -186,22 +209,20 @@ func inferenceClaimDial(c inferenceRecordingConfig) error {
 	if err := inferenceValidate(c); err != nil {
 		return err
 	}
+	b, expected, err := inferenceReservation(c)
+	if err != nil {
+		return err
+	}
 	r, err := inferenceOpenDir(filepath.Dir(c.Output), false)
 	if err != nil {
 		return err
 	}
 	defer r.Close()
-	b, _ := json.Marshal(c.Manifest)
-	old, err := inferenceReadFile(filepath.Join(filepath.Dir(c.Output), "manifest.json"), 16<<10)
+	old, err := inferenceReadFile(filepath.Join(filepath.Dir(c.Output), "manifest.json"), inferenceManifestLimit)
 	if err != nil || !bytes.Equal(b, old) {
 		return errors.New("拨号前manifest不符")
 	}
-	claim, err := inferenceReadFile(filepath.Join(filepath.Dir(c.Output), fmt.Sprintf("reserve-%d.json", c.Slot)), 4096)
-	expected, _ := json.Marshal(struct {
-		Slot           inferenceRecordingSlot
-		WallSeconds    int64
-		ManifestSHA256 string
-	}{c.Manifest.Slots[c.Slot-1], 45, inferenceSHA(b)})
+	claim, err := inferenceReadFile(filepath.Join(filepath.Dir(c.Output), fmt.Sprintf("reserve-%d.json", c.Slot)), inferenceManifestLimit)
 	if err != nil || !bytes.Equal(claim, expected) {
 		return errors.New("拨号缺持久reserve")
 	}

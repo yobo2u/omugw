@@ -240,6 +240,9 @@ Modify `.gitignore` 精确忽略 `/.local/ws-recordings/s3-audio-20261004/`，�
   `inferenceSave(output string,recording inferenceRecording) error`，均包内固定工具接口。
 - config字段：Root/Output/Batch/Scenario/Endpoint/Model/Voice/SamplePath/SampleSHA256/Key/ManifestPath string，Slot int，
   Manifest inferenceRecordingManifest（固定字段按spec§8.1，字符串时间用RFC3339、数值上限用int64、Slots固定[6]项）。
+  Task7复核裁决补可选CostEvidence集合：按本槽精确身份/官方来源摘录与SHA/核对时间/原单位/最大量/取整验证，
+  正int64分子分母以精确有理数计算分值；`inferenceAuthorizeCost(manifest,slot,now)`返回本槽计算与证据，
+  禁止无条件常闭或synthetic旁路，缺证只拒该槽。未知token槽0不授权自身，已证明的非token槽可独立通过。
   固定限制写代码，不能环境扩额。recording含Records []inferenceRecord、Started/Ended time.Time、Outcome string；
   record含Direction string、At time.Duration、Opcode ws.Opcode、Payload []byte、CloseCode uint16、CloseReason string、PeerClose bool；持有量受spec限制。
 
@@ -254,7 +257,10 @@ Modify `.gitignore` 精确忽略 `/.local/ws-recordings/s3-audio-20261004/`，�
   live只读环境：`OMUGW_RECORD_DS_INFERENCE=1`、`OMUGW_DS_INFERENCE_SLOT`（1..6）、
   `OMUGW_DS_INFERENCE_MANIFEST`（绝对路径）、`OMUGW_DS_INFERENCE_OUTPUT`、`DASHSCOPE_API_KEY`；Key永不落盘。
   root下 `.local/ws-recordings/s3-audio-20261004` 唯一reserve根，output只能为该根指定slot子目录，禁止改batch/绕槽。
-  manifest写固定地域/model/voice/sample SHA、最坏费用计算≤1元/余量，缺失停；一次只跑指定槽，不批量自动补跑。
+  manifest写固定地域/model/voice/sample SHA、最坏费用计算≤1元/余量，本槽CostEvidence缺失停；一次只跑指定槽，不批量自动补跑。
+  批次投影冻结身份和六槽共享预算，选中Slot完整token最大量、费用证据与计算随reserve封存并在Dial前重核；
+  其他未占槽的证明可补齐，不能改变人民币/task/墙钟预算。来源真实性由控制器核验，工具只核结构/绑定/算术；
+  当前取整/token最大量仍缺证，合成成功不是云端证明。格式细节以spec§8.1和录制指南为准。
   直连独立请求、独占原始输出、peer与local close分槽；raw/candidate上限分别检查，不修改任何S1工具/ledger。
 - [ ] **实现live入口 `TestRecordDashScopeInference`（仅 `//go:build smoke`）。** 先完整预检→reserve→一次capture→save；
   自测只编译禁live路径，不运行该测试。录制指南写控制器单槽命令及六槽输入/失败停机规则，不提供裸make smoke。

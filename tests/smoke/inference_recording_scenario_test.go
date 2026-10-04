@@ -103,6 +103,50 @@ func inferenceDecode(b []byte, model string) (inferenceEvent, error) {
 	return e, nil
 }
 
+// 正常阶段与failed尾部共用这一窄检查，防终态之后仍用同ID偷换模型或任务契约。
+func inferenceBoundEvent(c inferenceRecordingConfig, b []byte, id string) (inferenceEvent, error) {
+	e, err := inferenceDecode(b, c.Model)
+	bad := errors.New("事件重申了矛盾的任务绑定")
+	if err != nil || e.TaskID != id {
+		return inferenceEvent{}, bad
+	}
+	v, _ := inferenceJSON(b, "")
+	m := v.(map[string]any)
+	p := m["payload"].(map[string]any)
+	h := m["header"].(map[string]any)
+	streaming, task, function := "duplex", "asr", "recognition"
+	if c.Slot == 2 || c.Slot == 3 || c.Slot == 6 {
+		task, function = "tts", "SpeechSynthesizer"
+	}
+	if c.Slot == 3 {
+		streaming = "out"
+	}
+	if got, present := h["streaming"]; present && got != streaming {
+		return inferenceEvent{}, bad
+	}
+	for field, want := range map[string]string{"model": c.Model, "task_group": "audio", "task": task, "function": function} {
+		if got, present := p[field]; present && got != want {
+			return inferenceEvent{}, bad
+		}
+	}
+	return e, nil
+}
+
+func inferenceAdvanceUsage(last *inferenceEvent, e inferenceEvent) error {
+	if !e.Usage {
+		return nil
+	}
+	if last.Usage && (e.Unit != last.Unit || e.InputTokens < last.InputTokens || e.OutputTokens < last.OutputTokens || e.TotalTokens < last.TotalTokens || e.Characters < last.Characters || e.Seconds < last.Seconds) {
+		return errors.New("累计用量回退或单位冲突")
+	}
+	*last = e
+	return nil
+}
+
+func inferenceSameUsage(a, b inferenceEvent) bool {
+	return a.Usage == b.Usage && a.Unit == b.Unit && a.InputTokens == b.InputTokens && a.OutputTokens == b.OutputTokens && a.TotalTokens == b.TotalTokens && a.Characters == b.Characters && a.Seconds == b.Seconds
+}
+
 func inferenceRequest(c inferenceRecordingConfig, action, id, text string) ([]byte, error) {
 	if utf8.RuneCountInString(text) > 40 {
 		return nil, errors.New("单任务文本超过40字符")
@@ -171,34 +215,12 @@ func inferenceDrive(c inferenceRecordingConfig, sample []byte, send func(ws.Opco
 			if r.Opcode != ws.OpText {
 				return "interrupted", bad
 			}
-			e, err := inferenceDecode(r.Payload, c.Model)
-			if err != nil || e.TaskID != id {
+			e, err := inferenceBoundEvent(c, r.Payload, id)
+			if err != nil {
 				return "invalid_evidence", bad
 			}
-			// 非空可选绑定不得与固定请求不同；不能只看事件名字就认定另一个模型已接纳。
-			v, _ := inferenceJSON(r.Payload, "")
-			p := v.(map[string]any)["payload"].(map[string]any)
-			h := v.(map[string]any)["header"].(map[string]any)
-			streaming, task, function := "duplex", "asr", "recognition"
-			if c.Slot == 2 || c.Slot == 3 || c.Slot == 6 {
-				task, function = "tts", "SpeechSynthesizer"
-			}
-			if c.Slot == 3 {
-				streaming = "out"
-			}
-			if got, present := h["streaming"]; present && got != streaming {
+			if inferenceAdvanceUsage(&last, e) != nil {
 				return "invalid_evidence", bad
-			}
-			for field, want := range map[string]string{"model": c.Model, "task_group": "audio", "task": task, "function": function} {
-				if got, present := p[field]; present && got != want {
-					return "invalid_evidence", bad
-				}
-			}
-			if e.Usage {
-				if last.Usage && (e.InputTokens < last.InputTokens || e.OutputTokens < last.OutputTokens || e.TotalTokens < last.TotalTokens || e.Characters < last.Characters || e.Seconds < last.Seconds) {
-					return "invalid_evidence", bad
-				}
-				last = e
 			}
 			switch e.Event {
 			case "task-failed":

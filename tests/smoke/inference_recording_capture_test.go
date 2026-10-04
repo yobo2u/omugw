@@ -48,6 +48,21 @@ type inferenceRecording struct {
 	stream                               *os.File
 	streamed                             bool
 	rawOutput                            string
+	awaitingPeer                         bool
+}
+
+var errInferenceCloseBudget = errors.New("关闭证据预算不足")
+
+func inferenceRecordUpper(rec inferenceRecord) int64 {
+	return int64((len(rec.Payload)+2)/3*4 + len(rec.CloseReason)*6 + 512)
+}
+
+// 本地发送与最坏123字节peer reason各占一条；只检查额度，不伪造发送记录。
+func (r *inferenceRecording) checkCloseBudget() error {
+	if len(r.Records) > inferenceNodeLimit-2 || r.rawBytes > inferenceTraceLimit-123 || r.encodedBytes > inferenceTraceLimit-(512+512+123*6) {
+		return errInferenceCloseBudget
+	}
+	return nil
 }
 
 func (r *inferenceRecording) checkRecord(rec inferenceRecord, key string) error {
@@ -57,6 +72,12 @@ func (r *inferenceRecording) checkRecord(rec inferenceRecord, key string) error 
 	}
 	if rec.Opcode == ws.OpBinary && rec.Direction == "receive" && int64(len(rec.Payload)) > inferenceAudioLimit-r.audioBytes {
 		return errors.New("响应音频超过8MiB")
+	}
+	if inferenceRecordUpper(rec) > inferenceTraceLimit-r.encodedBytes {
+		return errors.New("原始编码轨迹超过16MiB")
+	}
+	if r.awaitingPeer && rec.Opcode != ws.OpClose && (len(r.Records) >= inferenceNodeLimit-1 || n > inferenceTraceLimit-r.rawBytes-123 || inferenceRecordUpper(rec) > inferenceTraceLimit-r.encodedBytes-(512+123*6)) {
+		return errInferenceCloseBudget
 	}
 	if key != "" && (bytes.Contains(rec.Payload, []byte(key)) || bytes.Contains([]byte(rec.CloseReason), []byte(key))) {
 		return errors.New("原始材料包含凭据，拒绝保存")
@@ -75,10 +96,6 @@ func (r *inferenceRecording) add(rec inferenceRecord, key string) error {
 	}
 	rec.SHA256 = inferenceSHA(rec.Payload)
 	// 先计编码后的保守上界，再允许JSON分配，原始文件也不能越16MiB。
-	upper := int64((len(rec.Payload)+2)/3*4 + len(rec.CloseReason)*6 + 512)
-	if upper > inferenceTraceLimit-r.encodedBytes {
-		return errors.New("原始编码轨迹超过16MiB")
-	}
 	b, err := json.Marshal(rec)
 	if err != nil {
 		return errors.New("原始记录编码失败")
@@ -113,7 +130,7 @@ func inferenceCaptureWithDial(parent context.Context, c inferenceRecordingConfig
 	r = inferenceRecording{Started: time.Now(), Slot: c.Slot, Scenario: c.Scenario, Model: c.Model, Voice: c.Voice, SampleSHA256: c.SampleSHA256, Manifest: c.Manifest, Synthetic: c.synthetic, Outcome: "interrupted"}
 	defer func() {
 		r.Ended = time.Now()
-		if retErr != nil {
+		if retErr != nil && r.Failure == "" {
 			r.Failure = "capture_failed"
 		}
 	}()
@@ -298,6 +315,15 @@ func inferenceCaptureWithDial(parent context.Context, c inferenceRecordingConfig
 		}
 	}
 	if !readEnded {
+		if err := r.checkCloseBudget(); err != nil {
+			r.Failure = "close_budget_exhausted"
+			r.TransportEnd = "local_budget_abort"
+			if r.Outcome == "completed" {
+				r.Outcome = "interrupted"
+			}
+			return r, err
+		}
+		r.awaitingPeer = true
 		closeDeadline := minInferenceTime(deadline, time.Now().Add(time.Second))
 		sent, join, _ := conn.BeginClose(1000, "", closeDeadline)
 		if sent {
