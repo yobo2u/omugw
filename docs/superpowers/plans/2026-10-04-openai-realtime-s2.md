@@ -21,7 +21,13 @@
 - 共同first_byte绝对期限跨候选/首事件/下游101；进入Accept即承诺，之后不重试。HTTP total不套WS；idle/2心跳，写期限min(connect,idle)，关闭共同一秒I/O预算。
 - Message/CloseError显式Release；registry与relay共用wsTermination，所有worker先join再结账，Lease恰好一次；中断不清零已结权威usage。
 - 无真实凭据时仅离线；录制显式开关默认关闭，不裸跑smoke。S1八次已耗尽不重开。S2真实方案单列，不因合成/SDK成功兑现。
-- 生产WS门清单保持空，routes/Redeem/两份兑现白名单不变。当前PR16全部检查通过但尚未合并，S2独立分支基于91a8799。
+- 生产WS门清单保持空，routes/Redeem/两份兑现白名单不变。Mux未注册WS URL返回404；矩阵未兑现门返回501，不能混述。
+
+**状态校正（2026-10-04）**：计划起草时 S2 独立分支基于 `91a8799`，当时 PR #16
+尚未合并；目前 PR #16、#17 均已合并，远端 main=`5eaf1e2`，本分支通过
+`8ee9710` 已包含该基线。任务勾选保留原计划，当前实现、最终审查与验证范围以
+[S2 条件验收](../../research/2026-10-04-openai-realtime-s2-acceptance.md)为准。
+本地 Node 26 SDK/TLS 已验；CI Node 24 待远端，云端及生产代理未验；九条路径仍未全部交付。
 
 ## Review Focus
 

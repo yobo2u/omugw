@@ -7,6 +7,57 @@ import (
 	"testing"
 )
 
+// 保持完整成功轨迹及样本字节/摘要，只篡改声明，防止候选给错误格式贴上确定标签。
+func TestOpenAIRealtimeRecorderOfflineCandidateSampleMetadata(t *testing.T) {
+	for _, scenario := range []string{"audio-manual", "vad-interrupt"} {
+		t.Run(scenario, func(t *testing.T) {
+			good, _ := oaRunPeer(t, scenario, func(s string) string { return s }, false)
+			if good.Failure != "" || good.Input == nil {
+				t.Fatalf("没有完整成功录制: %s", good.Failure)
+			}
+			if _, err := oaCandidate(good); err != nil {
+				t.Fatalf("有效元数据不能派生候选: %v", err)
+			}
+			for _, tc := range []struct {
+				name string
+				edit func(*oaSample)
+			}{
+				{"public", func(s *oaSample) { s.Public = false }},
+				{"origin_empty", func(s *oaSample) { s.Origin = "" }},
+				{"origin_scheme", func(s *oaSample) { s.Origin = "http://example.org/audio" }},
+				{"origin_host", func(s *oaSample) { s.Origin = "https:///audio" }},
+				{"origin_user", func(s *oaSample) { s.Origin = "https://user@example.org/audio" }},
+				{"origin_query", func(s *oaSample) { s.Origin += "?token=value" }},
+				{"origin_fragment", func(s *oaSample) { s.Origin += "#fragment" }},
+				{"origin_invalid", func(s *oaSample) { s.Origin = "://%" }},
+				{"license", func(s *oaSample) { s.License = "" }},
+				{"format", func(s *oaSample) { s.Format = "wav" }},
+				{"rate", func(s *oaSample) { s.Rate = 16000 }},
+				{"channels", func(s *oaSample) { s.Channels = 2 }},
+				{"transcript_empty", func(s *oaSample) { s.Transcript = "" }},
+				{"transcript_large", func(s *oaSample) { s.Transcript = strings.Repeat("a", 1025) }},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					copy := good
+					sample := *good.Input
+					sample.Data = bytes.Clone(good.Input.Data)
+					copy.Input = &sample
+					tc.edit(copy.Input)
+					if !bytes.Equal(copy.Input.Data, good.Input.Data) || copy.Input.SHA256 != good.Input.SHA256 {
+						t.Fatal("元数据反例改变了样本或摘要")
+					}
+					if _, err := oaCandidate(copy); err == nil {
+						t.Fatal("候选未重新核验样本元数据")
+					}
+				})
+			}
+			if _, err := oaCandidate(good); err != nil {
+				t.Fatalf("篡改副本污染有效录制: %v", err)
+			}
+		})
+	}
+}
+
 // 每个反例都保留最后的合法 response.done，防止终态覆盖中途错关联。
 func TestOpenAIRealtimeRecorderOfflineToolArgumentEvidence(t *testing.T) {
 	for _, tc := range []struct{ name, event, old, replacement string }{

@@ -11,8 +11,11 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
 	"reflect"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -538,7 +541,15 @@ func TestOpenAIRealtimeProviderTimeoutWiring(t *testing.T) {
 			defer c.Close()
 			<-stop
 		}()
-		defer func() { close(stop); ln.Close(); <-done }()
+		t.Cleanup(func() {
+			close(stop)
+			ln.Close()
+			select {
+			case <-done:
+			case <-time.After(2 * time.Second):
+				t.Error("TLS服务端未退出")
+			}
+		})
 		timeouts := config.Default().Timeouts
 		timeouts.Connect = 40 * time.Millisecond
 		_, b := newProvider(t)
@@ -560,32 +571,15 @@ func TestOpenAIRealtimeProviderTimeoutWiring(t *testing.T) {
 		{"写取idle", time.Second, 40 * time.Millisecond, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			stop, done := make(chan struct{}), make(chan error, 1)
-			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				c, err := ws.Accept(w, r, ws.AcceptOptions{})
-				if err != nil {
-					done <- err
-					return
-				}
-				defer c.Close(ws.CloseNormal, "")
-				<-stop
-				done <- nil
-			}))
-			defer s.Close()
-			defer func() {
-				close(stop)
-				if err := <-done; err != nil {
-					t.Error(err)
-				}
-			}()
+			s, _ := timeoutServer(t, func(*ws.Conn) error { return nil })
 			timeouts := config.Default().Timeouts
 			timeouts.Connect, timeouts.Idle = tc.connect, tc.idle
 			_, budget := newProvider(t)
 			p := New(timeouts, config.DefaultWebSocket(), budget)
 			ctx := testContext(t)
-			c, _, err := p.Dial(ctx, request(s.URL))
+			c, _, err := p.Dial(ctx, timeoutRequest(s.URL))
 			if err != nil {
-				t.Fatal(err)
+				t.Fatalf("Dial失败: %v", err)
 			}
 			defer c.Close(ws.CloseNormal, "")
 			// 兜底仅供测试失败收尾，断言必须早于此期限。
@@ -613,32 +607,19 @@ func TestOpenAIRealtimeProviderTimeoutWiring(t *testing.T) {
 		})
 	}
 	t.Run("total和握手取消不侵入会话", func(t *testing.T) {
-		send, done := make(chan struct{}), make(chan error, 1)
-		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			c, err := ws.Accept(w, r, ws.AcceptOptions{})
-			if err != nil {
-				done <- err
-				return
-			}
-			defer c.Close(ws.CloseNormal, "")
-			<-send
-			done <- c.WriteMessage(ws.OpText, []byte("alive"))
-		}))
-		defer s.Close()
+		s, send := timeoutServer(t, func(c *ws.Conn) error { return c.WriteMessage(ws.OpText, []byte("alive")) })
 		timeouts := config.Timeouts{Connect: 40 * time.Millisecond, FirstByte: 80 * time.Millisecond, Total: 120 * time.Millisecond, Idle: 120 * time.Millisecond}
 		_, budget := newProvider(t)
 		p := New(timeouts, config.DefaultWebSocket(), budget)
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-		c, _, err := p.Dial(ctx, request(s.URL))
+		c, _, err := p.Dial(ctx, timeoutRequest(s.URL))
 		cancel()
 		if err != nil {
-			close(send)
-			<-done
-			t.Fatal(err)
+			t.Fatalf("Dial失败: %v", err)
 		}
 		defer c.Close(ws.CloseNormal, "")
 		time.Sleep(2 * timeouts.Total)
-		close(send)
+		send()
 		msg, err := c.ReadOwnedMessage(testContext(t))
 		if err != nil {
 			t.Fatal(err)
@@ -647,11 +628,78 @@ func TestOpenAIRealtimeProviderTimeoutWiring(t *testing.T) {
 			t.Fatal("会话负载改变")
 		}
 		msg.Release()
-		if err := <-done; err != nil {
-			t.Fatal(err)
-		}
 		if budget.Used() != 0 {
 			t.Fatal("预算泄漏")
 		}
 	})
+}
+
+// cleanup 独占 listener 与放行信号，handler 独占接管连接；done 必须晚于连接关闭。
+func timeoutServer(t *testing.T, serve func(*ws.Conn) error) (*httptest.Server, func()) {
+	t.Helper()
+	release, done := make(chan struct{}), make(chan error, 1)
+	signal := sync.OnceFunc(func() { close(release) })
+	var started atomic.Bool
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		started.Store(true)
+		var result error
+		defer func() { done <- result }()
+		c, err := ws.Accept(w, r, ws.AcceptOptions{HandshakeDeadline: time.Now().Add(time.Second), WriteTimeout: time.Second})
+		if err != nil {
+			result = err
+			return
+		}
+		defer c.Close(ws.CloseNormal, "")
+		<-release
+		result = serve(c)
+	}))
+	t.Cleanup(func() {
+		signal()
+		// Close 封住新 handler 的入口；未接管请求也已退出，才能判断无人会发 done。
+		s.Close()
+		if !started.Load() {
+			return
+		}
+		if os.Getenv("OMUGW_TEST_OPENAI_TIMEOUT_DIAL_FAILURE") == "1" {
+			t.Error("预检失败仍启动handler")
+		}
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Error(err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Error("WS服务端未退出")
+		}
+	})
+	return s, signal
+}
+
+// 子进程命中原测试的 Fatal/cleanup 路径；局部期限防止收尾回归拖到全库超时。
+func TestOpenAIRealtimeProviderCleanupBeforeHandler(t *testing.T) {
+	for _, name := range []string{"idle读取", "写取connect", "写取idle", "total和握手取消不侵入会话"} {
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestOpenAIRealtimeProviderTimeoutWiring$/^"+name+"$", "-test.count=1")
+			cmd.Env = append(os.Environ(), "OMUGW_TEST_OPENAI_TIMEOUT_DIAL_FAILURE=1")
+			out, err := cmd.CombinedOutput()
+			if ctx.Err() != nil {
+				t.Fatalf("handler 未启动的 Dial 失败收尾超出局部期限: %s", out)
+			}
+			var exit *exec.ExitError
+			if !errors.As(err, &exit) || exit.ExitCode() != 1 || !strings.Contains(string(out), "Dial失败:") || strings.Contains(string(out), "预检失败仍启动handler") {
+				t.Fatalf("未保留原始 Dial 失败: err=%v output=%s", err, out)
+			}
+		})
+	}
+}
+
+func timeoutRequest(base string) provider.Request {
+	r := request(base)
+	if os.Getenv("OMUGW_TEST_OPENAI_TIMEOUT_DIAL_FAILURE") == "1" {
+		// Beta 预检在物理拨号之前确定失败，HTTP handler 不可能成为 done 发送者。
+		r.Header = http.Header{"OpenAI-Beta": {"realtime=v1"}}
+	}
+	return r
 }

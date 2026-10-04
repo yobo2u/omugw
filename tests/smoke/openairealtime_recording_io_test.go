@@ -213,15 +213,30 @@ func oaLoadSample(path string) (oaSample, error) {
 	if err != nil || !oaSafeJSON(b, "") || json.Unmarshal(b, &s) != nil {
 		return s, errors.New("缺少合法公开音频元数据")
 	}
-	u, err := url.Parse(s.Origin)
-	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || !s.Public || s.License == "" || s.Format != "pcm_s16le" || s.Rate != 24000 || s.Channels != 1 || len(s.Transcript) == 0 || len(s.Transcript) > 1024 || filepath.Base(s.File) != s.File || s.File == "." {
-		return s, errors.New("音频必须是来源明确的公开 24k 单声道 PCM 样本")
+	if filepath.Base(s.File) != s.File || s.File == "." {
+		return s, errors.New("音频文件必须位于元数据同目录")
 	}
 	s.Data, err = oaReadBounded(filepath.Join(filepath.Dir(path), s.File), oaMaxAudio)
-	if err != nil || len(s.Data) == 0 || len(s.Data)%2 != 0 || oaDigest(s.Data) != s.SHA256 {
-		return s, errors.New("音频摘要不符、空白或超八秒")
+	if err != nil {
+		return s, err
 	}
-	return s, nil
+	return s, oaValidateSample(&s)
+}
+
+// 载入与候选重核共享声明/字节边界，防止同一摘要被贴成另一格式；不认证许可或内容。
+func oaValidateSample(s *oaSample) error {
+	if s == nil {
+		return errors.New("缺少音频样本")
+	}
+	u, err := url.Parse(s.Origin)
+	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || !s.Public || s.License == "" || s.Format != "pcm_s16le" || s.Rate != 24000 || s.Channels != 1 || len(s.Transcript) == 0 || len(s.Transcript) > 1024 {
+		return errors.New("音频必须是来源明确的公开 24k 单声道 PCM 样本")
+	}
+	// 脚本分两段 append，每段至少一个完整的 16 位采样。
+	if len(s.Data) < 4 || len(s.Data) > oaMaxAudio || len(s.Data)%2 != 0 || oaDigest(s.Data) != s.SHA256 {
+		return errors.New("音频摘要不符、长度不足或超八秒")
+	}
+	return nil
 }
 
 func oaReadBounded(path string, max int64) ([]byte, error) {

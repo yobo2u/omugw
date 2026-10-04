@@ -136,7 +136,7 @@ func TestOpenAIRealtimeRecorderOfflineResourceAndEvidenceLimits(t *testing.T) {
 		t.Fatal("第五个response未阻止")
 	}
 	data := make([]byte, oaMaxAudio+2)
-	d = oaNewDriver("audio-manual", &oaSample{Data: data, SHA256: oaDigest(data)})
+	d = oaNewDriver("audio-manual", &oaSample{Data: data, SHA256: oaDigest(data), Public: true, Origin: "https://example.org/public-audio", License: "CC0-1.0", Format: "pcm_s16le", Rate: 24000, Channels: 1, Transcript: "公开测试。"})
 	d.send = func([]byte) error { t.Fatal("超八秒仍写音频"); return nil }
 	if err := d.audio(); err == nil {
 		t.Fatal("超八秒未拒绝")

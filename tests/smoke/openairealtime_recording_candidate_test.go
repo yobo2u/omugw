@@ -20,6 +20,11 @@ func oaCandidate(r oaRecording) (testkit.Fixture, error) {
 	if r.Failure != "" || r.Status != 101 || r.Model != oaModel || r.Started.IsZero() {
 		return empty, errors.New("失败或缺少握手，仅保存原始轨迹")
 	}
+	if r.Input != nil {
+		if err := oaValidateSample(r.Input); err != nil {
+			return empty, err
+		}
+	}
 	var checked oaRecording
 	for _, rec := range r.Records {
 		if rec.Direction != "send" && rec.Direction != "receive" || rec.Kind != "message" && rec.Kind != "close" {

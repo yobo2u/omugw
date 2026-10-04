@@ -18,6 +18,7 @@ session-*.json
 
 # 直连上游的原始候选与音频样本，人工审核前不得进入生产 fixture
 /.local/recordings/dsrealtime/
+/.local/recordings/openairealtime/
 
 # 官方 SDK 仅供显式离线集成测试，安装产物不进入仓库。
 /tests/sdk/openai-realtime/node_modules/

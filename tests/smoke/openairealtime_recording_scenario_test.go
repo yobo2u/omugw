@@ -549,7 +549,7 @@ func (d *oaDriver) textToolsVision() error {
 }
 
 func (d *oaDriver) audio() error {
-	if d.sample == nil || len(d.sample.Data) < 4 || len(d.sample.Data) > oaMaxAudio || len(d.sample.Data)%2 != 0 || oaDigest(d.sample.Data) != d.sample.SHA256 {
+	if oaValidateSample(d.sample) != nil {
 		return errors.New("invalid_sample")
 	}
 	pcm := d.sample.Data

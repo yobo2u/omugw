@@ -156,8 +156,11 @@ type TokenDetails struct {
 ```
 
 Type/Status 最多 128 字节，ID 非空且最多 512 字节；ContentIndex 为
-0..2147483647，nil 与显式 0 严格区分。返回错误表示无法安全关联，不表示有权改写
-或丢弃原始消息；调用方应忽略该次观测。Usage 在所有返回路径均有显式 Fidelity。
+0..2147483647，nil 与显式 0 严格区分。Inspect 只解析事实，不自行改写消息；
+返回错误表示包络无法安全关联，由 gateway observer/relay 执行既定 1008 policy，
+释放该条消息并终止，不将其当成“忽略观测后照常转发”。未知但合法事件原字节转发；
+usage 缺失/非法按 §4.2 记 unavailable/diagnostic，保全原事件（合法总量不因坏明细
+丢失）。Usage 在所有返回路径均有显式 Fidelity；有界关联策略违规同样交 gateway 1008。
 
 | 事件 | 固定事实 |
 |---|---|
@@ -245,8 +248,10 @@ ValidateReady 复用身份校验并要求 type=session.created；操作码验证
   `cached_audio_input`、`cached_image_input`、`text_output`、`audio_output` 到
   `omugw_ws_tokens_total`。仅明确合法值发布，包括 0；缺失不补齐，明细不另增记录数，
   audio/image/cache 不与 input/output 总量相加。没有 ID/model/part 标签。
-- 合法上游 error/failed 与坏明细仅观测，消息仍原字节转发；不安全包络/关联错误
-  遵循共享 relay 的既定 1008 policy，不生成改写后的业务消息。
+- 未知但合法事件及合法上游 error/failed 原字节转发；usage 缺失/非法仅按 §4.2
+  记录 unavailable/diagnostic，保全事件及可用的合法总量。不安全包络/关联错误或
+  有界关联策略违规由 observer 报错、relay 释放该条消息并按既定 1008 policy 终止；
+  parser 不自行改写消息，gateway 不生成替代业务消息。
 
 ## 5. 资源、期限与安全错误
 
@@ -310,15 +315,20 @@ Task 2 的证据是字面合成 JSON 测试：官方示例 132/121/253、ASR 13/
 普通与 race 测试、有界 fuzz、4 MiB 未知字段分配上限和归还帧后标量所有权。
 DS 网关回归仅验证纯扫描迁移未改变原行为；不代表 OpenAI handler 已接线。
 
-Task 4 的证据为合成事件的三态配置、item/part 迁移、4096 总容量、全单位及 presence
+**截至 Task 4** 的证据为合成事件的三态配置、item/part 迁移、4096 总容量、全单位及 presence
 去重、1.25/0 秒与 132/121、13/9 的独立字面指标断言；真实本地 TCP 验证固定 GA
 profile 的握手、双向原消息、带内错误与原 close 保全，以及下游写失败前的权威记账。
 S1 DashScope 实录离线回放继续作为共享账本与中继的回归依据。以上均不是 OpenAI
-云端证据，生产 Build 接线仍属后续任务。
+云端证据；当时正式装配与 SDK/TLS 集成仍属后续任务。
 
-尚未做 OpenAI 云端调用、真实模型权限/地域核验、完整有效配置实录、逐能力实录、
-官方 Node SDK + 网关 TLS 集成或生产代理验收。测试中的假凭据和合成消息不是
-官方成功 fixture；本任务不构成生产注册或整门 Redeem 证据。
+**当前状态（2026-10-04）**：Task 6 已完成正式装配的离线接线验证；Task 7 官方
+Node SDK + 网关 WSS/TLS 集成已在本地 **Node 26.8.1** 验证，包含普通/race 与
+未信任 CA 必败反例。CI 配置的 **Node 24** 尚待远端实际运行，不能由本地结果代替。
+全分支审查及控制器 `e7522fe` 验证见 [S2 条件验收](2026-10-04-openai-realtime-s2-acceptance.md)。
+
+尚未做 OpenAI 云端调用、真实模型权限/地域核验、完整有效配置实录、逐能力实录或
+生产代理验收。测试中的假凭据和合成消息不是官方成功 fixture。生产 Build 仍传空
+WS 门，Mux 未注册的 WS URL 返回 404；矩阵未兑现门仍为 PLANNED/501，无整门 Redeem。
 
 ## 7. Task 5：GA 表达性与跨路径设计处置
 

@@ -3,9 +3,11 @@
 这七条不是风格偏好，是从「多协议网关会怎么坏掉」倒推出来的约束。每一条都有
 对应的代码强制机制与测试，改动前请先读懂它防的是什么。
 
-**修订状态（2026-10-04）**：2.2 / 2.4 / 2.7 的 WebSocket 澄清已在本地修改，
-待独立复核与发布，尚未合并；提案与证据边界见
-[澄清提案](../superpowers/specs/2026-10-03-websocket-principles-clarification-proposal.md)。
+**修订状态（2026-10-04）**：2.2 / 2.4 / 2.7 的 WebSocket 澄清已随 PR #16
+合并；PR #17 的关闭错误分配修复也已合并，远端 main=`5eaf1e2`，本工作树已包含
+该基线。历史提案见[澄清提案](../superpowers/specs/2026-10-03-websocket-principles-clarification-proposal.md)，
+当前阶段与证据边界以 [S2 条件验收](../research/2026-10-04-openai-realtime-s2-acceptance.md)
+为准；原则采纳不等于生产 WS 投放或 A/B/C 九条路径全部交付。
 
 ---
 
