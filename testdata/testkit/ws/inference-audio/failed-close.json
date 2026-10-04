@@ -1,0 +1,19 @@
+{
+  "name":"synthetic-negative/inference-failed-close",
+  "note":"独立字面 task-failed 后真实4003：保全失败原文及非正常关闭码；1000竞争由handler网络用例单独验证，只证明合成机制。",
+  "request":{"method":"GET","path":"/api-ws/v1/inference","headers":{"Authorization":"<redacted>"}},
+  "response":{"status":101,"ws":{
+    "version":1,"client_protocol":"dashscope.inference","client_version":"synthetic-s3-audio",
+    "upstream":{"method":"GET","path":"/api-ws/v1/inference","headers":{"Authorization":"<redacted>","User-Agent":"omugw"}},
+    "upstream_expected_status":101,"provenance":{"kind":"synthetic-negative"},
+    "nodes":[
+      {"id":"run.c","point":"client.send","source":"synthetic","kind":"message","match":"bytes","message":{"opcode":1,"payload":"eyJoZWFkZXIiOnsiYWN0aW9uIjoicnVuLXRhc2siLCJ0YXNrX2lkIjoiYSIsInN0cmVhbWluZyI6ImR1cGxleCJ9LCJwYXlsb2FkIjp7Im1vZGVsIjoiY29zeXZvaWNlLXYyIiwidGFza19ncm91cCI6ImF1ZGlvIiwidGFzayI6InR0cyIsImZ1bmN0aW9uIjoiU3BlZWNoU3ludGhlc2l6ZXIiLCJpbnB1dCI6e319fQ=="}},
+      {"id":"run.u","point":"upstream.receive","source":"synthetic","after":["run.c"],"kind":"message","match":"bytes","forwarded_from":"run.c","message":{"opcode":1,"payload":"eyJoZWFkZXIiOnsiYWN0aW9uIjoicnVuLXRhc2siLCJ0YXNrX2lkIjoiYSIsInN0cmVhbWluZyI6ImR1cGxleCJ9LCJwYXlsb2FkIjp7Im1vZGVsIjoiY29zeXZvaWNlLXYyIiwidGFza19ncm91cCI6ImF1ZGlvIiwidGFzayI6InR0cyIsImZ1bmN0aW9uIjoiU3BlZWNoU3ludGhlc2l6ZXIiLCJpbnB1dCI6e319fQ=="}},
+      {"id":"failed.u","point":"upstream.send","source":"synthetic","after":["run.u"],"kind":"message","match":"bytes","message":{"opcode":1,"payload":"eyJoZWFkZXIiOnsiZXZlbnQiOiJ0YXNrLWZhaWxlZCIsInRhc2tfaWQiOiJhIiwiZXJyb3JfY29kZSI6IlVua25vd24iLCJlcnJvcl9tZXNzYWdlIjoic3ludGhldGljIGZhaWx1cmUifSwicGF5bG9hZCI6e319"}},
+      {"id":"failed.c","point":"client.receive","source":"synthetic","after":["failed.u"],"kind":"message","match":"bytes","forwarded_from":"failed.u","message":{"opcode":1,"payload":"eyJoZWFkZXIiOnsiZXZlbnQiOiJ0YXNrLWZhaWxlZCIsInRhc2tfaWQiOiJhIiwiZXJyb3JfY29kZSI6IlVua25vd24iLCJlcnJvcl9tZXNzYWdlIjoic3ludGhldGljIGZhaWx1cmUifSwicGF5bG9hZCI6e319"}},
+      {"id":"close.u","point":"upstream.send","source":"synthetic","after":["failed.u"],"kind":"close","close_code":4003,"close_reason":"peer failure"},
+      {"id":"close.c","point":"client.receive","source":"synthetic","after":["close.u","failed.c"],"kind":"close","close_code":4003,"close_reason":"peer failure"}
+    ],
+    "outcome":{"kind":"failed","terminal":[{"node":"failed.c","namespace":"task","symbol":"a","id_pointer":"/header/task_id","state_pointer":"/header/event","state":"task-failed"}]}
+  }}
+}

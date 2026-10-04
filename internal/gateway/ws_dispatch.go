@@ -10,6 +10,7 @@ import (
 	"github.com/yobo2u/omugw/internal/credential"
 	"github.com/yobo2u/omugw/internal/degrade"
 	"github.com/yobo2u/omugw/internal/provider"
+	"github.com/yobo2u/omugw/internal/router"
 	"github.com/yobo2u/omugw/internal/transport/ws"
 )
 
@@ -17,13 +18,27 @@ type wsReady struct {
 	conn    *ws.Conn
 	initial *ws.Message
 	lease   *credential.Lease
+	target  router.Target
 }
 
 func (h *WSHandler) connect(ctx context.Context, session *wsSession, model string, header http.Header) (*wsReady, string, error) {
 	outbound := ""
-	targets, err := h.d.Router.Resolve(model)
-	if err != nil {
-		return nil, outbound, safeWSError(err)
+	var targets []router.Target
+	if h.profile.readyMode == wsReadyHandshake {
+		if h.d.InferenceTarget == nil {
+			return nil, outbound, canonical.Newf(canonical.ClassInternal, "Inference 固定目标未装配")
+		}
+		target := *h.d.InferenceTarget
+		if _, err := newWSInferenceBinding(target); err != nil {
+			return nil, outbound, canonical.Newf(canonical.ClassInternal, "Inference 固定目标非法")
+		}
+		targets = []router.Target{target}
+	} else {
+		var err error
+		targets, err = h.d.Router.Resolve(model)
+		if err != nil {
+			return nil, outbound, safeWSError(err)
+		}
 	}
 	var last error
 	for _, target := range targets {
@@ -71,11 +86,11 @@ func (h *WSHandler) connect(ctx context.Context, session *wsSession, model strin
 			if err == nil && conn == nil {
 				err = canonical.Newf(canonical.ClassInternal, "Realtime 上游未返回连接")
 			}
-			if err == nil {
+			if err == nil && h.profile.readyMode == wsReadyEvent {
 				initial, err = readWSReady(ctx, conn, h.profile.checkReady)
 			}
 			if err == nil {
-				return &wsReady{conn: conn, initial: initial, lease: lease}, outbound, nil
+				return &wsReady{conn: conn, initial: initial, lease: lease, target: target}, outbound, nil
 			}
 			failure := wsUpstreamResult(err, h.profile.classifyClose)
 			last = wsAttemptError(failure)

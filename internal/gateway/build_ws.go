@@ -37,7 +37,7 @@ func (b *Built) ShutdownWebSockets(ctx context.Context) error {
 func checkWSDoor(m *degrade.Matrix, h *WSHandler) error {
 	in := h.inbound()
 	if _, err := m.Check(in, h.profile.outbound, degrade.ExpressibleSet(in.Protocol)); err != nil {
-		return fmt.Errorf("gateway: Realtime 整门未批准: %w", err)
+		return fmt.Errorf("gateway: WebSocket 整门未批准: %w", err)
 	}
 	return nil
 }
@@ -57,6 +57,8 @@ func buildWSDoors(d WSDeps, endpoints []degrade.Endpoint) ([]*WSHandler, error) 
 			h = NewDashScopeRealtimeHandler(d)
 		case degrade.EndpointOpenAIRealtime:
 			h = NewOpenAIRealtimeHandler(d)
+		case degrade.EndpointDashScopeInference:
+			h = NewDashScopeInferenceHandler(d)
 		default:
 			return nil, fmt.Errorf("gateway: 未知 WebSocket 端点 %q", ep)
 		}

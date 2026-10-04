@@ -1,0 +1,30 @@
+{
+  "name":"synthetic-negative/inference-two-tasks",
+  "note":"独立字面同连接串行两任务：前轮终态交付后新 ID run；无虚构 ready，不作为逐能力证据。",
+  "request":{"method":"GET","path":"/api-ws/v1/inference","headers":{"Authorization":"<redacted>"}},
+  "response":{"status":101,"ws":{
+    "version":1,"client_protocol":"dashscope.inference","client_version":"synthetic-s3-audio",
+    "upstream":{"method":"GET","path":"/api-ws/v1/inference","headers":{"Authorization":"<redacted>","User-Agent":"omugw"}},
+    "upstream_expected_status":101,"provenance":{"kind":"synthetic-negative"},
+    "nodes":[
+      {"id":"a.run.c","point":"client.send","source":"synthetic","kind":"message","match":"bytes","message":{"opcode":1,"payload":"eyJoZWFkZXIiOnsiYWN0aW9uIjoicnVuLXRhc2siLCJ0YXNrX2lkIjoiYSIsInN0cmVhbWluZyI6ImR1cGxleCJ9LCJwYXlsb2FkIjp7Im1vZGVsIjoiY29zeXZvaWNlLXYyIiwidGFza19ncm91cCI6ImF1ZGlvIiwidGFzayI6InR0cyIsImZ1bmN0aW9uIjoiU3BlZWNoU3ludGhlc2l6ZXIiLCJpbnB1dCI6e319fQ=="}},
+      {"id":"a.run.u","point":"upstream.receive","source":"synthetic","after":["a.run.c"],"kind":"message","match":"bytes","forwarded_from":"a.run.c","message":{"opcode":1,"payload":"eyJoZWFkZXIiOnsiYWN0aW9uIjoicnVuLXRhc2siLCJ0YXNrX2lkIjoiYSIsInN0cmVhbWluZyI6ImR1cGxleCJ9LCJwYXlsb2FkIjp7Im1vZGVsIjoiY29zeXZvaWNlLXYyIiwidGFza19ncm91cCI6ImF1ZGlvIiwidGFzayI6InR0cyIsImZ1bmN0aW9uIjoiU3BlZWNoU3ludGhlc2l6ZXIiLCJpbnB1dCI6e319fQ=="}},
+      {"id":"a.started.u","point":"upstream.send","source":"synthetic","after":["a.run.u"],"kind":"message","match":"bytes","message":{"opcode":1,"payload":"eyJoZWFkZXIiOnsiZXZlbnQiOiJ0YXNrLXN0YXJ0ZWQiLCJ0YXNrX2lkIjoiYSJ9LCJwYXlsb2FkIjp7fX0="}},
+      {"id":"a.started.c","point":"client.receive","source":"synthetic","after":["a.started.u"],"kind":"message","match":"bytes","forwarded_from":"a.started.u","message":{"opcode":1,"payload":"eyJoZWFkZXIiOnsiZXZlbnQiOiJ0YXNrLXN0YXJ0ZWQiLCJ0YXNrX2lkIjoiYSJ9LCJwYXlsb2FkIjp7fX0="}},
+      {"id":"a.done.u","point":"upstream.send","source":"synthetic","after":["a.started.c"],"kind":"message","match":"bytes","message":{"opcode":1,"payload":"eyJoZWFkZXIiOnsiZXZlbnQiOiJ0YXNrLWZpbmlzaGVkIiwidGFza19pZCI6ImEifSwicGF5bG9hZCI6e319"}},
+      {"id":"a.done.c","point":"client.receive","source":"synthetic","after":["a.done.u"],"kind":"message","match":"bytes","forwarded_from":"a.done.u","message":{"opcode":1,"payload":"eyJoZWFkZXIiOnsiZXZlbnQiOiJ0YXNrLWZpbmlzaGVkIiwidGFza19pZCI6ImEifSwicGF5bG9hZCI6e319"}},
+      {"id":"b.run.c","point":"client.send","source":"synthetic","after":["a.done.c"],"kind":"message","match":"bytes","message":{"opcode":1,"payload":"eyJoZWFkZXIiOnsiYWN0aW9uIjoicnVuLXRhc2siLCJ0YXNrX2lkIjoiYiIsInN0cmVhbWluZyI6ImR1cGxleCJ9LCJwYXlsb2FkIjp7Im1vZGVsIjoiY29zeXZvaWNlLXYyIiwidGFza19ncm91cCI6ImF1ZGlvIiwidGFzayI6InR0cyIsImZ1bmN0aW9uIjoiU3BlZWNoU3ludGhlc2l6ZXIiLCJpbnB1dCI6e319fQ=="}},
+      {"id":"b.run.u","point":"upstream.receive","source":"synthetic","after":["b.run.c"],"kind":"message","match":"bytes","forwarded_from":"b.run.c","message":{"opcode":1,"payload":"eyJoZWFkZXIiOnsiYWN0aW9uIjoicnVuLXRhc2siLCJ0YXNrX2lkIjoiYiIsInN0cmVhbWluZyI6ImR1cGxleCJ9LCJwYXlsb2FkIjp7Im1vZGVsIjoiY29zeXZvaWNlLXYyIiwidGFza19ncm91cCI6ImF1ZGlvIiwidGFzayI6InR0cyIsImZ1bmN0aW9uIjoiU3BlZWNoU3ludGhlc2l6ZXIiLCJpbnB1dCI6e319fQ=="}},
+      {"id":"b.started.u","point":"upstream.send","source":"synthetic","after":["b.run.u"],"kind":"message","match":"bytes","message":{"opcode":1,"payload":"eyJoZWFkZXIiOnsiZXZlbnQiOiJ0YXNrLXN0YXJ0ZWQiLCJ0YXNrX2lkIjoiYiJ9LCJwYXlsb2FkIjp7fX0="}},
+      {"id":"b.started.c","point":"client.receive","source":"synthetic","after":["b.started.u"],"kind":"message","match":"bytes","forwarded_from":"b.started.u","message":{"opcode":1,"payload":"eyJoZWFkZXIiOnsiZXZlbnQiOiJ0YXNrLXN0YXJ0ZWQiLCJ0YXNrX2lkIjoiYiJ9LCJwYXlsb2FkIjp7fX0="}},
+      {"id":"b.done.u","point":"upstream.send","source":"synthetic","after":["b.started.c"],"kind":"message","match":"bytes","message":{"opcode":1,"payload":"eyJoZWFkZXIiOnsiZXZlbnQiOiJ0YXNrLWZpbmlzaGVkIiwidGFza19pZCI6ImIifSwicGF5bG9hZCI6e319"}},
+      {"id":"b.done.c","point":"client.receive","source":"synthetic","after":["b.done.u"],"kind":"message","match":"bytes","forwarded_from":"b.done.u","message":{"opcode":1,"payload":"eyJoZWFkZXIiOnsiZXZlbnQiOiJ0YXNrLWZpbmlzaGVkIiwidGFza19pZCI6ImIifSwicGF5bG9hZCI6e319"}},
+      {"id":"close.c","point":"client.send","source":"synthetic","after":["b.done.c"],"kind":"close","close_code":1000},
+      {"id":"close.u","point":"upstream.receive","source":"synthetic","after":["close.c"],"kind":"close","close_code":1000}
+    ],
+    "outcome":{"kind":"completed","terminal":[
+      {"node":"a.done.c","namespace":"task","symbol":"a","id_pointer":"/header/task_id","state_pointer":"/header/event","state":"task-finished"},
+      {"node":"b.done.c","namespace":"task","symbol":"b","id_pointer":"/header/task_id","state_pointer":"/header/event","state":"task-finished"}
+    ]}
+  }}
+}

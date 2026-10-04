@@ -1,0 +1,27 @@
+{
+  "name":"synthetic-negative/inference-tts-duplex",
+  "note":"独立字面 TTS duplex：continue/finish 后保全尾音，原 opcode/bytes 严格比对；不是云端支持证据。",
+  "request":{"method":"GET","path":"/api-ws/v1/inference","headers":{"Authorization":"<redacted>"}},
+  "response":{"status":101,"ws":{
+    "version":1,"client_protocol":"dashscope.inference","client_version":"synthetic-s3-audio",
+    "upstream":{"method":"GET","path":"/api-ws/v1/inference","headers":{"Authorization":"<redacted>","User-Agent":"omugw"}},
+    "upstream_expected_status":101,"provenance":{"kind":"synthetic-negative"},
+    "nodes":[
+      {"id":"run.c","point":"client.send","source":"synthetic","kind":"message","match":"bytes","message":{"opcode":1,"payload":"eyJoZWFkZXIiOnsiYWN0aW9uIjoicnVuLXRhc2siLCJ0YXNrX2lkIjoiYSIsInN0cmVhbWluZyI6ImR1cGxleCJ9LCJwYXlsb2FkIjp7Im1vZGVsIjoiY29zeXZvaWNlLXYyIiwidGFza19ncm91cCI6ImF1ZGlvIiwidGFzayI6InR0cyIsImZ1bmN0aW9uIjoiU3BlZWNoU3ludGhlc2l6ZXIiLCJpbnB1dCI6e319fQ=="}},
+      {"id":"run.u","point":"upstream.receive","source":"synthetic","after":["run.c"],"kind":"message","match":"bytes","forwarded_from":"run.c","message":{"opcode":1,"payload":"eyJoZWFkZXIiOnsiYWN0aW9uIjoicnVuLXRhc2siLCJ0YXNrX2lkIjoiYSIsInN0cmVhbWluZyI6ImR1cGxleCJ9LCJwYXlsb2FkIjp7Im1vZGVsIjoiY29zeXZvaWNlLXYyIiwidGFza19ncm91cCI6ImF1ZGlvIiwidGFzayI6InR0cyIsImZ1bmN0aW9uIjoiU3BlZWNoU3ludGhlc2l6ZXIiLCJpbnB1dCI6e319fQ=="}},
+      {"id":"started.u","point":"upstream.send","source":"synthetic","after":["run.u"],"kind":"message","match":"bytes","message":{"opcode":1,"payload":"eyJoZWFkZXIiOnsiZXZlbnQiOiJ0YXNrLXN0YXJ0ZWQiLCJ0YXNrX2lkIjoiYSJ9LCJwYXlsb2FkIjp7fX0="}},
+      {"id":"started.c","point":"client.receive","source":"synthetic","after":["started.u"],"kind":"message","match":"bytes","forwarded_from":"started.u","message":{"opcode":1,"payload":"eyJoZWFkZXIiOnsiZXZlbnQiOiJ0YXNrLXN0YXJ0ZWQiLCJ0YXNrX2lkIjoiYSJ9LCJwYXlsb2FkIjp7fX0="}},
+      {"id":"continue.c","point":"client.send","source":"synthetic","after":["started.c"],"kind":"message","match":"bytes","message":{"opcode":1,"payload":"eyJoZWFkZXIiOnsiYWN0aW9uIjoiY29udGludWUtdGFzayIsInRhc2tfaWQiOiJhIn0sInBheWxvYWQiOnsiaW5wdXQiOnsidGV4dCI6InRlc3QifX19"}},
+      {"id":"continue.u","point":"upstream.receive","source":"synthetic","after":["continue.c"],"kind":"message","match":"bytes","forwarded_from":"continue.c","message":{"opcode":1,"payload":"eyJoZWFkZXIiOnsiYWN0aW9uIjoiY29udGludWUtdGFzayIsInRhc2tfaWQiOiJhIn0sInBheWxvYWQiOnsiaW5wdXQiOnsidGV4dCI6InRlc3QifX19"}},
+      {"id":"finish.c","point":"client.send","source":"synthetic","after":["continue.u"],"kind":"message","match":"bytes","message":{"opcode":1,"payload":"eyJoZWFkZXIiOnsiYWN0aW9uIjoiZmluaXNoLXRhc2siLCJ0YXNrX2lkIjoiYSJ9LCJwYXlsb2FkIjp7fX0="}},
+      {"id":"finish.u","point":"upstream.receive","source":"synthetic","after":["finish.c"],"kind":"message","match":"bytes","forwarded_from":"finish.c","message":{"opcode":1,"payload":"eyJoZWFkZXIiOnsiYWN0aW9uIjoiZmluaXNoLXRhc2siLCJ0YXNrX2lkIjoiYSJ9LCJwYXlsb2FkIjp7fX0="}},
+      {"id":"audio.u","point":"upstream.send","source":"synthetic","after":["finish.u"],"kind":"message","match":"bytes","message":{"opcode":2,"payload":"AP+AEA=="}},
+      {"id":"audio.c","point":"client.receive","source":"synthetic","after":["audio.u"],"kind":"message","match":"bytes","forwarded_from":"audio.u","message":{"opcode":2,"payload":"AP+AEA=="}},
+      {"id":"done.u","point":"upstream.send","source":"synthetic","after":["audio.c"],"kind":"message","match":"bytes","message":{"opcode":1,"payload":"eyJoZWFkZXIiOnsiZXZlbnQiOiJ0YXNrLWZpbmlzaGVkIiwidGFza19pZCI6ImEifSwicGF5bG9hZCI6e319"}},
+      {"id":"done.c","point":"client.receive","source":"synthetic","after":["done.u"],"kind":"message","match":"bytes","forwarded_from":"done.u","message":{"opcode":1,"payload":"eyJoZWFkZXIiOnsiZXZlbnQiOiJ0YXNrLWZpbmlzaGVkIiwidGFza19pZCI6ImEifSwicGF5bG9hZCI6e319"}},
+      {"id":"close.c","point":"client.send","source":"synthetic","after":["done.c"],"kind":"close","close_code":1000},
+      {"id":"close.u","point":"upstream.receive","source":"synthetic","after":["close.c"],"kind":"close","close_code":1000}
+    ],
+    "outcome":{"kind":"completed","terminal":[{"node":"done.c","namespace":"task","symbol":"a","id_pointer":"/header/task_id","state_pointer":"/header/event","state":"task-finished"}]}
+  }}
+}
