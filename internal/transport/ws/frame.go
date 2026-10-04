@@ -83,6 +83,10 @@ var (
 
 	// 新调用方用消息级名称；保留旧哨兵身份，不破坏 errors.Is(ErrTooLarge)。
 	ErrMessageTooLarge = ErrTooLarge
+
+	// 固定关闭错误复用，避免无动态内容的失败分支持续分配格式化器与错误对象。
+	errInvalidCloseCode   = fmt.Errorf("%w: close 状态码非法", ErrProtocol)
+	errInvalidCloseReason = fmt.Errorf("%w: close 原因不是合法 UTF-8", ErrInvalidUTF8)
 )
 
 // Frame 是一个 WebSocket 帧。
@@ -454,11 +458,11 @@ func parseClosePayload(payload []byte) (uint16, []byte, error) {
 
 	code := binary.BigEndian.Uint16(payload)
 	if !validCloseCode(code) {
-		return 0, nil, fmt.Errorf("%w: close 状态码非法", ErrProtocol)
+		return 0, nil, errInvalidCloseCode
 	}
 	reason := payload[2:]
 	if !utf8.Valid(reason) {
-		return 0, nil, fmt.Errorf("%w: close 原因不是合法 UTF-8", ErrInvalidUTF8)
+		return 0, nil, errInvalidCloseReason
 	}
 	return code, reason, nil
 }

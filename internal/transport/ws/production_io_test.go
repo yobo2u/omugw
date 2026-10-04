@@ -868,8 +868,13 @@ func TestProductionCloseReasonValidationAllocations(t *testing.T) {
 			t.Fatal("非法原因未拒绝")
 		}
 	})
+	t.Logf("close 校验分配: empty=%v full=%v code=%v utf8=%v", emptyAllocs, fullAllocs, codeAllocs, utf8Allocs)
 	if utf8Allocs > codeAllocs {
 		t.Error("拒绝非法 UTF-8 前复制了 reason")
+	}
+	// 固定错误不能每次重新格式化，否则 race 下 fmt 缓存重建会冒充原因副本。
+	if codeAllocs != 0 || utf8Allocs != 0 {
+		t.Errorf("固定关闭错误路径不应分配: code=%v utf8=%v", codeAllocs, utf8Allocs)
 	}
 }
 
