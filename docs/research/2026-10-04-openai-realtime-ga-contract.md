@@ -194,6 +194,10 @@ ValidateReady 复用身份校验并要求 type=session.created；操作码验证
 - ASR `type=tokens` 与 `type=duration` 严格分支；duration 仅产出 Seconds，
   Usage=unavailable，不写 AudioInputSeconds、不制造零 token 记录。seconds 必须是
   有限非负数，显式 0 有 presence；数字文本最多 128 字节，超出保守标 invalid。
+  在浮点舍入前按十进制有效数字区分数学零与非零：负非零值一律 invalid，正非零值
+  若下溢舍入为 0 也标 invalid，Seconds=nil，不虚构零秒。数学零（含 `-0` 与零的
+  指数写法）归一为 +0；其余正数允许 float64 最近值舍入，但结果必须有限且大于 0，
+  包括仍舍入为非零值的次正规数。该范围校验不改变秒与 token 的独立性。
 - Event 不含原始负载、音频、转写全文或动态容器。返回标量可在归还帧缓冲后保留；
   原始应用消息与未知字段均由中继原字节保全，不从本观测重新编码。
 

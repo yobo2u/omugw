@@ -217,8 +217,26 @@ func duration(v realtimejson.Value) (*float64, string) {
 	if err != nil || len(raw) == 0 || len(raw) > 128 || raw[0] != '-' && (raw[0] < '0' || raw[0] > '9') {
 		return nil, "usage_invalid"
 	}
+	// JSON 已验证；先检查指数前的有效数字，防非零值下溢后冒充显式零。
+	nonzero := false
+	for _, c := range raw {
+		if c == 'e' || c == 'E' {
+			break
+		}
+		if c >= '1' && c <= '9' {
+			nonzero = true
+		}
+	}
+	if !nonzero {
+		// -0 及带指数的数学零仍是合法零，统一符号以免污染后续计量。
+		zero := 0.0
+		return &zero, ""
+	}
+	if raw[0] == '-' {
+		return nil, "usage_invalid"
+	}
 	n, err := strconv.ParseFloat(string(raw), 64)
-	if err != nil || math.IsInf(n, 0) || math.IsNaN(n) || n < 0 {
+	if err != nil || math.IsInf(n, 0) || math.IsNaN(n) || n <= 0 {
 		return nil, "usage_invalid"
 	}
 	return &n, ""

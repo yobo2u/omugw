@@ -1,6 +1,7 @@
 package openairealtime
 
 import (
+	"math"
 	"reflect"
 	"testing"
 
@@ -161,6 +162,54 @@ func TestOpenAIRealtimeTranscriptionUsageUnits(t *testing.T) {
 	e, err := Inspect([]byte(`{"type":"conversation.item.input_audio_transcription.completed","item_id":"i","content_index":0,"usage":{"type":"tokens","input_tokens":13,"output_tokens":9,"input_token_details":{"text_tokens":0,"audio_tokens":12,"image_tokens":1}}}`))
 	if err != nil || e.Diagnostic != "usage_invalid" || e.Usage.Fidelity != canonical.FidelityAuthoritative || e.Details != (TokenDetails{}) {
 		t.Fatalf("%+v %v", e, err)
+	}
+}
+
+func TestOpenAIRealtimeTranscriptionDurationRange(t *testing.T) {
+	for _, tc := range []struct {
+		seconds string
+		invalid bool
+		want    float64
+	}{
+		{`-1e-999`, true, 0},
+		{`-1e-324`, true, 0},
+		{`-0.1e-999`, true, 0},
+		{`-5e-324`, true, 0},
+		{`1e-999`, true, 0},
+		{`1e-324`, true, 0},
+		{`2e-324`, true, 0},
+		{`0.1e-999`, true, 0},
+		{`1.7976931348623159e308`, true, 0},
+		{`0`, false, 0},
+		{`0.0`, false, 0},
+		{`0e-999`, false, 0},
+		{`0e999`, false, 0},
+		{`-0`, false, 0},
+		{`-0.0e-999`, false, 0},
+		{`-0.00e+999`, false, 0},
+		{`1.25`, false, 1.25},
+		{`1e-2`, false, 0.01},
+		{`3e-324`, false, math.SmallestNonzeroFloat64},
+		{`5e-324`, false, math.SmallestNonzeroFloat64},
+		{`1.7976931348623157e308`, false, math.MaxFloat64},
+	} {
+		t.Run(tc.seconds, func(t *testing.T) {
+			e, err := Inspect([]byte(`{"type":"conversation.item.input_audio_transcription.completed","item_id":"i","content_index":0,"usage":{"type":"duration","seconds":` + tc.seconds + `}}`))
+			if err != nil || e.Source != "transcription" || e.Usage != canonical.UnavailableUsage() || e.Details != (TokenDetails{}) {
+				t.Fatalf("秒数不能转成 token 或丢失来源: %+v %v", e, err)
+			}
+			var got any
+			if e.Seconds != nil {
+				got = *e.Seconds
+			}
+			if tc.invalid {
+				if e.Seconds != nil || e.Diagnostic != "usage_invalid" {
+					t.Fatalf("越界秒数不得变成显式零: seconds=%v diagnostic=%q", got, e.Diagnostic)
+				}
+			} else if e.Seconds == nil || *e.Seconds != tc.want || math.Signbit(*e.Seconds) || e.Diagnostic != "" {
+				t.Fatalf("合法秒数应保留且数学零应归一为 +0: seconds=%v diagnostic=%q want=%g", got, e.Diagnostic, tc.want)
+			}
+		})
 	}
 }
 
