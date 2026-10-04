@@ -6,8 +6,9 @@
 
 - 入口：`tests/smoke/record_dsrealtime_live_test.go` 的 `TestRecordDSRealtime`。
 - 独立编写请求，直接使用 WS transport 连接官方上游；不通过 gateway/provider 生成预期。
-- 必须同时显式给出 `OMUGW_RECORD_DSREALTIME=1`、场景、模型、官方端点、输出目录及环境凭据。
+- 必须同时显式给出 `OMUGW_RECORD_DSREALTIME=1`、场景、模型、北京端点、输出目录及环境凭据。
   普通 `OMUGW_SMOKE=1` 不启用录制。
+- 本批只接受精确 host `dashscope.aliyuncs.com`；intl/us 等其他地域在拨号前拒绝。
 - 每次一个场景、一次拨号、一会话；无重试、无模型遍历。业务期限 59 秒，关闭最长 1 秒。
   同一 `batch` 下八个独占尝试槽，失败也消耗槽。控制器不得换批次绕过本批授权总量。
 - Omni 每响应请求 `max_tokens=128`，确认回显后才提交输入；文本/工具场景最多三个
@@ -77,10 +78,12 @@ URL、原始头、secret、消息正文或 close reason。原始消息是私有�
   不回退到另一个输入方式。工具定义使用嵌套 `function` 对象。
 - `session.updated` 名称不是配置采纳证明：音频格式及采样率必须在新式 `audio` 结构
   回显一致；同时检查请求的输出上限等配置。任何规范化导致的严格回显差异先留记录再审。
-- TTS `commit` 显式 commit；`server_commit` 不显式 commit，通过 `session.finish` 排空。
-  后者证明的是 server_commit 配置及结束排空，并不单独证明客户端 finish 前已自动合成。
+- TTS `commit` 显式 commit；`server_commit` 不显式 commit，先等待服务端自动创建响应、
+  同一 response_id 的非空音频及 completed 终态，再发送 `session.finish` 收尾。
+  若只有 finish 后排空的音频，或 finish 前没有完整同实体证据链，不加提交模式 Coverage；
+  录制器不会靠提前 finish 促成这份证据，缺少自动响应时按原有期限失败并保留实际轨迹。
 - 模型别名可能漂移，原始 `session.created` 的实际模型必须审阅；来源版本字符串是文档
-  日期标签，不声称云端固定快照。当前建议北京端点，模型如下命令。
+  日期标签，不声称云端固定快照。本批固定北京端点，模型如下命令。
 
 ## 控制器显式命令
 
@@ -107,6 +110,9 @@ go test -tags=smoke ./tests/smoke -run '^TestRecordDSRealtime$' -count=1 -timeou
 `s16le / 16000 Hz / mono` 打开；没有这个实际文件，不执行后续音频场景。
 
 ### 2. TTS server_commit
+
+验收顺序必须为 append → 自动 response.created → 同实体非空 audio.delta → completed
+response.done → 客户端 finish → session.finished。只有结束排空不算自动提交行为证据。
 
 ```bash
 OMUGW_RECORD_DSREALTIME=1 OMUGW_RECORD_SCENARIO=tts-server-commit \
@@ -153,8 +159,11 @@ go test -tags=smoke ./tests/smoke -run '^TestRecordDSRealtime$' -count=1 -timeou
 ```
 
 100 ms 一块按实时节奏输入，最多追加 700 ms 静音；真实 committed 后停止追加。收到
-首个 audio.delta 且有 active response 时发送一次 response.cancel；必须观察 cancelled
-终态和相同输入项的转写。不自动重新发起后续轮次。取消竞态失败、额外响应或未提交的
+首个非空 audio.delta 的 response_id 必须等于尚未终结的 active response，才发送一次
+response.cancel 并绑定取消目标。官方 cancel 不带 response_id，录制器不添加未公开字段；
+它以发送时唯一活跃的音频响应确定目标，只接受该目标的 cancelled 终态和相同输入项的转写。
+后继见证与 Coverage 也从同一条 created→audio→cancel→cancelled 链取节点，不按事件类型拼接。
+不自动重新发起后续轮次。取消竞态失败、额外响应或未提交的
 尾部音频均保留实际记录，不假装证明打断。
 
 ## 15 项能力的真实证据账本
@@ -176,9 +185,9 @@ go test -tags=smoke ./tests/smoke -run '^TestRecordDSRealtime$' -count=1 -timeou
 | stateful_conversation | 第二轮复述第一轮口令，发生在工具结果回传之前 | 人工核对轮次和正文，**不自动加 Coverage**；未录制 |
 | realtime_session | session.created/updated 的实际结构和配置 | 逐字段核对，不凭 updated 名称；未录制 |
 | realtime_server_vad | speech_started、speech_stopped、committed | item_id、时间字段、原消息因果顺序；未录制 |
-| realtime_interrupt_turns | 活跃 response 的 audio.delta → cancel → cancelled done | 同一 response_id、真实状态，非本地断连；未录制 |
+| realtime_interrupt_turns | response.created → 活跃时同实体非空 audio.delta → cancel → 同目标 cancelled done | 拒绝错ID、空音频、提前终结及终态ID复用；见证/Coverage绑定同链；未录制 |
 | realtime_image_input | 音频 append → image append → commit → 真实视觉回答 | 图像 SHA 和字节；理解证据人工审阅，**不自动加 Coverage**；未录制 |
-| realtime_commit_modes | 两份 TTS：commit 的 committed、server_commit 的 finish 排空 | 两模式分别核对回显、音频、done/finished；未录制 |
+| realtime_commit_modes | 两份 TTS：commit 的 committed；server_commit 在finish前自动created→同实体非空audio→completed done | 两模式分别核对回显与收尾；仅finish排空或跨ID事件不计自动提交；未录制 |
 
 自动 Coverage 只给事件支持的条目；语义判读的三项保留人工缺口。Coverage 不等于投放。
 失败轨迹可用于诊断，不能改成成功 fixture；来源或摘要篡改不能靠重算 hash 洗白。

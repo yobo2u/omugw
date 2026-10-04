@@ -57,7 +57,9 @@ type dsDriver struct {
 	serial, traceBytes int
 	responses          map[string]bool
 	responseDone       map[string]bool
-	cancelSent         bool
+	activeResponse     string
+	audioResponse      string
+	cancelTarget       string
 	inputItem          string
 	asrItems           map[string]bool
 }
@@ -268,6 +270,12 @@ func (d *dsDriver) observe(m dsIncoming) (map[string]any, error) {
 		if len(d.responses) > d.cfg.Responses {
 			return nil, errors.New("response_limit")
 		}
+		if typ == "response.created" {
+			if d.activeResponse != "" || d.responseDone[id] {
+				return nil, errors.New("response_already_active_or_finished")
+			}
+			d.activeResponse = id
+		}
 		if typ == "response.done" {
 			if !strings.HasPrefix(d.cfg.Scenario, "tts-") {
 				if tokens, ok := dsMap(e, "response", "usage")["output_tokens"].(float64); ok && (tokens < 0 || tokens > 128) {
@@ -277,27 +285,37 @@ func (d *dsDriver) observe(m dsIncoming) (map[string]any, error) {
 			if d.responseDone[id] {
 				return nil, errors.New("duplicate_response_terminal")
 			}
-			d.responseDone[id] = true
+			if d.activeResponse != "" && d.activeResponse != id {
+				return nil, errors.New("response_identity_mismatch")
+			}
 			status := dsString(e, "response", "status")
-			if status != "completed" && !(d.cfg.Scenario == "vad-interrupt" && status == "cancelled" && d.cancelSent) {
+			if d.cancelTarget != "" && (id != d.cancelTarget || status != "cancelled") {
+				return nil, errors.New("cancel_target_not_cancelled")
+			}
+			if status != "completed" && !(d.cfg.Scenario == "vad-interrupt" && status == "cancelled" && id == d.cancelTarget && id == d.audioResponse && id == d.activeResponse) {
 				return nil, errors.New("response_not_completed")
 			}
+			d.responseDone[id] = true
+			d.activeResponse = ""
 		}
 	}
 	if typ == "response.audio.delta" {
+		id := dsString(e, "response_id")
+		if id == "" || id != d.activeResponse || d.responseDone[id] {
+			return nil, errors.New("audio_response_not_active")
+		}
 		b, err := base64.StdEncoding.DecodeString(dsString(e, "delta"))
 		if err != nil || len(b) == 0 || len(b) > dsMaxAudio-len(d.r.Audio) {
 			return nil, errors.New("output_audio_limit_or_encoding")
 		}
 		d.r.Audio = append(d.r.Audio, b...)
-		if d.cfg.Scenario == "vad-interrupt" && !d.cancelSent {
-			if len(d.responses) != 1 {
-				return nil, errors.New("missing_active_response")
-			}
+		d.audioResponse = id
+		if d.cfg.Scenario == "vad-interrupt" && d.cancelTarget == "" {
 			if err := d.send("response.cancel", nil); err != nil {
 				return nil, err
 			}
-			d.cancelSent = true
+			// 官方 cancel 不带 response_id；只绑定本次成功写出时仍活跃的同实体音频响应。
+			d.cancelTarget = id
 		}
 	}
 	return e, nil
@@ -405,9 +423,12 @@ func (d *dsDriver) tts() error {
 		if _, err := d.wait("input_text_buffer.committed"); err != nil {
 			return err
 		}
-		if _, err := d.wait("response.done"); err != nil {
-			return err
-		}
+	}
+	if _, err := d.wait("response.done"); err != nil {
+		return err
+	}
+	if d.cfg.Scenario == "tts-server-commit" && len(dsAutomaticCommitResponse(d.r.Records)) == 0 {
+		return errors.New("automatic_commit_not_observed")
 	}
 	if err := d.send("session.finish", nil); err != nil {
 		return err
@@ -585,7 +606,8 @@ func (d *dsDriver) waitTranscription() error {
 }
 
 func (d *dsDriver) checkCancelled(e map[string]any) error {
-	if !d.cancelSent || dsString(e, "response", "status") != "cancelled" {
+	id := dsString(e, "response", "id")
+	if d.cancelTarget == "" || id != d.cancelTarget || id != d.audioResponse || !d.responseDone[id] || dsString(e, "response", "status") != "cancelled" {
 		return errors.New("interrupt_not_observed")
 	}
 	return nil

@@ -136,6 +136,10 @@ func dsCandidate(r dsRecording) (testkit.Fixture, error) {
 // 只给存在真实后继见证的发送建立请求预期；发送成功本身不是业务 ack。
 func dsRequestWitness(records []dsRecord, index int, request map[string]any) bool {
 	typ := dsString(request, "type")
+	if typ == "response.cancel" {
+		nodes, cancelIndex := dsInterruptEvidence(records)
+		return len(nodes) > 0 && cancelIndex == index
+	}
 	for _, rec := range records[index+1:] {
 		if rec.Direction != "receive" || rec.Kind != "message" {
 			continue
@@ -156,10 +160,6 @@ func dsRequestWitness(records []dsRecord, index int, request map[string]any) boo
 			}
 		case "response.create":
 			if t == "response.created" || t == "response.done" {
-				return true
-			}
-		case "response.cancel":
-			if t == "response.done" && dsString(e, "response", "status") == "cancelled" {
 				return true
 			}
 		case "input_audio_buffer.append", "input_image_buffer.append", "input_audio_buffer.commit":
@@ -255,7 +255,7 @@ type dsEvidenceEvent struct {
 // Coverage 仅列可定位事件的保守证据；图像理解、会话记忆等仍需人工审阅正文语义。
 func dsCoverage(r dsRecording, events []dsEvidenceEvent) []testkit.WSCoverage {
 	byType := map[string][]string{}
-	var done, audio, text, asr, parallel, tools, cancelled []string
+	var done, audio, text, asr, parallel, tools []string
 	for _, e := range events {
 		t := dsString(e.Value, "type")
 		byType[t] = append(byType[t], e.Node)
@@ -263,9 +263,6 @@ func dsCoverage(r dsRecording, events []dsEvidenceEvent) []testkit.WSCoverage {
 		case "response.done":
 			if dsString(e.Value, "response", "status") == "completed" {
 				done = append(done, e.Node)
-			}
-			if dsString(e.Value, "response", "status") == "cancelled" {
-				cancelled = append(cancelled, e.Node)
 			}
 			items, _ := dsMap(e.Value, "response")["output"].([]any)
 			ids := map[string]bool{}
@@ -323,7 +320,7 @@ func dsCoverage(r dsRecording, events []dsEvidenceEvent) []testkit.WSCoverage {
 		if r.Scenario == "tts-commit" {
 			add("realtime_commit_modes", "commit 模式真实 committed、音频和 done；不单独证明另一模式", byType["input_text_buffer.committed"], audio, done)
 		} else {
-			add("realtime_commit_modes", "server_commit 回显、音频和 session.finished；不单独证明另一模式", byType["session.updated"], audio, done, byType["session.finished"])
+			add("realtime_commit_modes", "server_commit 在finish前自动创建响应、返回同实体非空音频及completed终态，再finish收尾", dsEvidenceNodes(r.Records, dsAutomaticCommitEvidence(r.Records)))
 		}
 	}
 	if r.Input != nil {
@@ -336,7 +333,8 @@ func dsCoverage(r dsRecording, events []dsEvidenceEvent) []testkit.WSCoverage {
 	}
 	if r.Scenario == "vad-interrupt" {
 		add("realtime_server_vad", "实际 speech_started/stopped 与 committed", byType["input_audio_buffer.speech_started"], byType["input_audio_buffer.speech_stopped"], byType["input_audio_buffer.committed"])
-		add("realtime_interrupt_turns", "response.cancel 后实际 cancelled 终态，非本地断连", audio, cancelled)
+		nodes, _ := dsInterruptEvidence(r.Records)
+		add("realtime_interrupt_turns", "同一活跃response的非空音频、cancel目标与cancelled终态完整关联，非本地断连", dsEvidenceNodes(r.Records, nodes))
 	}
 	return coverage
 }

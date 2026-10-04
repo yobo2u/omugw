@@ -356,15 +356,11 @@ func TestDSRealtimeRecorderOfflineTTSConversation(t *testing.T) {
 				if scenario == "tts-commit" {
 					read("input_text_buffer.commit")
 					write(`{"type":"input_text_buffer.committed","item_id":"i1"}`)
-				} else {
-					read("session.finish")
 				}
 				write(`{"type":"response.created","response":{"id":"r1"}}`)
 				write(`{"type":"response.audio.delta","response_id":"r1","delta":"AAAAAA=="}`)
 				write(`{"type":"response.done","response":{"id":"r1","status":"completed","usage":{"characters":14}}}`)
-				if scenario == "tts-commit" {
-					read("session.finish")
-				}
+				read("session.finish")
 				write(`{"type":"session.finished"}`)
 				if err == nil {
 					err = c.Close(1000, "")
@@ -378,6 +374,17 @@ func TestDSRealtimeRecorderOfflineTTSConversation(t *testing.T) {
 			}
 			if r.Failure != "" || !r.Confirmed || len(r.Audio) != 4 {
 				t.Fatalf("TTS 未完成: %s", r.Failure)
+			}
+			terminalSeen := false
+			for _, rec := range r.Records {
+				var e map[string]any
+				_ = json.Unmarshal(rec.Payload, &e)
+				if rec.Direction == "receive" && dsString(e, "type") == "response.done" {
+					terminalSeen = true
+				}
+				if rec.Direction == "send" && dsString(e, "type") == "session.finish" && !terminalSeen {
+					t.Fatal("finish早于真实响应终态")
+				}
 			}
 			f, err := dsCandidate(r)
 			if err != nil {

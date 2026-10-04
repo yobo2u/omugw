@@ -46,8 +46,8 @@ func dsRecordConfig(root string, get func(string) string) (dsConfig, bool, error
 	}
 	u, err := url.Parse(c.URL)
 	if err != nil || u.Scheme != "wss" || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || u.Path != "/api-ws/v1/realtime" || u.RawPath != "" ||
-		(u.Host != "dashscope.aliyuncs.com" && u.Host != "dashscope-intl.aliyuncs.com" && u.Host != "dashscope-us.aliyuncs.com") {
-		return c, true, errors.New("OMUGW_SMOKE_WS_URL 必须是无 query 的官方 Realtime wss 端点")
+		u.Host != "dashscope.aliyuncs.com" {
+		return c, true, errors.New("OMUGW_SMOKE_WS_URL 必须是无 query 的北京 Realtime wss 端点")
 	}
 	if !regexp.MustCompile(`^qwen[a-z0-9.-]{1,100}realtime(?:-[0-9-]+)?$`).MatchString(c.Model) {
 		return c, true, errors.New("必须显式指定安全的 Realtime 模型名")
