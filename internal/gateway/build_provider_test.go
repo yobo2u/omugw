@@ -50,16 +50,16 @@ func TestWSBuildGate(t *testing.T) {
 	if err := b.ShutdownWebSockets(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := buildWithWS(cfg, m, metrics, log, true); err == nil {
+	if _, err := buildWithWS(cfg, m, metrics, log, degrade.EndpointDashScopeRealtime); err == nil {
 		t.Fatal("测试注册绕过 PLANNED 矩阵")
 	}
-	if _, err := buildWithWS(cfg, wsHandlerMatrix(t, false), metrics, log, true); err == nil {
+	if _, err := buildWithWS(cfg, wsHandlerMatrix(t, false), metrics, log, degrade.EndpointDashScopeRealtime); err == nil {
 		t.Fatal("部分兑现通过整门检查")
 	}
 	if _, err := Build(cfg, wsHandlerMatrix(t, true), metrics, log); err == nil {
 		t.Fatal("兑现却未注册通过反向对账")
 	}
-	b, err = buildWithWS(cfg, wsHandlerMatrix(t, true), metrics, log, true)
+	b, err = buildWithWS(cfg, wsHandlerMatrix(t, true), metrics, log, degrade.EndpointDashScopeRealtime)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +85,7 @@ func TestBuildRejectsUnimplementedKindListsImplemented(t *testing.T) {
 	if err == nil {
 		t.Fatal("未实现的协议族应当启动失败")
 	}
-	for _, kind := range []string{"openai.compat", "dashscope.compatible", "dashscope.native"} {
+	for _, kind := range []string{"openai.compat", "dashscope.compatible", "dashscope.native", "dashscope.ws.realtime", "openai.realtime"} {
 		if !strings.Contains(err.Error(), kind) {
 			t.Errorf("错误应列出已实现的协议族 %s: %v", kind, err)
 		}
