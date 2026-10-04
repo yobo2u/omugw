@@ -100,23 +100,23 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 		// 单独计记录数，才能区分权威零值、字符计价与根本没拿到用量。
 		WSUsageRecords: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "omugw_ws_usage_records_total",
-			Help: "按协议、来源、原始单位与可信等级统计的 WebSocket 用量记录数。",
+			Help: "按协议、来源、原始单位与完整性可信等级统计的 WebSocket 已结用量记录数；累计差额不增加记录。",
 		}, []string{"protocol", "source", "unit", "fidelity"}),
 		WSTokens: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "omugw_ws_tokens_total",
-			Help: "WebSocket 已结用量的 token 分项；模态与缓存分项已包含在输入输出总数内。",
+			Help: "WebSocket 固定终态用量或已确认累计快照差额的 token 分项；数字可信等级不代表任务已完整结算，模态与缓存分项包含在输入输出内。",
 		}, []string{"protocol", "source", "fidelity", "kind"}),
 		WSCharacters: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "omugw_ws_characters_total",
-			Help: "WebSocket 上游权威字符计量，不能换算或叠加到 token。",
+			Help: "WebSocket 上游权威字符计量（固定终态或累计差额），不代表任务已完整结算，不能换算或叠加到 token。",
 		}, []string{"protocol", "source", "fidelity"}),
 		WSAudioInputSeconds: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "omugw_ws_audio_input_seconds_total",
-			Help: "WebSocket 上游权威输入音频秒数，不能换算或叠加到 token。",
+			Help: "WebSocket 上游权威输入音频秒数（固定终态或累计差额），不代表任务已完整结算，不能换算或叠加到 token。",
 		}, []string{"protocol", "source", "fidelity"}),
 		WSDiagnostics: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "omugw_ws_diagnostics_total",
-			Help: "WebSocket 用量观测诊断，不包含 ID、模型或上游正文。",
+			Help: "WebSocket 用量及任务阶段诊断，不包含 ID、模型或上游正文。",
 		}, []string{"protocol", "reason"}),
 	}
 
@@ -272,7 +272,8 @@ func (m *Metrics) ObserveWSDiagnostic(protocol, reason string) {
 	}
 	switch reason {
 	case "usage_missing", "usage_unverified", "usage_invalid", "usage_ambiguous",
-		"usage_conflict", "usage_unfinished", "ledger_limit", "invalid_event", "transcription_config_unknown":
+		"usage_conflict", "usage_unfinished", "ledger_limit", "invalid_event", "transcription_config_unknown",
+		"task_start_timeout", "task_drain_timeout", "task_failed":
 	default:
 		reason = "unknown"
 	}
@@ -284,5 +285,5 @@ func wsProtocol(protocol string) bool {
 }
 
 func wsSource(source string) bool {
-	return source == "response" || source == "transcription" || source == "session"
+	return source == "response" || source == "transcription" || source == "session" || source == "task"
 }
