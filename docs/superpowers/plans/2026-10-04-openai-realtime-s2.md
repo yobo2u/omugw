@@ -110,7 +110,7 @@ Event为只读观测事实：Type/ID/Source/Status字符串，Started/Terminal�
 
 **Files:** 新增 `tests/sdk/openai-realtime/{package.json,package-lock.json,client.mjs,README.md}`；新增带sdk标签 `internal/gateway/ws_openai_sdk_test.go`；改Makefile、CI显式测试步骤、必要gitignore。
 
-**Interfaces:** Node `openai/realtime/ws`的OpenAIRealtimeWS，锁定openai7.27.0/ws8.21.0（先核对registry发行与MIT许可证），Node>=22，CI Node24。独立 `make test-sdk`执行 `go test -tags=sdk ./internal/gateway -run '^TestOpenAIRealtimeNodeSDK' -count=1`，依赖缺失必须失败，默认Go测试不安装依赖。
+**Interfaces:** Node `openai/realtime/ws`的OpenAIRealtimeWS，锁定openai7.27.0（Apache-2.0）/ws8.21.0（MIT），registry发行和直接许可证已核对，安装时核对lockfile传递依赖。Node>=22，CI Node24。独立 `make test-sdk`执行 `go test -tags=sdk ./internal/gateway -run '^TestOpenAIRealtimeNodeSDK' -count=1`，依赖缺失必须失败，默认Go测试不安装依赖。
 
 - [ ] Step 1: TestOpenAIRealtimeNodeSDKWSS/RejectsUntrustedTLS先RED；临时测试CA、TLS反代保留Upgrade→正式gateway→正式Provider→本地独立上游。SDK baseURL为https://localhost:port/v1。证书校验开启；不可信CA负例必须失败，不用全局TLS绕过。
 - [ ] Step 2: 官方SDK序列化发送，underlying socket核验原字节首事件/全部事件；Safety-Identifier来自options.headers，Org/Project忽略、假凭据替换。涵盖session.update提前pipeline、GA文本/音频/错误后继续/cancel/truncate/close、心跳沉默与子进程join、预算0。
