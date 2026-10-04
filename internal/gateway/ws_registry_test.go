@@ -207,7 +207,10 @@ func TestWSRegistryShutdownWaitsForSelectedClose(t *testing.T) {
 		t.Fatal(err)
 	}
 	done := make(chan error, 1)
-	go func() { done <- relayWS(s.Context(), down, up, initial, nil, 0) }()
+	profile := dashScopeRealtimeProfile()
+	go func() {
+		done <- relayWS(s.Context(), down, up, initial, &dashScopeWSObserver{}, profile.classifyClose, 0)
+	}()
 	_ = client.read(t)
 	gate.armed.Store(true)
 	server.send(t, ws.OpClose, ws.EncodeClosePayload(1000, "retained close reason"))

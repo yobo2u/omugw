@@ -15,9 +15,7 @@ import (
 	"github.com/yobo2u/omugw/internal/credential"
 	"github.com/yobo2u/omugw/internal/degrade"
 	"github.com/yobo2u/omugw/internal/obs"
-	"github.com/yobo2u/omugw/internal/protocol/dashscopewire"
 	"github.com/yobo2u/omugw/internal/provider"
-	dsws "github.com/yobo2u/omugw/internal/provider/dashscoperealtime"
 	"github.com/yobo2u/omugw/internal/router"
 	"github.com/yobo2u/omugw/internal/transport/ws"
 )
@@ -37,20 +35,23 @@ type WSDeps struct {
 }
 
 // WSHandler 单独持有升级承诺，不借 HTTP tracked.wrote 猜测 Hijack 后的状态。
-type WSHandler struct{ d WSDeps }
-
-func NewDashScopeRealtimeHandler(d WSDeps) *WSHandler { return &WSHandler{d: d} }
-
-func (*WSHandler) inbound() degrade.Inbound {
-	return degrade.Inbound{Protocol: degrade.ProtoDashScopeRealtime, Endpoint: degrade.EndpointDashScopeRealtime}
+type WSHandler struct {
+	d       WSDeps
+	profile wsProfile
 }
-func (*WSHandler) method() string { return http.MethodGet }
+
+func NewDashScopeRealtimeHandler(d WSDeps) *WSHandler {
+	return &WSHandler{d: d, profile: dashScopeRealtimeProfile()}
+}
+
+func (h *WSHandler) inbound() degrade.Inbound { return h.profile.inbound }
+func (*WSHandler) method() string             { return http.MethodGet }
 
 func (h *WSHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	outbound, committed, err := h.serve(w, r, start)
 	if err != nil && !committed {
-		writeWSError(w, err)
+		h.writeWSError(w, err)
 	}
 	outcome := wsOutcome(err)
 	if m := h.d.Metrics; m != nil {
@@ -115,7 +116,7 @@ func (h *WSHandler) serve(w http.ResponseWriter, r *http.Request, start time.Tim
 	// 握手 ctx 不得套住业务会话；使用保留 registry 私有 Value 的 session.Context。
 	cancel()
 	result = relayWS(session.Context(), downstream, ready.conn, ready.initial,
-		newWSUsage(h.d.Metrics, string(h.inbound().Protocol), outbound), h.d.Timeouts.Idle)
+		h.profile.newObserver(h.d.Metrics, string(h.inbound().Protocol), outbound), h.profile.classifyClose, h.d.Timeouts.Idle)
 	return outbound, committed, result
 }
 
@@ -123,7 +124,7 @@ func (h *WSHandler) preflight(w http.ResponseWriter, r *http.Request) (string, e
 	if _, err := h.d.Auth.AuthenticateUnique(r); err != nil {
 		return "", err
 	}
-	if err := dsws.ValidateHeaders(r.Header); err != nil {
+	if err := h.profile.validateHeaders(r.Header); err != nil {
 		return "", err
 	}
 	if ws.ValidateUpgrade(r) != nil || r.URL.Path != string(h.inbound().Endpoint) {
@@ -141,9 +142,9 @@ func (h *WSHandler) preflight(w http.ResponseWriter, r *http.Request) (string, e
 }
 
 // 保留本地 429/503；不能让 canonical.AsError 把 registry 状态折成 500。
-func writeWSError(w http.ResponseWriter, err error) {
+func (h *WSHandler) writeWSError(w http.ResponseWriter, err error) {
 	e := safeWSError(err)
-	status, body, headers := dashscopewire.EncodeError(e)
+	status, body, headers := h.profile.encodeError(e)
 	var local *wsRegistryError
 	if errors.As(err, &local) {
 		status = local.HTTPStatus()

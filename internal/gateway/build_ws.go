@@ -33,7 +33,7 @@ func (b *Built) ShutdownWebSockets(ctx context.Context) error {
 // 整门批准在注册与每次 Dial 前各检查一次，测试注册也没有豁免入口。
 func checkWSDoor(m *degrade.Matrix, h *WSHandler) error {
 	in := h.inbound()
-	if _, err := m.Check(in, degrade.ProviderDashScopeWSRealtime, degrade.ExpressibleSet(in.Protocol)); err != nil {
+	if _, err := m.Check(in, h.profile.outbound, degrade.ExpressibleSet(in.Protocol)); err != nil {
 		return fmt.Errorf("gateway: Realtime 整门未批准: %w", err)
 	}
 	return nil

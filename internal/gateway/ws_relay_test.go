@@ -187,7 +187,9 @@ func startWSTestRelay(t *testing.T, budget, limit int64, idle time.Duration, wra
 	ctx, cancel := context.WithCancel(context.Background())
 	x.cancel = cancel
 	t.Cleanup(cancel)
-	go func() { x.done <- relayWS(ctx, x.down, x.up, initial, x.usage, idle) }()
+	go func() {
+		x.done <- relayWS(ctx, x.down, x.up, initial, &dashScopeWSObserver{usage: x.usage}, dashscoperealtime.ClassifyClose, idle)
+	}()
 	f := x.client.read(t)
 	if f.Opcode != ws.OpText || string(f.Payload) != wsTestInitial {
 		t.Fatal("首条 session.created 未原样最先发送")
@@ -573,7 +575,9 @@ func TestWSRelayUsageCapacityPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	done := make(chan error, 1)
-	go func() { done <- relayWS(context.Background(), down, up, initial, u, 0) }()
+	go func() {
+		done <- relayWS(context.Background(), down, up, initial, &dashScopeWSObserver{usage: u}, dashscoperealtime.ClassifyClose, 0)
+	}()
 	assertWSTestClose(t, client, 1008, "usage record capacity exhausted")
 	if err := receiveWSTest(t, done); !errors.Is(err, errWSUsageLimit) {
 		t.Fatal(err)
@@ -608,7 +612,9 @@ func TestWSRelayRegistryShutdownJoinsExistingClose(t *testing.T) {
 	awaitWSTest(t, gate.entered)
 	u := newWSUsage(nil, "dashscope.realtime", "dashscope.realtime")
 	done := make(chan error, 1)
-	go func() { done <- relayWS(s.Context(), down, up, initial, u, 0) }()
+	go func() {
+		done <- relayWS(s.Context(), down, up, initial, &dashScopeWSObserver{usage: u}, dashscoperealtime.ClassifyClose, 0)
+	}()
 	select {
 	case err := <-done:
 		used := b.Used()
@@ -672,7 +678,9 @@ func TestWSRelayFirstCloseSurvivesLaterShutdown(t *testing.T) {
 	}
 	u := newWSUsage(nil, "dashscope.realtime", "dashscope.realtime")
 	done := make(chan error, 1)
-	go func() { done <- relayWS(s.Context(), down, up, initial, u, 0) }()
+	go func() {
+		done <- relayWS(s.Context(), down, up, initial, &dashScopeWSObserver{usage: u}, dashscoperealtime.ClassifyClose, 0)
+	}()
 	_ = client.read(t)
 	gate.armed.Store(true)
 	server.send(t, ws.OpClose, ws.EncodeClosePayload(1011, "To many requests. private reason"))
@@ -796,7 +804,9 @@ func wsTestSelectedClose(t *testing.T, duplicateAttach bool) {
 	}
 	u := newWSUsage(nil, "dashscope.realtime", "dashscope.realtime")
 	done := make(chan error, 1)
-	go func() { done <- relayWS(s.Context(), down, up, initial, u, 0) }()
+	go func() {
+		done <- relayWS(s.Context(), down, up, initial, &dashScopeWSObserver{usage: u}, dashscoperealtime.ClassifyClose, 0)
+	}()
 	_ = client.read(t)
 	writer.armed.Store(true)
 	server.send(t, ws.OpText, []byte(`{"type":"future.event"}`))
