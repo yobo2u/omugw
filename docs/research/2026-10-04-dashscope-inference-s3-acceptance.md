@@ -1,6 +1,6 @@
 # S3 Inference 音频子阶段：条件验收与证据缺口
 
-日期：2026-10-04。**本音频子阶段通过离线条件验收：七项实现、最终修复独立复审及新HEAD全库/SDK回归通过。真实Inference调用0次，整门仍未投放。**
+日期：2026-10-04。**本音频子阶段已在合并前通过离线条件验收；PR #19 合并后 main 的 Ubuntu race 出现大消息关闭取证故障。本次最小修复已通过本地定向及相关包普通/race，控制器独立复核、修复 PR 与远端 CI 待验。真实Inference调用0次，整门仍未投放。**
 范围仅 `audio/asr/recognition` 与 `audio/tts/SpeechSynthesizer`。
 依据：[批准设计](../superpowers/specs/2026-10-04-dashscope-inference-s3-audio-design.md)、
 [契约研究](2026-10-04-dashscope-inference-s3-contract.md)、[独立录制指南](2026-10-04-dashscope-inference-s3-recording.md)。
@@ -10,7 +10,7 @@
 | 维度 | 当前证据 | 仍缺什么 |
 |---|---|---|
 | 文档事实 | 握手无model；run→started；ASR duplex、TTS duplex、Sambert out；原单位及部分累计口径 | 文档不证明该key/地域/型号真实可用 |
-| 合成正式链路 | 正式Build/Provider/Handler/Policy/Relay本地TCP、逐任务及全分支修复复审通过；含无ready预读、鉴权替换、双向字节、门闩、失败/关闭、共享预算、一次结算；新HEAD全库check/race通过 | 本地对端不替代真实上游 |
+| 合成正式链路 | 正式Build/Provider/Handler/Policy/Relay本地TCP、逐任务及全分支修复复审通过；含无ready预读、鉴权替换、双向字节、门闩、失败/关闭、共享预算、一次结算；合并前HEAD全库check/race通过，合并后关闭取证故障与本次回归见下节 | 本地对端不替代真实上游；修复 PR/CI 待验 |
 | 独立录制器 | Task7本地脚本独立字面期望；六场景、单次持久Dial、预算、重复键/partial usage、SHA/原文对账、EOF/peer/local/silent分离 | 不含真实上游材料；smoke tag仅选择offline测试 |
 | live支持 | **未测，调用0** | 显式北京workspace端点、非个人固定样本、完整计费依据/manifest及控制器单槽实验 |
 | 原生保全 | 合成五份testkit fixture在正式链路四点严格回放；不是网关生成自己的预期 | 独立真实录制、内容审核与真实轨迹回放；未知字段保全不等于语义验证 |
@@ -89,7 +89,7 @@ $ git diff --check
 
 Fix round2最终定向验证：Metadata/MetadataBounds及Evidence中raw对账、终态篡改与分开预算、合法raw超candidate预算、凭据不落盘四例，
 普通`go test`通过（1.483s），`-race`通过（3.099s）；`go test -tags=smoke ./tests/smoke -run '^$' -count=1`
-通过（0.986s，未执行测试），`go vet -tags=smoke ./tests/smoke`无输出/exit 0。N1待控制器同范围独立复审。
+通过（0.986s，未执行测试），`go vet -tags=smoke ./tests/smoke`无输出/exit 0。N1已由控制器同范围独立复审判定PASS（合并前事实）。
 
 ## 控制器最终关口
 
@@ -132,13 +132,42 @@ Fix round2最终定向验证：Metadata/MetadataBounds及Evidence中raw对账、
 本文件记录本地验收时点；PR、远端CI及合并证据以关联工作项的阶段收尾评论为准。
 真实费用/端点/样本仍须落实，现有缺口如实保留；当前本地通过不构成整门投放证据。
 
+## PR #19 合并后故障与修复时点
+
+PR #19 已合并为 `4268fe3`。main CI `37207997625` 的 Ubuntu `make test-race`
+在 `TestOpenAIRealtimeBinaryLargeAndTotal` 失败：超限负载发送报 broken pipe，随后
+消息级读取未取得预期1009。此前本地和PR通过不能覆盖本次真实失败。
+
+在该基线的新分支 `fix/ws-oversize-close-evidence-20261004` 上，本地TCP屏障已复现：
+先排入真实ping，超限帧头触发网关关闭后再发送负载，完整发送与自动pong分别报写错误。
+二者不是同一缓存错误；独立帧读取仍取得 `1009 / message too large`，relay已join且预算归零。
+根因是测试把拒绝后的消息级读取当作独立关闭证据；未发现该窗口中网关漏发close。
+
+本次仅修改测试：健康大消息/HTTP total回环保留，另连接只发1 MiB+1的掩码长度头，
+要求网关在没有负载时拒绝；固定三秒期限内被动越过控制心跳，严格核对实际1009与原因，
+不接受EOF/broken pipe替代。永久屏障回归固定失败发送窗口，原读取断言实际RED，新帧断言GREEN。
+永久例在网关关闭完成后半关闭测试端写侧，排除各内核暂收剩余负载的差异；初始根因探针未作此半关闭。
+自然退出后检查registry/预算归零；生产的超限预分配拒绝、共享关闭预算与worker join保持原实现。
+
+本次环境为 `go1.25.0 darwin/arm64`，下面的测试命令均使用 `-count=1`，完整日志与RED证据位于
+阶段交接目录的 `postmerge-*.log`，分析见 `postmerge-fix-report.md`：
+
+| 检查 | 本次本地结果 |
+|---|---|
+| 指定大消息例与新增屏障例普通 / race | 通过，1.332s / 1.925s |
+| `go test ./internal/gateway ./internal/transport/ws -count=1` | 通过，11.407s / 5.715s |
+| 同两包 `-race -count=1` | 通过，14.536s / 6.915s |
+| `go vet ./internal/gateway ./internal/transport/ws` | 无输出，exit 0 |
+
+本次修复PR、远端Ubuntu CI和控制器独立复核仍待验；此表不宣称合并后全库/SDK或远端CI通过。
+
 ## 未完成项与暂停
 
 multimodal-dialog、听悟、text_generation独立承载、其余型号精确计量、Paraformer/Fun-ASR累计语义、
 Qwen3.1 TTS中间/终态重叠口径、真实全部六槽材料及生产整门投放均未完成。
 网关120秒draining政策可能截断大文本积压，短录制场景不覆盖此生产边界。
 
-**本音频子阶段已完成实现、独立复核与控制器本地验收；完成PR收尾后暂停。**
+**本音频子阶段已完成合并前实现、独立复核与控制器本地验收；PR #19 合并后仍须完成上述同阶段故障复核及修复PR/CI收尾，再暂停。**
 整个S3、A包和三门生产投放仍未完成，不自动进入下一子契约，也不因条件验收修改Redeem或生产路由。
 
 ## 执行裁决（按作出顺序）
