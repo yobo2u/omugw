@@ -35,8 +35,7 @@ func (v Value) Field(name string) (Value, error) {
 		end := valueEnd(v, i)
 		match := bytes.Equal(key[1:len(key)-1], []byte(name))
 		if !match && len(key) <= 6*len(name)+2 && bytes.IndexByte(key, '\\') >= 0 {
-			decoded, err := key.Text(len(name))
-			match = err == nil && decoded == name
+			match = escapedKeyEqual(key, name)
 		}
 		if match {
 			// last-wins 会把两个不同的计费 ID/数值悄悄折成一份可信记录。
@@ -51,6 +50,80 @@ func (v Value) Field(name string) (Value, error) {
 		}
 	}
 	return found, nil
+}
+
+// escapedKeyEqual 只比较已通过 Parse 的键，防未知转义扩展键逐项解码分配。
+// 与 Text 一样拒绝无效 UTF-8 和孤立代理项，但不生成解码后的字符串。
+func escapedKeyEqual(key []byte, name string) bool {
+	if !utf8.Valid(key) {
+		return false
+	}
+	j := 0
+	for i := 1; i < len(key)-1; {
+		c := key[i]
+		i++
+		if c == '\\' {
+			c = key[i]
+			i++
+			switch c {
+			case 'b':
+				c = '\b'
+			case 'f':
+				c = '\f'
+			case 'n':
+				c = '\n'
+			case 'r':
+				c = '\r'
+			case 't':
+				c = '\t'
+			case 'u':
+				r := hexRune(key[i : i+4])
+				i += 4
+				if r >= 0xdc00 && r <= 0xdfff {
+					return false
+				}
+				if r >= 0xd800 && r <= 0xdbff {
+					if i+6 > len(key)-1 || key[i] != '\\' || key[i+1] != 'u' {
+						return false
+					}
+					low := hexRune(key[i+2 : i+6])
+					if low < 0xdc00 || low > 0xdfff {
+						return false
+					}
+					r = 0x10000 + ((r - 0xd800) << 10) + (low - 0xdc00)
+					i += 6
+				}
+				want, width := utf8.DecodeRuneInString(name[j:])
+				if width == 0 || want != r || want == utf8.RuneError && width == 1 {
+					return false
+				}
+				j += width
+				continue
+			}
+		}
+		if j == len(name) || c != name[j] {
+			return false
+		}
+		j++
+	}
+	return j == len(name)
+}
+
+// hexRune 的四位十六进制前置校验归 Parse，避免另建一套 JSON 合法性规则。
+func hexRune(v []byte) rune {
+	var r rune
+	for _, c := range v {
+		r <<= 4
+		switch {
+		case c >= 'a' && c <= 'f':
+			r += rune(c - 'a' + 10)
+		case c >= 'A' && c <= 'F':
+			r += rune(c - 'A' + 10)
+		default:
+			r += rune(c - '0')
+		}
+	}
+	return r
 }
 
 func (v Value) Text(limit int) (string, error) {

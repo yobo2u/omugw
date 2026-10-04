@@ -102,6 +102,10 @@ func ValidateTaskContract(f ClientFacts) error {
 	default:
 		return errTaskContract
 	}
+	// 这两种任务有独立就绪/终态契约，不能借合法 audio 三元组混入未知型号保全。
+	if b.Model.Value == "multimodal-dialog" || b.Model.Value == "tingwu-meeting-realtime" {
+		return errTaskContract
+	}
 	spec := lookupModel(b.Model.Value)
 	if spec.task != "" && (b.Task.Value != spec.task || b.Streaming.Value != spec.streaming) {
 		return errTaskContract

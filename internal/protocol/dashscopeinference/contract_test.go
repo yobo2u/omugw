@@ -1,6 +1,34 @@
 package dashscopeinference
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
+
+func TestInferenceRejectsExcludedModels(t *testing.T) {
+	for _, model := range []string{"multimodal-dialog", "tingwu-meeting-realtime", "future"} {
+		for _, task := range []struct{ name, function, streaming string }{
+			{"asr", "recognition", "duplex"},
+			{"tts", "SpeechSynthesizer", "duplex"},
+			{"tts", "SpeechSynthesizer", "out"},
+		} {
+			t.Run(model+"/"+task.name+"/"+task.streaming, func(t *testing.T) {
+				raw := []byte(fmt.Sprintf(`{"header":{"action":"run-task","task_id":"a","streaming":%q},"payload":{"model":%q,"task_group":"audio","task":%q,"function":%q}}`, task.streaming, model, task.name, task.function))
+				facts, err := InspectClient(raw)
+				if err != nil {
+					t.Fatalf("valid audio envelope rejected: %v", err)
+				}
+				err = ValidateTaskContract(facts)
+				if model == "future" && err != nil {
+					t.Fatalf("unknown future model rejected: %v", err)
+				}
+				if model != "future" && err == nil {
+					t.Fatal("excluded model admitted through valid audio binding")
+				}
+			})
+		}
+	}
+}
 
 func TestInferenceExactContracts(t *testing.T) {
 	for _, tc := range []struct {

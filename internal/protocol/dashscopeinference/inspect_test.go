@@ -292,6 +292,57 @@ func TestInferenceInspectBounded(t *testing.T) {
 	}
 }
 
+func TestInferenceInspectEscapedKeysBounded(t *testing.T) {
+	for _, layer := range []string{"output", "payload", "usage"} {
+		t.Run(layer, func(t *testing.T) {
+			// 单个 blob 不会触发逐键比较；唯一转义扩展键才能守住扫描路径的分配上界。
+			var extension strings.Builder
+			extension.Grow((4 << 20) + 32)
+			for i := 0; extension.Len() < 4<<20; i++ {
+				fmt.Fprintf(&extension, `,"x\u0078%06d":0`, i)
+			}
+			output, usage := `{"event":"sentence-end"}`, `{"characters":1}`
+			if layer == "output" {
+				output = `{"event":"sentence-end"` + extension.String() + `}`
+			}
+			if layer == "usage" {
+				usage = `{"characters":1` + extension.String() + `}`
+			}
+			payload := `{"output":` + output + `,"usage":` + usage
+			if layer == "payload" {
+				payload += extension.String()
+			}
+			raw := []byte(`{"header":{"event":"result-generated","task_id":"a"},"payload":` + payload + `}}`)
+			before := bytes.Clone(raw)
+			contract := LookupModelContract("cosyvoice-v2")
+			if !contract.SentenceEndOnly || contract.Mode != ModeCumulative {
+				t.Fatal("test must exercise the known sentence-end contract")
+			}
+			inspect := func() {
+				got, err := InspectServer(raw, contract)
+				want := ServerFacts{Event: "result-generated", TaskID: "a", Usage: UsageSnapshot{Presence: Value, Characters: 1}}
+				if err != nil || got != want {
+					t.Fatalf("sentence-end usage = %+v, %v", got, err)
+				}
+			}
+			inspect()
+			runtime.GC()
+			var start, end runtime.MemStats
+			runtime.ReadMemStats(&start)
+			inspect()
+			runtime.ReadMemStats(&end)
+			if !bytes.Equal(raw, before) {
+				t.Fatal("escaped-key scan changed raw bytes")
+			}
+			allocated := end.TotalAlloc - start.TotalAlloc
+			t.Logf("layer=%s rawBytes=%d allocated=%d budget=%d", layer, len(raw), allocated, 256<<10)
+			if allocated > 256<<10 {
+				t.Fatalf("4MiB escaped-key %s allocated %d bytes, exceeds 256KiB", layer, allocated)
+			}
+		})
+	}
+}
+
 func TestInferenceServerFailure(t *testing.T) {
 	for _, code := range []string{"InvalidParameter", "InvalidApiKey", "Throttling", "secret-code", ""} {
 		extra := ""

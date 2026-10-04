@@ -100,6 +100,89 @@ func TestValueLargeUnknownDoesNotAllocatePayload(t *testing.T) {
 	t.Logf("4 MiB unknown: %d bytes/op, %d allocs/op", r.AllocedBytesPerOp(), r.AllocsPerOp())
 }
 
+func TestValueFieldEscapedKeySemantics(t *testing.T) {
+	for _, tc := range []struct {
+		name, raw, field, want string
+		duplicate              bool
+	}{
+		{"empty", `{"":0}`, "", "0", false},
+		{"unicode-ascii", `{"i\u0064":1}`, "id", "1", false},
+		{"all-escaped", `{"\u0069\u0064":2}`, "id", "2", false},
+		{"uppercase-hex", `{"\u00E9":3}`, "é", "3", false},
+		{"mixed-utf8", `{"é\u0064":4}`, "éd", "4", false},
+		{"surrogate-pair", `{"\ud83d\ude00":5}`, "😀", "5", false},
+		{"mixed-pair", `{"x\uD83D\uDE00z":6}`, "x😀z", "6", false},
+		{"quote", `{"\"":7}`, "\"", "7", false},
+		{"slash", `{"\/":8}`, "/", "8", false},
+		{"backslash", `{"\\":9}`, "\\", "9", false},
+		{"short-controls", `{"\b\f\n\r\t":10}`, "\b\f\n\r\t", "10", false},
+		{"unicode-controls", `{"\u0000\u0001\u000a":11}`, "\x00\x01\n", "11", false},
+		{"replacement-character", `{"\ufffd":12}`, "�", "12", false},
+		{"literal-replacement-character", `{"�\u0064":13}`, "�d", "13", false},
+		{"noncharacter", `{"\uffff":14}`, "\uffff", "14", false},
+		{"last-unicode", `{"\udbff\udfff":15}`, "\U0010ffff", "15", false},
+		{"long-key", `{"\u0061` + strings.Repeat("b", 1024) + `":16}`, "a" + strings.Repeat("b", 1024), "16", false},
+		{"missing", `{"i\u0064":1}`, "event", "", false},
+		{"prefix-only", `{"i\u0064more":1}`, "id", "", false},
+		{"longer-query", `{"i\u0064":1}`, "idmore", "", false},
+		{"unpaired-high", `{"\ud800":1}`, "�", "", false},
+		{"unpaired-low", `{"\udc00":1}`, "�", "", false},
+		{"high-then-bmp", `{"\ud800\u0061":1}`, "�a", "", false},
+		{"high-then-high", `{"\ud800\ud800":1}`, "��", "", false},
+		{"high-then-literal", `{"\ud800x":1}`, "�x", "", false},
+		{"invalid-utf8-key", "{\"\xff\\u0064\":1}", "�d", "", false},
+		{"invalid-utf8-query", `{"\ufffd":1}`, "\xff", "", false},
+		{"nested-ignored", `{"other":{"i\u0064":1,"id":2},"id":3}`, "id", "3", false},
+		{"duplicate-plain-escaped", `{"id":1,"i\u0064":2}`, "id", "", true},
+		{"duplicate-escaped-plain", `{"i\u0064":1,"id":2}`, "id", "", true},
+		{"duplicate-escaped-escaped", `{"\u0069d":1,"i\u0064":2}`, "id", "", true},
+		{"duplicate-pair", `{"😀":1,"\ud83d\ude00":2}`, "😀", "", true},
+		// 保留已有原字节精确匹配；只替换转义回退比较，不顺带改变 Field 语义。
+		{"raw-spelling", `{"i\u0064":1}`, `i\u0064`, "1", false},
+		{"raw-invalid-utf8", "{\"\xff\":1}", "\xff", "1", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			raw := []byte(tc.raw)
+			before := bytes.Clone(raw)
+			v, err := Parse(raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := v.Field(tc.field)
+			if (err != nil) != tc.duplicate || string(got) != tc.want {
+				t.Fatalf("Field(%q) = %q, %v; want %q, duplicate=%v", tc.field, got, err, tc.want, tc.duplicate)
+			}
+			if !bytes.Equal(raw, before) {
+				t.Fatal("Field changed raw")
+			}
+		})
+	}
+}
+
+func TestValueFieldEscapedKeysDoNotAllocate(t *testing.T) {
+	for _, tc := range []struct{ raw, name, want string }{
+		{`{"x\u0078000000":0,"ev\u0065nt":"sentence-end"}`, "event", `"sentence-end"`},
+		{`{"x\u0078000000":0}`, "event", ""},
+		{`{"\ud83d\ude00":0}`, "😀", "0"},
+		{`{"\ud800":0}`, "�", ""},
+		{`{"\u0061` + strings.Repeat("b", 1024) + `":0}`, "a" + strings.Repeat("b", 1024), "0"},
+	} {
+		v, err := Parse([]byte(tc.raw))
+		if err != nil {
+			t.Fatal(err)
+		}
+		allocs := testing.AllocsPerRun(100, func() {
+			got, err := v.Field(tc.name)
+			if err != nil || string(got) != tc.want {
+				t.Fatalf("Field(%q) = %q, %v", tc.name, got, err)
+			}
+		})
+		if allocs != 0 {
+			t.Errorf("escaped Field(%q) allocated %g times", tc.name, allocs)
+		}
+	}
+}
+
 func FuzzValueReadOnly(f *testing.F) {
 	for _, s := range []string{`{"id":"x","count":0}`, `{"i\u0064":"\ud800","id":"b"}`, `{"x":[{},true,null],"id":"\ud83d\ude00"}`, `[]`} {
 		f.Add([]byte(s))
