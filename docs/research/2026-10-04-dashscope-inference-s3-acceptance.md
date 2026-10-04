@@ -1,6 +1,6 @@
 # S3 Inference 音频子阶段：条件验收与证据缺口
 
-日期：2026-10-04。**本音频子阶段已在合并前通过离线条件验收；PR #19 合并后出现大消息关闭取证故障，其补丁已独立复核通过；随后控制器在 `1a554eb` 全库检查发现 Inference drain 的 task-failed 后 close EOF。当前共享关闭协调器修复已通过本地定向及相关包普通/race，仍待控制器独立复核、全库/SDK回归及修复 PR/远端 CI。真实Inference调用0次，整门仍未投放。**
+日期：2026-10-04。**本音频子阶段及合并后两项修复均已完成独立复核，并通过控制器本地全库与SDK的普通/race验收；PR #19 已合并，修复 PR #20 的最终远端 CI 与合并仍待收尾。真实Inference调用0次，整门仍未投放。**
 范围仅 `audio/asr/recognition` 与 `audio/tts/SpeechSynthesizer`。
 依据：[批准设计](../superpowers/specs/2026-10-04-dashscope-inference-s3-audio-design.md)、
 [契约研究](2026-10-04-dashscope-inference-s3-contract.md)、[独立录制指南](2026-10-04-dashscope-inference-s3-recording.md)。
