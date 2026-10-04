@@ -3,10 +3,41 @@ package ws
 import (
 	"context"
 	"fmt"
-	"sync"
 	"time"
 	"unicode/utf8"
 )
+
+// ArmCloseDeadline 只收紧连接的绝对收尾期限，不发帧、不封普通写，也不取消读上下文。
+// 每连接只拥有一个守卫；所有成功返回的 finish（即使守卫已到期）都须调用并 join。
+// finish 中止剩余 I/O 且可重复并发调用；零期限不接管连接，返回 nil finish。
+func (c *Conn) ArmCloseDeadline(deadline time.Time) (finish func(), err error) {
+	if deadline.IsZero() {
+		return nil, fmt.Errorf("%w: 关闭守卫必须有绝对期限", ErrProtocol)
+	}
+	// 装入最早期限与唤醒守卫在同一锁内，避免首次创建和并发收紧漏掉通知。
+	c.closeMu.Lock()
+	defer c.closeMu.Unlock()
+	tightened := false
+	for {
+		previous := c.closeDeadline.Load()
+		if previous != nil && !deadline.Before(*previous) {
+			break
+		}
+		if c.closeDeadline.CompareAndSwap(previous, &deadline) {
+			tightened = true
+			break
+		}
+	}
+	if c.closeGuard == nil {
+		c.closeGuard = c.watchTransportClose()
+	} else if tightened {
+		select {
+		case c.closeGuard.changed <- struct{}{}:
+		default:
+		}
+	}
+	return c.closeGuard.finish, nil
+}
 
 // BeginClose 发起关闭但保留读侧，让调用方独立接收对端 close；sent 只证明本次完整写出。
 // deadline 是整个收尾共用的绝对 I/O 期限（含等写锁、帧写、回应、TLS 释放），后续调用不能续期。
@@ -24,26 +55,14 @@ func (c *Conn) BeginClose(code uint16, reason string, deadline time.Time) (sent 
 	if !utf8.ValidString(reason) {
 		return false, finish, fmt.Errorf("%w: close 原因不是合法 UTF-8", ErrInvalidUTF8)
 	}
-	for {
-		previous := c.closeDeadline.Load()
-		if previous != nil && !deadline.Before(*previous) {
-			deadline = *previous
-			break
-		}
-		if c.closeDeadline.CompareAndSwap(previous, &deadline) {
-			break
-		}
+	finish, err = c.ArmCloseDeadline(deadline)
+	if err != nil {
+		return false, finish, err
 	}
 	c.closing.Store(true)
-	// 在等写锁之前拥有物理中止权，不能等拿到锁后才给关闭重新计时。
-	join := watchTransportClose(c.conn, deadline)
-	var once sync.Once
-	finish = func() {
-		once.Do(func() {
-			c.closed.Store(true)
-			_ = abortTransport(c.conn)
-			join()
-		})
+	deadline = c.limitCloseDeadline(deadline)
+	if !time.Now().Before(deadline) {
+		return false, finish, context.DeadlineExceeded
 	}
 	// 已取得物理关闭权的一方可能还在 TLS 清理；不排队争它的写锁，守卫仍覆盖其释放。
 	// 这里只能返回 sent=false，不能把状态位冒充实际帧发送证据。
@@ -52,6 +71,7 @@ func (c *Conn) BeginClose(code uint16, reason string, deadline time.Time) (sent 
 	}
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
+	deadline = c.limitCloseDeadline(deadline)
 	if !time.Now().Before(deadline) {
 		return false, finish, context.DeadlineExceeded
 	}
@@ -84,7 +104,7 @@ func (c *Conn) limitCloseDeadline(deadline time.Time) time.Time {
 }
 
 func minDeadline(a, b time.Time) time.Time {
-	if b.Before(a) {
+	if a.IsZero() || !b.IsZero() && b.Before(a) {
 		return b
 	}
 	return a
