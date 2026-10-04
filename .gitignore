@@ -15,3 +15,6 @@ config.local.yaml
 .omo/
 # 会话转储动辄数十 MB，且含完整对话内容，误提交一次就永远留在历史里
 session-*.json
+
+# 直连上游的原始候选与音频样本，人工审核前不得进入生产 fixture
+/.local/recordings/dsrealtime/
