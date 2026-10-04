@@ -289,6 +289,8 @@ func TestWSRelayPolicyTimerAndStop(t *testing.T) {
 			if d != p.Deadline() || now.Before(d.At) {
 				return nil
 			}
+			// 与真实 policy 一样一次消费期限；否则已到期 timer 重入会堵住测试通知、无法 join。
+			p.setDeadline(wsPolicyDeadline{Revision: d.Revision + 1})
 			expired <- d
 			return &wsPolicyEnd{At: now, Failure: errWSRelayPolicy, Code: 1008, Reason: "invalid event correlation"}
 		}

@@ -114,9 +114,22 @@ func inferenceStart(t *testing.T, p *wsInferencePolicy, id, model, task, streami
 func inferenceReject(t *testing.T, p *wsInferencePolicy, dir wsDirection, op ws.Opcode, raw []byte) {
 	t.Helper()
 	d, err := p.BeforeForward(context.Background(), dir, op, raw)
-	if err == nil && (d.Action != wsRejectThenEnd || d.End == nil || d.End.Code != 1008) {
-		t.Fatalf("错误准入: %+v", d)
+	if err != nil || d.Action != wsRejectThenEnd || d.End == nil || d.End.Code != 1008 || d.End.At.IsZero() || d.End.Failure != errWSRelayPolicy || d.End.Reason != "invalid task envelope or binding" || d.End.PeerGrace {
+		t.Fatalf("错误准入/拒绝契约: decision=%+v err=%v", d, err)
 	}
+}
+
+func inferenceAssertStopped(t *testing.T, d wsForwardDecision, err error) {
+	t.Helper()
+	if err != errWSPolicyStopped || errors.Is(err, context.Canceled) || d != (wsForwardDecision{}) {
+		t.Fatalf("内部封口信号不符: decision=%+v err=%v", d, err)
+	}
+}
+
+func inferenceExpectStopped(t *testing.T, p *wsInferencePolicy, dir wsDirection, op ws.Opcode, raw []byte) {
+	t.Helper()
+	d, err := p.BeforeForward(context.Background(), dir, op, raw)
+	inferenceAssertStopped(t, d, err)
 }
 
 type inferenceResult struct {
@@ -148,7 +161,9 @@ func inferenceWaitResult(t *testing.T, ch <-chan inferenceResult, forward bool) 
 	t.Helper()
 	select {
 	case r := <-ch:
-		if forward != (r.err == nil && r.decision.Action == wsForward) {
+		if !forward {
+			inferenceAssertStopped(t, r.decision, r.err)
+		} else if r.err != nil || r.decision.Action != wsForward || r.decision.End != nil {
 			t.Fatalf("门闩结果: %+v", r)
 		}
 		return r.decision
@@ -186,7 +201,7 @@ func TestInferencePolicyTaskTransitions(t *testing.T) {
 		p.AfterForward(s.Ticket, errors.New("write failed"))
 		inferenceWaitResult(t, ch, false)
 		p.AfterForward(s.Ticket, nil)
-		inferenceReject(t, p, wsClientToUpstream, ws.OpBinary, []byte{1})
+		inferenceExpectStopped(t, p, wsClientToUpstream, ws.OpBinary, []byte{1})
 	})
 	for _, tc := range []struct {
 		name, model, task, streaming string
@@ -277,7 +292,7 @@ func TestInferencePolicyDeliveryGenerations(t *testing.T) {
 			t.Fatal("交付预算被清空")
 		}
 		p.AfterForward(s.Ticket, nil)
-		inferenceReject(t, p, wsClientToUpstream, ws.OpBinary, []byte{1})
+		inferenceExpectStopped(t, p, wsClientToUpstream, ws.OpBinary, []byte{1})
 	})
 	t.Run("Step与phase双核验", func(t *testing.T) {
 		p, _, _ := inferencePolicy(t)
@@ -307,7 +322,7 @@ func TestInferencePolicyDeliveryGenerations(t *testing.T) {
 			case <-time.After(time.Second):
 				t.Fatal("Stop后After挂住")
 			}
-			inferenceReject(t, p, wsClientToUpstream, ws.OpText, inferenceRun("B", inferenceASR, "asr", "duplex"))
+			inferenceExpectStopped(t, p, wsClientToUpstream, ws.OpText, inferenceRun("B", inferenceASR, "asr", "duplex"))
 		}
 	})
 	t.Run("failed宽限尾音保全且不重结", func(t *testing.T) {

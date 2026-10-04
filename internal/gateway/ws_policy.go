@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/yobo2u/omugw/internal/canonical"
@@ -9,6 +10,10 @@ import (
 	dsi "github.com/yobo2u/omugw/internal/protocol/dashscopeinference"
 	"github.com/yobo2u/omugw/internal/transport/ws"
 )
+
+// 仅表示 policy 已封口，不是生命周期取消；原 End/写失败 owner 仍负责认领终止。
+// 必须与 context.Canceled 不可混淆，否则唤醒的对向 worker 会抢走失败文本与结果。
+var errWSPolicyStopped = errors.New("websocket policy stopped")
 
 type wsDirection uint8
 

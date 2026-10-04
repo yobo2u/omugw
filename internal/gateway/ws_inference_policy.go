@@ -120,7 +120,7 @@ func (p *wsInferencePolicy) BeforeForward(ctx context.Context, direction wsDirec
 		if p.finished || p.stopped && !(direction == wsUpstreamToClient && p.active != nil && p.active.phase == inferenceFailedClosing) {
 			p.mu.Unlock()
 			p.publication.Unlock()
-			return wsForwardDecision{}, context.Canceled
+			return wsForwardDecision{}, errWSPolicyStopped
 		}
 		var d wsForwardDecision
 		var o wsInferenceObservation

@@ -199,6 +199,10 @@ Expire 只处理与当前 revision/期限相同且已到期的一次超时；旧
 close owner 在仲裁中封住后续普通写、等待已有写完成，再写本地失败。绝对守卫覆盖等写锁。
 
 Stop 幂等：关闭客户端准入并解除所有 policy 门闩，唤醒 supervisor；不取消 transport readCtx。
+Before 对内部封口只返回专用 `errWSPolicyStopped`（不匹配 `context.Canceled`）；relay 只释放当前
+Message 并退出该 worker，不 report 此信号。failed/reject/Expire 的原 End owner、After 写失败的
+原 worker（携带原写错）仍负责认领唯一 termination；Stop 的关闭 owner 已有终止原因，Finish 在
+join 后封口。真实 `ctx.Err()` 仍原路上报，不能用“忽略取消”代替内部封口区分。
 task-failed 的匹配上游尾消息在被动等待内仍可保全；其他终止已封普通应用写。
 Finish 在所有 forward/supervisor join 后调用一次，幂等结未结计量。Realtime Policy=nil，
 仍由旧 Observer.Observe/Finish 处理，不能将 Realtime error 自动变为终止。
@@ -245,6 +249,7 @@ active 无 HTTP total 上限。上述是网关预算，不是云端 SLA。
 普通 write、pong/ping、自动 close、BeginClose、TLS 强制释放均服从最早 deadline；重复装入不能续命。
 调用者无论错误与否都 finish/join，守卫提前自然到期也必须 join；不以 readCtx 超时抢先断 TCP。
 `ws.AllocateMessage(b *ws.BufferBudget, op ws.Opcode, size int, fill func([]byte) error) (*ws.Message,error)`
+只接受完整业务消息 `OpText`/`OpBinary`；其他 opcode 在 acquire、make 或 fill 前返回 ErrProtocol。
 在分配前 acquire 精确 size；失败不调用 fill；fill 错误/非法文本归还；Release 含浅拷贝幂等。
 
 同一 wsTermination 持有：首次业务/生命周期结果、原文交付完成门闩、本地失败待交付项、

@@ -101,7 +101,11 @@ func relayWS(ctx context.Context, downstream, upstream *ws.Conn, initial *ws.Mes
 				decision, err = options.Policy.BeforeForward(readCtx, direction, m.Opcode, m.Payload)
 				if err != nil {
 					m.Release()
-					report(err, fromUpstream)
+					// 内部封口只退当前 worker；原 End/After 写错或既有 termination
+					// owner 负责收尾。真实 ctx.Err 与其他错误仍须原路 report。
+					if err != errWSPolicyStopped {
+						report(err, fromUpstream)
+					}
 					return
 				}
 			}

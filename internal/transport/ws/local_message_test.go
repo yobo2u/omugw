@@ -2,11 +2,48 @@ package ws
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
+	"time"
 
 	dsi "github.com/yobo2u/omugw/internal/protocol/dashscopeinference"
 )
+
+func TestAllocateMessageRejectsNonMessageOpcode(t *testing.T) {
+	for _, op := range []Opcode{OpContinuation, 3, 4, 5, 6, 7, OpClose, OpPing, OpPong, 11, 12, 13, 14, 15, 255} {
+		t.Run(fmt.Sprint(op), func(t *testing.T) {
+			b := productionBudget(t, 8)
+			// 持住预算锁：非法 opcode 连 acquire 都不能触碰，失败后归还也不够。
+			b.mu.Lock()
+			called := false
+			done := make(chan struct{})
+			var m *Message
+			var err error
+			go func() {
+				m, err = AllocateMessage(b, op, 8, func([]byte) error { called = true; return nil })
+				close(done)
+			}()
+			select {
+			case <-done:
+			case <-time.After(closeDeadlineSchedulingTolerance):
+				t.Error("非法 opcode 触碰预算锁")
+			}
+			b.mu.Unlock()
+			<-done
+			if m != nil || !errors.Is(err, ErrProtocol) || called || b.Used() != 0 {
+				t.Errorf("非法 opcode 分配/调用 fill: message=%v err=%v called=%v used=%d", m != nil, err, called, b.Used())
+			}
+			m.Release()
+			if allocations := testing.AllocsPerRun(10, func() {
+				m, _ := AllocateMessage(nil, op, 8, func([]byte) error { return nil })
+				m.Release()
+			}); allocations != 0 {
+				t.Errorf("非法 opcode 仍分配: %v", allocations)
+			}
+		})
+	}
+}
 
 func TestAllocateMessageReservesBeforeFill(t *testing.T) {
 	if m, err := AllocateMessage(nil, OpText, -1, func([]byte) error {
