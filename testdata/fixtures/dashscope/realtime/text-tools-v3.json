@@ -1,0 +1,3440 @@
+{
+  "name": "dsrealtime-text-tools",
+  "note": "独立直连候选，待人工审核。请求为作者脚本；upstream-accepted 由后继事件提供组级证据，不是云端抓包。仅保留本次实际序列，不承诺并发调度。模型别名以 session.created 回显为准。",
+  "request": {
+    "method": "GET",
+    "path": "/api-ws/v1/realtime",
+    "query": "model=qwen3.5-omni-flash-realtime"
+  },
+  "response": {
+    "status": 101,
+    "headers": {
+      "connection": "Upgrade",
+      "upgrade": "websocket"
+    },
+    "ws": {
+      "version": 1,
+      "client_protocol": "dashscope.realtime",
+      "client_version": "official-raw-2026-10-04",
+      "upstream": {
+        "method": "GET",
+        "path": "/api-ws/v1/realtime",
+        "query": "model=qwen3.5-omni-flash-realtime"
+      },
+      "upstream_expected_status": 101,
+      "provenance": {
+        "kind": "recorded",
+        "recorded_at": "2026-10-04T05:41:30Z",
+        "upstream_protocol": "dashscope.realtime",
+        "upstream_version": "official-raw-2026-10-04; requested-alias, see session.created for observed model",
+        "model": "qwen3.5-omni-flash-realtime",
+        "source_sha256": "04196d50162e979e98b6216102ee3f2c99cac4a8f61abd234317d14bd99c7b5a"
+      },
+      "coverage": [
+        {
+          "capability": "realtime_session",
+          "nodes": [
+            "n0000_1",
+            "n0002_1"
+          ],
+          "note": "配置逐字段回显核对，仍需核对实际模型别名和原始结构"
+        },
+        {
+          "capability": "text_generation",
+          "nodes": [
+            "n0010_1",
+            "n0011_1",
+            "n0012_1",
+            "n0040_1",
+            "n0041_1",
+            "n0042_1",
+            "n0043_1",
+            "n0044_1",
+            "n0045_1",
+            "n0016_1",
+            "n0030_1",
+            "n0049_1"
+          ],
+          "note": "非空文本 delta 与完成终态"
+        },
+        {
+          "capability": "streaming",
+          "nodes": [
+            "n0010_1",
+            "n0011_1",
+            "n0012_1",
+            "n0040_1",
+            "n0041_1",
+            "n0042_1",
+            "n0043_1",
+            "n0044_1",
+            "n0045_1",
+            "n0016_1",
+            "n0030_1",
+            "n0049_1"
+          ],
+          "note": "实际文本分片与业务终态"
+        },
+        {
+          "capability": "tool_calling",
+          "nodes": [
+            "n0030_1",
+            "n0016_1",
+            "n0030_1",
+            "n0049_1"
+          ],
+          "note": "完整预期工具集合通过形状/名称/唯一call_id校验，结果回传另由请求见证核对"
+        },
+        {
+          "capability": "parallel_tool_calls",
+          "nodes": [
+            "n0030_1"
+          ],
+          "note": "同一completed response.done内两个预期名称各一且call_id非空唯一，非两个串行响应"
+        }
+      ],
+      "nodes": [
+        {
+          "id": "n0000_0",
+          "point": "upstream.send",
+          "source": "recorded",
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X0xlcHJaMllISUdJY25velIyYjhRcSIsInR5cGUiOiJzZXNzaW9uLmNyZWF0ZWQiLCJzZXNzaW9uIjp7Im9iamVjdCI6InJlYWx0aW1lLnNlc3Npb24iLCJtb2RlbCI6InF3ZW4zLjUtb21uaS1mbGFzaC1yZWFsdGltZSIsIm1vZGFsaXRpZXMiOlsidGV4dCIsImF1ZGlvIl0sInZvaWNlIjoiVGluYSIsImlucHV0X2F1ZGlvX2Zvcm1hdCI6InBjbSIsIm91dHB1dF9hdWRpb19mb3JtYXQiOiJwY20iLCJpbnB1dF9hdWRpb190cmFuc2NyaXB0aW9uIjp7Im1vZGVsIjoicXdlbjMtYXNyLWZsYXNoLXJlYWx0aW1lIn0sInR1cm5fZGV0ZWN0aW9uIjp7InR5cGUiOiJzZXJ2ZXJfdmFkIiwidGhyZXNob2xkIjowLjUsInByZWZpeF9wYWRkaW5nX21zIjozMDAsInNpbGVuY2VfZHVyYXRpb25fbXMiOjgwMCwiY3JlYXRlX3Jlc3BvbnNlIjp0cnVlLCJpbnRlcnJ1cHRfcmVzcG9uc2UiOnRydWV9LCJpZCI6InNlc3NfR2VwWFpZR1g5UGJ1V2pYenFoM283In19"
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_1"
+            },
+            {
+              "pointer": "/session/id",
+              "mode": "bind",
+              "namespace": "session",
+              "symbol": "session_2"
+            }
+          ]
+        },
+        {
+          "id": "n0000_1",
+          "point": "client.receive",
+          "source": "golden",
+          "after": [
+            "n0000_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X0xlcHJaMllISUdJY25velIyYjhRcSIsInR5cGUiOiJzZXNzaW9uLmNyZWF0ZWQiLCJzZXNzaW9uIjp7Im9iamVjdCI6InJlYWx0aW1lLnNlc3Npb24iLCJtb2RlbCI6InF3ZW4zLjUtb21uaS1mbGFzaC1yZWFsdGltZSIsIm1vZGFsaXRpZXMiOlsidGV4dCIsImF1ZGlvIl0sInZvaWNlIjoiVGluYSIsImlucHV0X2F1ZGlvX2Zvcm1hdCI6InBjbSIsIm91dHB1dF9hdWRpb19mb3JtYXQiOiJwY20iLCJpbnB1dF9hdWRpb190cmFuc2NyaXB0aW9uIjp7Im1vZGVsIjoicXdlbjMtYXNyLWZsYXNoLXJlYWx0aW1lIn0sInR1cm5fZGV0ZWN0aW9uIjp7InR5cGUiOiJzZXJ2ZXJfdmFkIiwidGhyZXNob2xkIjowLjUsInByZWZpeF9wYWRkaW5nX21zIjozMDAsInNpbGVuY2VfZHVyYXRpb25fbXMiOjgwMCwiY3JlYXRlX3Jlc3BvbnNlIjp0cnVlLCJpbnRlcnJ1cHRfcmVzcG9uc2UiOnRydWV9LCJpZCI6InNlc3NfR2VwWFpZR1g5UGJ1V2pYenFoM283In19"
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_1"
+            },
+            {
+              "pointer": "/session/id",
+              "mode": "reference",
+              "namespace": "session",
+              "symbol": "session_2"
+            }
+          ],
+          "forwarded_from": "n0000_0"
+        },
+        {
+          "id": "n0001_0",
+          "point": "client.send",
+          "source": "authored",
+          "after": [
+            "n0000_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6InJlY29yZF8wMDEiLCJzZXNzaW9uIjp7Imluc3RydWN0aW9ucyI6Iui/meaYr+WFrOW8gOeahOaXoOmakOengea1i+ivleOAgueugOefreS9nOetlO+8jOS4jei2hei/h+S6jOWNgeS4quWtl+OAgiIsIm1heF90b2tlbnMiOjEyOCwibW9kYWxpdGllcyI6WyJ0ZXh0Il0sInRvb2xzIjpbeyJmdW5jdGlvbiI6eyJkZXNjcmlwdGlvbiI6Iui/lOWbnua1i+ivleWbvuW9ouminOiJsu+8m+S4jiB0ZXN0X3NoYXBlIOWQjOi9ruiwg+eUqOOAgiIsIm5hbWUiOiJ0ZXN0X2NvbG9yIiwicGFyYW1ldGVycyI6eyJwcm9wZXJ0aWVzIjp7fSwidHlwZSI6Im9iamVjdCJ9fSwidHlwZSI6ImZ1bmN0aW9uIn0seyJmdW5jdGlvbiI6eyJkZXNjcmlwdGlvbiI6Iui/lOWbnua1i+ivleWbvuW9ouW9oueKtu+8m+S4jiB0ZXN0X2NvbG9yIOWQjOi9ruiwg+eUqOOAgiIsIm5hbWUiOiJ0ZXN0X3NoYXBlIiwicGFyYW1ldGVycyI6eyJwcm9wZXJ0aWVzIjp7fSwidHlwZSI6Im9iamVjdCJ9fSwidHlwZSI6ImZ1bmN0aW9uIn1dfSwidHlwZSI6InNlc3Npb24udXBkYXRlIn0="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_3"
+            }
+          ]
+        },
+        {
+          "id": "n0001_1",
+          "point": "upstream.receive",
+          "source": "upstream-accepted",
+          "after": [
+            "n0001_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6InJlY29yZF8wMDEiLCJzZXNzaW9uIjp7Imluc3RydWN0aW9ucyI6Iui/meaYr+WFrOW8gOeahOaXoOmakOengea1i+ivleOAgueugOefreS9nOetlO+8jOS4jei2hei/h+S6jOWNgeS4quWtl+OAgiIsIm1heF90b2tlbnMiOjEyOCwibW9kYWxpdGllcyI6WyJ0ZXh0Il0sInRvb2xzIjpbeyJmdW5jdGlvbiI6eyJkZXNjcmlwdGlvbiI6Iui/lOWbnua1i+ivleWbvuW9ouminOiJsu+8m+S4jiB0ZXN0X3NoYXBlIOWQjOi9ruiwg+eUqOOAgiIsIm5hbWUiOiJ0ZXN0X2NvbG9yIiwicGFyYW1ldGVycyI6eyJwcm9wZXJ0aWVzIjp7fSwidHlwZSI6Im9iamVjdCJ9fSwidHlwZSI6ImZ1bmN0aW9uIn0seyJmdW5jdGlvbiI6eyJkZXNjcmlwdGlvbiI6Iui/lOWbnua1i+ivleWbvuW9ouW9oueKtu+8m+S4jiB0ZXN0X2NvbG9yIOWQjOi9ruiwg+eUqOOAgiIsIm5hbWUiOiJ0ZXN0X3NoYXBlIiwicGFyYW1ldGVycyI6eyJwcm9wZXJ0aWVzIjp7fSwidHlwZSI6Im9iamVjdCJ9fSwidHlwZSI6ImZ1bmN0aW9uIn1dfSwidHlwZSI6InNlc3Npb24udXBkYXRlIn0="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_3"
+            }
+          ],
+          "forwarded_from": "n0001_0"
+        },
+        {
+          "id": "n0002_0",
+          "point": "upstream.send",
+          "source": "recorded",
+          "after": [
+            "n0001_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X1JwYnp0Y3NRV2lQakVib09SQVlWdCIsInR5cGUiOiJzZXNzaW9uLnVwZGF0ZWQiLCJzZXNzaW9uIjp7ImlkIjoic2Vzc19HZXBYWllHWDlQYnVXalh6cWgzbzciLCJvYmplY3QiOiJyZWFsdGltZS5zZXNzaW9uIiwibW9kZWwiOiJxd2VuMy41LW9tbmktZmxhc2gtcmVhbHRpbWUiLCJtb2RhbGl0aWVzIjpbInRleHQiXSwiaW5zdHJ1Y3Rpb25zIjoi6L+Z5piv5YWs5byA55qE5peg6ZqQ56eB5rWL6K+V44CC566A55+t5L2c562U77yM5LiN6LaF6L+H5LqM5Y2B5Liq5a2X44CCIiwidm9pY2UiOiJUaW5hIiwiaW5wdXRfYXVkaW9fZm9ybWF0IjoicGNtIiwib3V0cHV0X2F1ZGlvX2Zvcm1hdCI6InBjbSIsImlucHV0X2F1ZGlvX3RyYW5zY3JpcHRpb24iOnsibW9kZWwiOiJxd2VuMy1hc3ItZmxhc2gtcmVhbHRpbWUifSwidHVybl9kZXRlY3Rpb24iOnsidHlwZSI6InNlcnZlcl92YWQiLCJ0aHJlc2hvbGQiOjAuNSwicHJlZml4X3BhZGRpbmdfbXMiOjMwMCwic2lsZW5jZV9kdXJhdGlvbl9tcyI6ODAwLCJjcmVhdGVfcmVzcG9uc2UiOnRydWUsImludGVycnVwdF9yZXNwb25zZSI6dHJ1ZX0sInRvb2xzIjpbeyJmdW5jdGlvbiI6eyJuYW1lIjoidGVzdF9jb2xvciIsImRlc2NyaXB0aW9uIjoi6L+U5Zue5rWL6K+V5Zu+5b2i6aKc6Imy77yb5LiOIHRlc3Rfc2hhcGUg5ZCM6L2u6LCD55So44CCIiwicGFyYW1ldGVycyI6eyJwcm9wZXJ0aWVzIjp7fSwidHlwZSI6Im9iamVjdCJ9fSwidHlwZSI6ImZ1bmN0aW9uIn0seyJmdW5jdGlvbiI6eyJuYW1lIjoidGVzdF9zaGFwZSIsImRlc2NyaXB0aW9uIjoi6L+U5Zue5rWL6K+V5Zu+5b2i5b2i54q277yb5LiOIHRlc3RfY29sb3Ig5ZCM6L2u6LCD55So44CCIiwicGFyYW1ldGVycyI6eyJwcm9wZXJ0aWVzIjp7fSwidHlwZSI6Im9iamVjdCJ9fSwidHlwZSI6ImZ1bmN0aW9uIn1dLCJtYXhfdG9rZW5zIjoxMjh9fQ=="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_4"
+            },
+            {
+              "pointer": "/session/id",
+              "mode": "reference",
+              "namespace": "session",
+              "symbol": "session_2"
+            }
+          ]
+        },
+        {
+          "id": "n0002_1",
+          "point": "client.receive",
+          "source": "golden",
+          "after": [
+            "n0002_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X1JwYnp0Y3NRV2lQakVib09SQVlWdCIsInR5cGUiOiJzZXNzaW9uLnVwZGF0ZWQiLCJzZXNzaW9uIjp7ImlkIjoic2Vzc19HZXBYWllHWDlQYnVXalh6cWgzbzciLCJvYmplY3QiOiJyZWFsdGltZS5zZXNzaW9uIiwibW9kZWwiOiJxd2VuMy41LW9tbmktZmxhc2gtcmVhbHRpbWUiLCJtb2RhbGl0aWVzIjpbInRleHQiXSwiaW5zdHJ1Y3Rpb25zIjoi6L+Z5piv5YWs5byA55qE5peg6ZqQ56eB5rWL6K+V44CC566A55+t5L2c562U77yM5LiN6LaF6L+H5LqM5Y2B5Liq5a2X44CCIiwidm9pY2UiOiJUaW5hIiwiaW5wdXRfYXVkaW9fZm9ybWF0IjoicGNtIiwib3V0cHV0X2F1ZGlvX2Zvcm1hdCI6InBjbSIsImlucHV0X2F1ZGlvX3RyYW5zY3JpcHRpb24iOnsibW9kZWwiOiJxd2VuMy1hc3ItZmxhc2gtcmVhbHRpbWUifSwidHVybl9kZXRlY3Rpb24iOnsidHlwZSI6InNlcnZlcl92YWQiLCJ0aHJlc2hvbGQiOjAuNSwicHJlZml4X3BhZGRpbmdfbXMiOjMwMCwic2lsZW5jZV9kdXJhdGlvbl9tcyI6ODAwLCJjcmVhdGVfcmVzcG9uc2UiOnRydWUsImludGVycnVwdF9yZXNwb25zZSI6dHJ1ZX0sInRvb2xzIjpbeyJmdW5jdGlvbiI6eyJuYW1lIjoidGVzdF9jb2xvciIsImRlc2NyaXB0aW9uIjoi6L+U5Zue5rWL6K+V5Zu+5b2i6aKc6Imy77yb5LiOIHRlc3Rfc2hhcGUg5ZCM6L2u6LCD55So44CCIiwicGFyYW1ldGVycyI6eyJwcm9wZXJ0aWVzIjp7fSwidHlwZSI6Im9iamVjdCJ9fSwidHlwZSI6ImZ1bmN0aW9uIn0seyJmdW5jdGlvbiI6eyJuYW1lIjoidGVzdF9zaGFwZSIsImRlc2NyaXB0aW9uIjoi6L+U5Zue5rWL6K+V5Zu+5b2i5b2i54q277yb5LiOIHRlc3RfY29sb3Ig5ZCM6L2u6LCD55So44CCIiwicGFyYW1ldGVycyI6eyJwcm9wZXJ0aWVzIjp7fSwidHlwZSI6Im9iamVjdCJ9fSwidHlwZSI6ImZ1bmN0aW9uIn1dLCJtYXhfdG9rZW5zIjoxMjh9fQ=="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_4"
+            },
+            {
+              "pointer": "/session/id",
+              "mode": "reference",
+              "namespace": "session",
+              "symbol": "session_2"
+            }
+          ],
+          "forwarded_from": "n0002_0"
+        },
+        {
+          "id": "n0003_0",
+          "point": "client.send",
+          "source": "authored",
+          "after": [
+            "n0002_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6InJlY29yZF8wMDIiLCJpdGVtIjp7ImNvbnRlbnQiOlt7InRleHQiOiLorrDkvY/mtYvor5Xlj6Pku6TvvJrok53oibLmlrnlnZfjgILlj6rlm57lpI3lt7LorrDkvY/vvIzkuI3osIPnlKjlt6XlhbfjgIIiLCJ0eXBlIjoiaW5wdXRfdGV4dCJ9XSwicm9sZSI6InVzZXIiLCJ0eXBlIjoibWVzc2FnZSJ9LCJ0eXBlIjoiY29udmVyc2F0aW9uLml0ZW0uY3JlYXRlIn0="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_5"
+            }
+          ]
+        },
+        {
+          "id": "n0003_1",
+          "point": "upstream.receive",
+          "source": "upstream-accepted",
+          "after": [
+            "n0003_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6InJlY29yZF8wMDIiLCJpdGVtIjp7ImNvbnRlbnQiOlt7InRleHQiOiLorrDkvY/mtYvor5Xlj6Pku6TvvJrok53oibLmlrnlnZfjgILlj6rlm57lpI3lt7LorrDkvY/vvIzkuI3osIPnlKjlt6XlhbfjgIIiLCJ0eXBlIjoiaW5wdXRfdGV4dCJ9XSwicm9sZSI6InVzZXIiLCJ0eXBlIjoibWVzc2FnZSJ9LCJ0eXBlIjoiY29udmVyc2F0aW9uLml0ZW0uY3JlYXRlIn0="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_5"
+            }
+          ],
+          "forwarded_from": "n0003_0"
+        },
+        {
+          "id": "n0004_0",
+          "point": "upstream.send",
+          "source": "recorded",
+          "after": [
+            "n0003_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X1RjUmFza3A1TUNLMkRuODRDczV2OSIsInR5cGUiOiJjb252ZXJzYXRpb24uaXRlbS5jcmVhdGVkIiwiaXRlbSI6eyJpZCI6Iml0ZW1fU3ZGc0hjRzR1c3VFd1hTT1Bvd2FZIiwib2JqZWN0IjoicmVhbHRpbWUuaXRlbSIsInR5cGUiOiJtZXNzYWdlIiwic3RhdHVzIjoiY29tcGxldGVkIiwicm9sZSI6InVzZXIiLCJjb250ZW50IjpbeyJ0eXBlIjoiaW5wdXRfdGV4dCIsInRleHQiOiLorrDkvY/mtYvor5Xlj6Pku6TvvJrok53oibLmlrnlnZfjgILlj6rlm57lpI3lt7LorrDkvY/vvIzkuI3osIPnlKjlt6XlhbfjgIIifV19fQ=="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_6"
+            },
+            {
+              "pointer": "/item/id",
+              "mode": "bind",
+              "namespace": "item",
+              "symbol": "item_7"
+            }
+          ]
+        },
+        {
+          "id": "n0004_1",
+          "point": "client.receive",
+          "source": "golden",
+          "after": [
+            "n0004_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X1RjUmFza3A1TUNLMkRuODRDczV2OSIsInR5cGUiOiJjb252ZXJzYXRpb24uaXRlbS5jcmVhdGVkIiwiaXRlbSI6eyJpZCI6Iml0ZW1fU3ZGc0hjRzR1c3VFd1hTT1Bvd2FZIiwib2JqZWN0IjoicmVhbHRpbWUuaXRlbSIsInR5cGUiOiJtZXNzYWdlIiwic3RhdHVzIjoiY29tcGxldGVkIiwicm9sZSI6InVzZXIiLCJjb250ZW50IjpbeyJ0eXBlIjoiaW5wdXRfdGV4dCIsInRleHQiOiLorrDkvY/mtYvor5Xlj6Pku6TvvJrok53oibLmlrnlnZfjgILlj6rlm57lpI3lt7LorrDkvY/vvIzkuI3osIPnlKjlt6XlhbfjgIIifV19fQ=="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_6"
+            },
+            {
+              "pointer": "/item/id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_7"
+            }
+          ],
+          "forwarded_from": "n0004_0"
+        },
+        {
+          "id": "n0005_0",
+          "point": "client.send",
+          "source": "authored",
+          "after": [
+            "n0004_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6InJlY29yZF8wMDMiLCJ0eXBlIjoicmVzcG9uc2UuY3JlYXRlIn0="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_8"
+            }
+          ]
+        },
+        {
+          "id": "n0005_1",
+          "point": "upstream.receive",
+          "source": "upstream-accepted",
+          "after": [
+            "n0005_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6InJlY29yZF8wMDMiLCJ0eXBlIjoicmVzcG9uc2UuY3JlYXRlIn0="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_8"
+            }
+          ],
+          "forwarded_from": "n0005_0"
+        },
+        {
+          "id": "n0006_0",
+          "point": "upstream.send",
+          "source": "recorded",
+          "after": [
+            "n0005_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X1pGc1NGQ3h1Qk4xZGt2eTNoTFN2ZiIsInR5cGUiOiJyZXNwb25zZS5jcmVhdGVkIiwicmVzcG9uc2UiOnsiaWQiOiJyZXNwX0JQZFMzcFp3OXJTNzJKWFhJc0E4UCIsIm9iamVjdCI6InJlYWx0aW1lLnJlc3BvbnNlIiwiY29udmVyc2F0aW9uX2lkIjoiY29udl9ObGprRUtzUW5pdWMyNEwxU0IxZ0ciLCJzdGF0dXMiOiJpbl9wcm9ncmVzcyIsIm1vZGFsaXRpZXMiOlsidGV4dCJdLCJ2b2ljZSI6IlRpbmEiLCJvdXRwdXRfYXVkaW9fZm9ybWF0IjoicGNtIiwib3V0cHV0IjpbXX19"
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_9"
+            },
+            {
+              "pointer": "/response/id",
+              "mode": "bind",
+              "namespace": "response",
+              "symbol": "response_10"
+            }
+          ]
+        },
+        {
+          "id": "n0006_1",
+          "point": "client.receive",
+          "source": "golden",
+          "after": [
+            "n0006_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X1pGc1NGQ3h1Qk4xZGt2eTNoTFN2ZiIsInR5cGUiOiJyZXNwb25zZS5jcmVhdGVkIiwicmVzcG9uc2UiOnsiaWQiOiJyZXNwX0JQZFMzcFp3OXJTNzJKWFhJc0E4UCIsIm9iamVjdCI6InJlYWx0aW1lLnJlc3BvbnNlIiwiY29udmVyc2F0aW9uX2lkIjoiY29udl9ObGprRUtzUW5pdWMyNEwxU0IxZ0ciLCJzdGF0dXMiOiJpbl9wcm9ncmVzcyIsIm1vZGFsaXRpZXMiOlsidGV4dCJdLCJ2b2ljZSI6IlRpbmEiLCJvdXRwdXRfYXVkaW9fZm9ybWF0IjoicGNtIiwib3V0cHV0IjpbXX19"
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_9"
+            },
+            {
+              "pointer": "/response/id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_10"
+            }
+          ],
+          "forwarded_from": "n0006_0"
+        },
+        {
+          "id": "n0007_0",
+          "point": "upstream.send",
+          "source": "recorded",
+          "after": [
+            "n0006_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X0FRVG5FeEdaaE40NWhzeTV5SndXdCIsInR5cGUiOiJyZXNwb25zZS5vdXRwdXRfaXRlbS5hZGRlZCIsInJlc3BvbnNlX2lkIjoicmVzcF9CUGRTM3BadzlyUzcySlhYSXNBOFAiLCJvdXRwdXRfaW5kZXgiOjAsIml0ZW0iOnsiaWQiOiJpdGVtX042QWt6d2N4djVzdWY5NWR2WFFhSSIsIm9iamVjdCI6InJlYWx0aW1lLml0ZW0iLCJ0eXBlIjoibWVzc2FnZSIsInN0YXR1cyI6ImluX3Byb2dyZXNzIiwicm9sZSI6ImFzc2lzdGFudCIsImNvbnRlbnQiOltdfX0="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_11"
+            },
+            {
+              "pointer": "/item/id",
+              "mode": "bind",
+              "namespace": "item",
+              "symbol": "item_12"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_10"
+            }
+          ]
+        },
+        {
+          "id": "n0007_1",
+          "point": "client.receive",
+          "source": "golden",
+          "after": [
+            "n0007_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X0FRVG5FeEdaaE40NWhzeTV5SndXdCIsInR5cGUiOiJyZXNwb25zZS5vdXRwdXRfaXRlbS5hZGRlZCIsInJlc3BvbnNlX2lkIjoicmVzcF9CUGRTM3BadzlyUzcySlhYSXNBOFAiLCJvdXRwdXRfaW5kZXgiOjAsIml0ZW0iOnsiaWQiOiJpdGVtX042QWt6d2N4djVzdWY5NWR2WFFhSSIsIm9iamVjdCI6InJlYWx0aW1lLml0ZW0iLCJ0eXBlIjoibWVzc2FnZSIsInN0YXR1cyI6ImluX3Byb2dyZXNzIiwicm9sZSI6ImFzc2lzdGFudCIsImNvbnRlbnQiOltdfX0="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_11"
+            },
+            {
+              "pointer": "/item/id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_12"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_10"
+            }
+          ],
+          "forwarded_from": "n0007_0"
+        },
+        {
+          "id": "n0008_0",
+          "point": "upstream.send",
+          "source": "recorded",
+          "after": [
+            "n0007_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X0RUaThseWlOWGRHMTVrdWJjcFNyRyIsInR5cGUiOiJjb252ZXJzYXRpb24uaXRlbS5jcmVhdGVkIiwicHJldmlvdXNfaXRlbV9pZCI6Iml0ZW1fU3ZGc0hjRzR1c3VFd1hTT1Bvd2FZIiwiaXRlbSI6eyJpZCI6Iml0ZW1fTjZBa3p3Y3h2NXN1Zjk1ZHZYUWFJIiwib2JqZWN0IjoicmVhbHRpbWUuaXRlbSIsInR5cGUiOiJtZXNzYWdlIiwic3RhdHVzIjoiaW5fcHJvZ3Jlc3MiLCJyb2xlIjoiYXNzaXN0YW50IiwiY29udGVudCI6W119fQ=="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_13"
+            },
+            {
+              "pointer": "/item/id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_12"
+            }
+          ]
+        },
+        {
+          "id": "n0008_1",
+          "point": "client.receive",
+          "source": "golden",
+          "after": [
+            "n0008_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X0RUaThseWlOWGRHMTVrdWJjcFNyRyIsInR5cGUiOiJjb252ZXJzYXRpb24uaXRlbS5jcmVhdGVkIiwicHJldmlvdXNfaXRlbV9pZCI6Iml0ZW1fU3ZGc0hjRzR1c3VFd1hTT1Bvd2FZIiwiaXRlbSI6eyJpZCI6Iml0ZW1fTjZBa3p3Y3h2NXN1Zjk1ZHZYUWFJIiwib2JqZWN0IjoicmVhbHRpbWUuaXRlbSIsInR5cGUiOiJtZXNzYWdlIiwic3RhdHVzIjoiaW5fcHJvZ3Jlc3MiLCJyb2xlIjoiYXNzaXN0YW50IiwiY29udGVudCI6W119fQ=="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_13"
+            },
+            {
+              "pointer": "/item/id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_12"
+            }
+          ],
+          "forwarded_from": "n0008_0"
+        },
+        {
+          "id": "n0009_0",
+          "point": "upstream.send",
+          "source": "recorded",
+          "after": [
+            "n0008_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X1BtV21waU1wNGNKZ2JnTlpTT3l4eSIsInR5cGUiOiJyZXNwb25zZS5jb250ZW50X3BhcnQuYWRkZWQiLCJyZXNwb25zZV9pZCI6InJlc3BfQlBkUzNwWnc5clM3MkpYWElzQThQIiwiaXRlbV9pZCI6Iml0ZW1fTjZBa3p3Y3h2NXN1Zjk1ZHZYUWFJIiwib3V0cHV0X2luZGV4IjowLCJjb250ZW50X2luZGV4IjowLCJwYXJ0Ijp7InR5cGUiOiJ0ZXh0IiwidGV4dCI6IiJ9fQ=="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_14"
+            },
+            {
+              "pointer": "/item_id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_12"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_10"
+            }
+          ]
+        },
+        {
+          "id": "n0009_1",
+          "point": "client.receive",
+          "source": "golden",
+          "after": [
+            "n0009_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X1BtV21waU1wNGNKZ2JnTlpTT3l4eSIsInR5cGUiOiJyZXNwb25zZS5jb250ZW50X3BhcnQuYWRkZWQiLCJyZXNwb25zZV9pZCI6InJlc3BfQlBkUzNwWnc5clM3MkpYWElzQThQIiwiaXRlbV9pZCI6Iml0ZW1fTjZBa3p3Y3h2NXN1Zjk1ZHZYUWFJIiwib3V0cHV0X2luZGV4IjowLCJjb250ZW50X2luZGV4IjowLCJwYXJ0Ijp7InR5cGUiOiJ0ZXh0IiwidGV4dCI6IiJ9fQ=="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_14"
+            },
+            {
+              "pointer": "/item_id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_12"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_10"
+            }
+          ],
+          "forwarded_from": "n0009_0"
+        },
+        {
+          "id": "n0010_0",
+          "point": "upstream.send",
+          "source": "recorded",
+          "after": [
+            "n0009_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJkZWx0YSI6IuW3siIsImV2ZW50X2lkIjoiZXZlbnRfSDhYbU9hcWF0T2Q1b3JRaERWQ1piIiwidHlwZSI6InJlc3BvbnNlLnRleHQuZGVsdGEiLCJyZXNwb25zZV9pZCI6InJlc3BfQlBkUzNwWnc5clM3MkpYWElzQThQIiwiaXRlbV9pZCI6Iml0ZW1fTjZBa3p3Y3h2NXN1Zjk1ZHZYUWFJIiwib3V0cHV0X2luZGV4IjowLCJjb250ZW50X2luZGV4IjowfQ=="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_15"
+            },
+            {
+              "pointer": "/item_id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_12"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_10"
+            }
+          ]
+        },
+        {
+          "id": "n0010_1",
+          "point": "client.receive",
+          "source": "golden",
+          "after": [
+            "n0010_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJkZWx0YSI6IuW3siIsImV2ZW50X2lkIjoiZXZlbnRfSDhYbU9hcWF0T2Q1b3JRaERWQ1piIiwidHlwZSI6InJlc3BvbnNlLnRleHQuZGVsdGEiLCJyZXNwb25zZV9pZCI6InJlc3BfQlBkUzNwWnc5clM3MkpYWElzQThQIiwiaXRlbV9pZCI6Iml0ZW1fTjZBa3p3Y3h2NXN1Zjk1ZHZYUWFJIiwib3V0cHV0X2luZGV4IjowLCJjb250ZW50X2luZGV4IjowfQ=="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_15"
+            },
+            {
+              "pointer": "/item_id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_12"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_10"
+            }
+          ],
+          "forwarded_from": "n0010_0"
+        },
+        {
+          "id": "n0011_0",
+          "point": "upstream.send",
+          "source": "recorded",
+          "after": [
+            "n0010_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJkZWx0YSI6IuiusOS9j+a1i+ivlSIsImV2ZW50X2lkIjoiZXZlbnRfWFpjdW1TaDhIZHdaNXFNVEs4VVZqIiwidHlwZSI6InJlc3BvbnNlLnRleHQuZGVsdGEiLCJyZXNwb25zZV9pZCI6InJlc3BfQlBkUzNwWnc5clM3MkpYWElzQThQIiwiaXRlbV9pZCI6Iml0ZW1fTjZBa3p3Y3h2NXN1Zjk1ZHZYUWFJIiwib3V0cHV0X2luZGV4IjowLCJjb250ZW50X2luZGV4IjowfQ=="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_16"
+            },
+            {
+              "pointer": "/item_id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_12"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_10"
+            }
+          ]
+        },
+        {
+          "id": "n0011_1",
+          "point": "client.receive",
+          "source": "golden",
+          "after": [
+            "n0011_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJkZWx0YSI6IuiusOS9j+a1i+ivlSIsImV2ZW50X2lkIjoiZXZlbnRfWFpjdW1TaDhIZHdaNXFNVEs4VVZqIiwidHlwZSI6InJlc3BvbnNlLnRleHQuZGVsdGEiLCJyZXNwb25zZV9pZCI6InJlc3BfQlBkUzNwWnc5clM3MkpYWElzQThQIiwiaXRlbV9pZCI6Iml0ZW1fTjZBa3p3Y3h2NXN1Zjk1ZHZYUWFJIiwib3V0cHV0X2luZGV4IjowLCJjb250ZW50X2luZGV4IjowfQ=="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_16"
+            },
+            {
+              "pointer": "/item_id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_12"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_10"
+            }
+          ],
+          "forwarded_from": "n0011_0"
+        },
+        {
+          "id": "n0012_0",
+          "point": "upstream.send",
+          "source": "recorded",
+          "after": [
+            "n0011_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJkZWx0YSI6IuWPo+S7pO+8muiTneiJsuaWueWdl+OAgiIsImV2ZW50X2lkIjoiZXZlbnRfU0EyOU1nU0ZYSXFBcjUxaVQxU3hZIiwidHlwZSI6InJlc3BvbnNlLnRleHQuZGVsdGEiLCJyZXNwb25zZV9pZCI6InJlc3BfQlBkUzNwWnc5clM3MkpYWElzQThQIiwiaXRlbV9pZCI6Iml0ZW1fTjZBa3p3Y3h2NXN1Zjk1ZHZYUWFJIiwib3V0cHV0X2luZGV4IjowLCJjb250ZW50X2luZGV4IjowfQ=="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_17"
+            },
+            {
+              "pointer": "/item_id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_12"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_10"
+            }
+          ]
+        },
+        {
+          "id": "n0012_1",
+          "point": "client.receive",
+          "source": "golden",
+          "after": [
+            "n0012_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJkZWx0YSI6IuWPo+S7pO+8muiTneiJsuaWueWdl+OAgiIsImV2ZW50X2lkIjoiZXZlbnRfU0EyOU1nU0ZYSXFBcjUxaVQxU3hZIiwidHlwZSI6InJlc3BvbnNlLnRleHQuZGVsdGEiLCJyZXNwb25zZV9pZCI6InJlc3BfQlBkUzNwWnc5clM3MkpYWElzQThQIiwiaXRlbV9pZCI6Iml0ZW1fTjZBa3p3Y3h2NXN1Zjk1ZHZYUWFJIiwib3V0cHV0X2luZGV4IjowLCJjb250ZW50X2luZGV4IjowfQ=="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_17"
+            },
+            {
+              "pointer": "/item_id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_12"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_10"
+            }
+          ],
+          "forwarded_from": "n0012_0"
+        },
+        {
+          "id": "n0013_0",
+          "point": "upstream.send",
+          "source": "recorded",
+          "after": [
+            "n0012_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJ0ZXh0Ijoi5bey6K6w5L2P5rWL6K+V5Y+j5Luk77ya6JOd6Imy5pa55Z2X44CCIiwiZXZlbnRfaWQiOiJldmVudF9WUUwzc0NTTEpESFJLbHVMckZtcWsiLCJ0eXBlIjoicmVzcG9uc2UudGV4dC5kb25lIiwicmVzcG9uc2VfaWQiOiJyZXNwX0JQZFMzcFp3OXJTNzJKWFhJc0E4UCIsIml0ZW1faWQiOiJpdGVtX042QWt6d2N4djVzdWY5NWR2WFFhSSIsIm91dHB1dF9pbmRleCI6MCwiY29udGVudF9pbmRleCI6MH0="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_18"
+            },
+            {
+              "pointer": "/item_id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_12"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_10"
+            }
+          ]
+        },
+        {
+          "id": "n0013_1",
+          "point": "client.receive",
+          "source": "golden",
+          "after": [
+            "n0013_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJ0ZXh0Ijoi5bey6K6w5L2P5rWL6K+V5Y+j5Luk77ya6JOd6Imy5pa55Z2X44CCIiwiZXZlbnRfaWQiOiJldmVudF9WUUwzc0NTTEpESFJLbHVMckZtcWsiLCJ0eXBlIjoicmVzcG9uc2UudGV4dC5kb25lIiwicmVzcG9uc2VfaWQiOiJyZXNwX0JQZFMzcFp3OXJTNzJKWFhJc0E4UCIsIml0ZW1faWQiOiJpdGVtX042QWt6d2N4djVzdWY5NWR2WFFhSSIsIm91dHB1dF9pbmRleCI6MCwiY29udGVudF9pbmRleCI6MH0="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_18"
+            },
+            {
+              "pointer": "/item_id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_12"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_10"
+            }
+          ],
+          "forwarded_from": "n0013_0"
+        },
+        {
+          "id": "n0014_0",
+          "point": "upstream.send",
+          "source": "recorded",
+          "after": [
+            "n0013_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X0Z4RHZyT3QxY0ttS3R3cjdpUDRlWiIsInR5cGUiOiJyZXNwb25zZS5jb250ZW50X3BhcnQuZG9uZSIsInJlc3BvbnNlX2lkIjoicmVzcF9CUGRTM3BadzlyUzcySlhYSXNBOFAiLCJpdGVtX2lkIjoiaXRlbV9ONkFrendjeHY1c3VmOTVkdlhRYUkiLCJvdXRwdXRfaW5kZXgiOjAsImNvbnRlbnRfaW5kZXgiOjAsInBhcnQiOnsidHlwZSI6InRleHQiLCJ0ZXh0Ijoi5bey6K6w5L2P5rWL6K+V5Y+j5Luk77ya6JOd6Imy5pa55Z2X44CCIn19"
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_19"
+            },
+            {
+              "pointer": "/item_id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_12"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_10"
+            }
+          ]
+        },
+        {
+          "id": "n0014_1",
+          "point": "client.receive",
+          "source": "golden",
+          "after": [
+            "n0014_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X0Z4RHZyT3QxY0ttS3R3cjdpUDRlWiIsInR5cGUiOiJyZXNwb25zZS5jb250ZW50X3BhcnQuZG9uZSIsInJlc3BvbnNlX2lkIjoicmVzcF9CUGRTM3BadzlyUzcySlhYSXNBOFAiLCJpdGVtX2lkIjoiaXRlbV9ONkFrendjeHY1c3VmOTVkdlhRYUkiLCJvdXRwdXRfaW5kZXgiOjAsImNvbnRlbnRfaW5kZXgiOjAsInBhcnQiOnsidHlwZSI6InRleHQiLCJ0ZXh0Ijoi5bey6K6w5L2P5rWL6K+V5Y+j5Luk77ya6JOd6Imy5pa55Z2X44CCIn19"
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_19"
+            },
+            {
+              "pointer": "/item_id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_12"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_10"
+            }
+          ],
+          "forwarded_from": "n0014_0"
+        },
+        {
+          "id": "n0015_0",
+          "point": "upstream.send",
+          "source": "recorded",
+          "after": [
+            "n0014_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X0ZQWXh6NVREZ3l6ZFZzd2lGSWN3YyIsInR5cGUiOiJyZXNwb25zZS5vdXRwdXRfaXRlbS5kb25lIiwicmVzcG9uc2VfaWQiOiJyZXNwX0JQZFMzcFp3OXJTNzJKWFhJc0E4UCIsIm91dHB1dF9pbmRleCI6MCwiaXRlbSI6eyJpZCI6Iml0ZW1fTjZBa3p3Y3h2NXN1Zjk1ZHZYUWFJIiwib2JqZWN0IjoicmVhbHRpbWUuaXRlbSIsInR5cGUiOiJtZXNzYWdlIiwic3RhdHVzIjoiY29tcGxldGVkIiwicm9sZSI6ImFzc2lzdGFudCIsImNvbnRlbnQiOlt7InR5cGUiOiJ0ZXh0In1dfX0="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_20"
+            },
+            {
+              "pointer": "/item/id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_12"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_10"
+            }
+          ]
+        },
+        {
+          "id": "n0015_1",
+          "point": "client.receive",
+          "source": "golden",
+          "after": [
+            "n0015_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X0ZQWXh6NVREZ3l6ZFZzd2lGSWN3YyIsInR5cGUiOiJyZXNwb25zZS5vdXRwdXRfaXRlbS5kb25lIiwicmVzcG9uc2VfaWQiOiJyZXNwX0JQZFMzcFp3OXJTNzJKWFhJc0E4UCIsIm91dHB1dF9pbmRleCI6MCwiaXRlbSI6eyJpZCI6Iml0ZW1fTjZBa3p3Y3h2NXN1Zjk1ZHZYUWFJIiwib2JqZWN0IjoicmVhbHRpbWUuaXRlbSIsInR5cGUiOiJtZXNzYWdlIiwic3RhdHVzIjoiY29tcGxldGVkIiwicm9sZSI6ImFzc2lzdGFudCIsImNvbnRlbnQiOlt7InR5cGUiOiJ0ZXh0In1dfX0="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_20"
+            },
+            {
+              "pointer": "/item/id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_12"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_10"
+            }
+          ],
+          "forwarded_from": "n0015_0"
+        },
+        {
+          "id": "n0016_0",
+          "point": "upstream.send",
+          "source": "recorded",
+          "after": [
+            "n0015_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X0JyQ200ZVl4eXRQWmx1a1FFbVlzaiIsInR5cGUiOiJyZXNwb25zZS5kb25lIiwicmVzcG9uc2UiOnsiaWQiOiJyZXNwX0JQZFMzcFp3OXJTNzJKWFhJc0E4UCIsIm9iamVjdCI6InJlYWx0aW1lLnJlc3BvbnNlIiwiY29udmVyc2F0aW9uX2lkIjoiY29udl9ObGprRUtzUW5pdWMyNEwxU0IxZ0ciLCJzdGF0dXMiOiJjb21wbGV0ZWQiLCJtb2RhbGl0aWVzIjpbInRleHQiXSwidm9pY2UiOiJUaW5hIiwib3V0cHV0X2F1ZGlvX2Zvcm1hdCI6InBjbSIsIm91dHB1dCI6W3siaWQiOiJpdGVtX042QWt6d2N4djVzdWY5NWR2WFFhSSIsIm9iamVjdCI6InJlYWx0aW1lLml0ZW0iLCJ0eXBlIjoibWVzc2FnZSIsInN0YXR1cyI6ImNvbXBsZXRlZCIsInJvbGUiOiJhc3Npc3RhbnQiLCJjb250ZW50IjpbeyJ0eXBlIjoidGV4dCIsInRleHQiOiLlt7LorrDkvY/mtYvor5Xlj6Pku6TvvJrok53oibLmlrnlnZfjgIIifV19XSwidXNhZ2UiOnsidG90YWxfdG9rZW5zIjozNTAsImlucHV0X3Rva2VucyI6MzQxLCJvdXRwdXRfdG9rZW5zIjo5LCJpbnB1dF90b2tlbnNfZGV0YWlscyI6eyJ0ZXh0X3Rva2VucyI6MzQxfSwib3V0cHV0X3Rva2Vuc19kZXRhaWxzIjp7InRleHRfdG9rZW5zIjo5fX19fQ=="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_21"
+            },
+            {
+              "pointer": "/response/id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_10"
+            },
+            {
+              "pointer": "/response/output/0/id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_12"
+            }
+          ]
+        },
+        {
+          "id": "n0016_1",
+          "point": "client.receive",
+          "source": "golden",
+          "after": [
+            "n0016_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X0JyQ200ZVl4eXRQWmx1a1FFbVlzaiIsInR5cGUiOiJyZXNwb25zZS5kb25lIiwicmVzcG9uc2UiOnsiaWQiOiJyZXNwX0JQZFMzcFp3OXJTNzJKWFhJc0E4UCIsIm9iamVjdCI6InJlYWx0aW1lLnJlc3BvbnNlIiwiY29udmVyc2F0aW9uX2lkIjoiY29udl9ObGprRUtzUW5pdWMyNEwxU0IxZ0ciLCJzdGF0dXMiOiJjb21wbGV0ZWQiLCJtb2RhbGl0aWVzIjpbInRleHQiXSwidm9pY2UiOiJUaW5hIiwib3V0cHV0X2F1ZGlvX2Zvcm1hdCI6InBjbSIsIm91dHB1dCI6W3siaWQiOiJpdGVtX042QWt6d2N4djVzdWY5NWR2WFFhSSIsIm9iamVjdCI6InJlYWx0aW1lLml0ZW0iLCJ0eXBlIjoibWVzc2FnZSIsInN0YXR1cyI6ImNvbXBsZXRlZCIsInJvbGUiOiJhc3Npc3RhbnQiLCJjb250ZW50IjpbeyJ0eXBlIjoidGV4dCIsInRleHQiOiLlt7LorrDkvY/mtYvor5Xlj6Pku6TvvJrok53oibLmlrnlnZfjgIIifV19XSwidXNhZ2UiOnsidG90YWxfdG9rZW5zIjozNTAsImlucHV0X3Rva2VucyI6MzQxLCJvdXRwdXRfdG9rZW5zIjo5LCJpbnB1dF90b2tlbnNfZGV0YWlscyI6eyJ0ZXh0X3Rva2VucyI6MzQxfSwib3V0cHV0X3Rva2Vuc19kZXRhaWxzIjp7InRleHRfdG9rZW5zIjo5fX19fQ=="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_21"
+            },
+            {
+              "pointer": "/response/id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_10"
+            },
+            {
+              "pointer": "/response/output/0/id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_12"
+            }
+          ],
+          "forwarded_from": "n0016_0"
+        },
+        {
+          "id": "n0017_0",
+          "point": "client.send",
+          "source": "authored",
+          "after": [
+            "n0016_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6InJlY29yZF8wMDQiLCJpdGVtIjp7ImNvbnRlbnQiOlt7InRleHQiOiLlhYjlpI3ov7DliJrmiY3lj6Pku6TvvIzlho3lnKjlkIzkuIDova7osIPnlKggdGVzdF9jb2xvciDlkowgdGVzdF9zaGFwZe+8jOS4jeimgeeMnOa1i+e7k+aenOOAgiIsInR5cGUiOiJpbnB1dF90ZXh0In1dLCJyb2xlIjoidXNlciIsInR5cGUiOiJtZXNzYWdlIn0sInR5cGUiOiJjb252ZXJzYXRpb24uaXRlbS5jcmVhdGUifQ=="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_22"
+            }
+          ]
+        },
+        {
+          "id": "n0017_1",
+          "point": "upstream.receive",
+          "source": "upstream-accepted",
+          "after": [
+            "n0017_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6InJlY29yZF8wMDQiLCJpdGVtIjp7ImNvbnRlbnQiOlt7InRleHQiOiLlhYjlpI3ov7DliJrmiY3lj6Pku6TvvIzlho3lnKjlkIzkuIDova7osIPnlKggdGVzdF9jb2xvciDlkowgdGVzdF9zaGFwZe+8jOS4jeimgeeMnOa1i+e7k+aenOOAgiIsInR5cGUiOiJpbnB1dF90ZXh0In1dLCJyb2xlIjoidXNlciIsInR5cGUiOiJtZXNzYWdlIn0sInR5cGUiOiJjb252ZXJzYXRpb24uaXRlbS5jcmVhdGUifQ=="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_22"
+            }
+          ],
+          "forwarded_from": "n0017_0"
+        },
+        {
+          "id": "n0018_0",
+          "point": "upstream.send",
+          "source": "recorded",
+          "after": [
+            "n0017_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X01qVHhKOEs3MW5RdjFtRnlRQ2JtMiIsInR5cGUiOiJjb252ZXJzYXRpb24uaXRlbS5jcmVhdGVkIiwicHJldmlvdXNfaXRlbV9pZCI6Iml0ZW1fTjZBa3p3Y3h2NXN1Zjk1ZHZYUWFJIiwiaXRlbSI6eyJpZCI6Iml0ZW1fVGQ3OVVFdDlaUVJ1RDI4cXVSd0ZiIiwib2JqZWN0IjoicmVhbHRpbWUuaXRlbSIsInR5cGUiOiJtZXNzYWdlIiwic3RhdHVzIjoiY29tcGxldGVkIiwicm9sZSI6InVzZXIiLCJjb250ZW50IjpbeyJ0eXBlIjoiaW5wdXRfdGV4dCIsInRleHQiOiLlhYjlpI3ov7DliJrmiY3lj6Pku6TvvIzlho3lnKjlkIzkuIDova7osIPnlKggdGVzdF9jb2xvciDlkowgdGVzdF9zaGFwZe+8jOS4jeimgeeMnOa1i+e7k+aenOOAgiJ9XX19"
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_23"
+            },
+            {
+              "pointer": "/item/id",
+              "mode": "bind",
+              "namespace": "item",
+              "symbol": "item_24"
+            }
+          ]
+        },
+        {
+          "id": "n0018_1",
+          "point": "client.receive",
+          "source": "golden",
+          "after": [
+            "n0018_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X01qVHhKOEs3MW5RdjFtRnlRQ2JtMiIsInR5cGUiOiJjb252ZXJzYXRpb24uaXRlbS5jcmVhdGVkIiwicHJldmlvdXNfaXRlbV9pZCI6Iml0ZW1fTjZBa3p3Y3h2NXN1Zjk1ZHZYUWFJIiwiaXRlbSI6eyJpZCI6Iml0ZW1fVGQ3OVVFdDlaUVJ1RDI4cXVSd0ZiIiwib2JqZWN0IjoicmVhbHRpbWUuaXRlbSIsInR5cGUiOiJtZXNzYWdlIiwic3RhdHVzIjoiY29tcGxldGVkIiwicm9sZSI6InVzZXIiLCJjb250ZW50IjpbeyJ0eXBlIjoiaW5wdXRfdGV4dCIsInRleHQiOiLlhYjlpI3ov7DliJrmiY3lj6Pku6TvvIzlho3lnKjlkIzkuIDova7osIPnlKggdGVzdF9jb2xvciDlkowgdGVzdF9zaGFwZe+8jOS4jeimgeeMnOa1i+e7k+aenOOAgiJ9XX19"
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_23"
+            },
+            {
+              "pointer": "/item/id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_24"
+            }
+          ],
+          "forwarded_from": "n0018_0"
+        },
+        {
+          "id": "n0019_0",
+          "point": "client.send",
+          "source": "authored",
+          "after": [
+            "n0018_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6InJlY29yZF8wMDUiLCJ0eXBlIjoicmVzcG9uc2UuY3JlYXRlIn0="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_25"
+            }
+          ]
+        },
+        {
+          "id": "n0019_1",
+          "point": "upstream.receive",
+          "source": "upstream-accepted",
+          "after": [
+            "n0019_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6InJlY29yZF8wMDUiLCJ0eXBlIjoicmVzcG9uc2UuY3JlYXRlIn0="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_25"
+            }
+          ],
+          "forwarded_from": "n0019_0"
+        },
+        {
+          "id": "n0020_0",
+          "point": "upstream.send",
+          "source": "recorded",
+          "after": [
+            "n0019_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X1hSWVF3b3pMSjZKamVySGZ5VFEyTiIsInR5cGUiOiJyZXNwb25zZS5jcmVhdGVkIiwicmVzcG9uc2UiOnsiaWQiOiJyZXNwX1c2b0FlYzhhendXaEVlNVB6Uk5tTiIsIm9iamVjdCI6InJlYWx0aW1lLnJlc3BvbnNlIiwiY29udmVyc2F0aW9uX2lkIjoiY29udl9ObGprRUtzUW5pdWMyNEwxU0IxZ0ciLCJzdGF0dXMiOiJpbl9wcm9ncmVzcyIsIm1vZGFsaXRpZXMiOlsidGV4dCJdLCJ2b2ljZSI6IlRpbmEiLCJvdXRwdXRfYXVkaW9fZm9ybWF0IjoicGNtIiwib3V0cHV0IjpbXX19"
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_26"
+            },
+            {
+              "pointer": "/response/id",
+              "mode": "bind",
+              "namespace": "response",
+              "symbol": "response_27"
+            }
+          ]
+        },
+        {
+          "id": "n0020_1",
+          "point": "client.receive",
+          "source": "golden",
+          "after": [
+            "n0020_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X1hSWVF3b3pMSjZKamVySGZ5VFEyTiIsInR5cGUiOiJyZXNwb25zZS5jcmVhdGVkIiwicmVzcG9uc2UiOnsiaWQiOiJyZXNwX1c2b0FlYzhhendXaEVlNVB6Uk5tTiIsIm9iamVjdCI6InJlYWx0aW1lLnJlc3BvbnNlIiwiY29udmVyc2F0aW9uX2lkIjoiY29udl9ObGprRUtzUW5pdWMyNEwxU0IxZ0ciLCJzdGF0dXMiOiJpbl9wcm9ncmVzcyIsIm1vZGFsaXRpZXMiOlsidGV4dCJdLCJ2b2ljZSI6IlRpbmEiLCJvdXRwdXRfYXVkaW9fZm9ybWF0IjoicGNtIiwib3V0cHV0IjpbXX19"
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_26"
+            },
+            {
+              "pointer": "/response/id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_27"
+            }
+          ],
+          "forwarded_from": "n0020_0"
+        },
+        {
+          "id": "n0021_0",
+          "point": "upstream.send",
+          "source": "recorded",
+          "after": [
+            "n0020_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X0djYlZZNjh5OEpVZ0UyaHNRbXZ6WiIsInR5cGUiOiJyZXNwb25zZS5vdXRwdXRfaXRlbS5hZGRlZCIsInJlc3BvbnNlX2lkIjoicmVzcF9XNm9BZWM4YXp3V2hFZTVQelJObU4iLCJvdXRwdXRfaW5kZXgiOjAsIml0ZW0iOnsiaWQiOiJpdGVtX1NPaG5iaTlnZFFFU3U2Q1RsZmlMSiIsIm9iamVjdCI6InJlYWx0aW1lLml0ZW0iLCJ0eXBlIjoiZnVuY3Rpb25fY2FsbCIsInN0YXR1cyI6ImluX3Byb2dyZXNzIiwiY2FsbF9pZCI6ImNhbGxfMGE5ZTAzZWZlNTU2NGQ4ZjhjYTk1NGZjIiwibmFtZSI6InRlc3RfY29sb3IiLCJhcmd1bWVudHMiOiIifX0="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_28"
+            },
+            {
+              "pointer": "/item/call_id",
+              "mode": "bind",
+              "namespace": "call",
+              "symbol": "call_29"
+            },
+            {
+              "pointer": "/item/id",
+              "mode": "bind",
+              "namespace": "item",
+              "symbol": "item_30"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_27"
+            }
+          ]
+        },
+        {
+          "id": "n0021_1",
+          "point": "client.receive",
+          "source": "golden",
+          "after": [
+            "n0021_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X0djYlZZNjh5OEpVZ0UyaHNRbXZ6WiIsInR5cGUiOiJyZXNwb25zZS5vdXRwdXRfaXRlbS5hZGRlZCIsInJlc3BvbnNlX2lkIjoicmVzcF9XNm9BZWM4YXp3V2hFZTVQelJObU4iLCJvdXRwdXRfaW5kZXgiOjAsIml0ZW0iOnsiaWQiOiJpdGVtX1NPaG5iaTlnZFFFU3U2Q1RsZmlMSiIsIm9iamVjdCI6InJlYWx0aW1lLml0ZW0iLCJ0eXBlIjoiZnVuY3Rpb25fY2FsbCIsInN0YXR1cyI6ImluX3Byb2dyZXNzIiwiY2FsbF9pZCI6ImNhbGxfMGE5ZTAzZWZlNTU2NGQ4ZjhjYTk1NGZjIiwibmFtZSI6InRlc3RfY29sb3IiLCJhcmd1bWVudHMiOiIifX0="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_28"
+            },
+            {
+              "pointer": "/item/call_id",
+              "mode": "reference",
+              "namespace": "call",
+              "symbol": "call_29"
+            },
+            {
+              "pointer": "/item/id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_30"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_27"
+            }
+          ],
+          "forwarded_from": "n0021_0"
+        },
+        {
+          "id": "n0022_0",
+          "point": "upstream.send",
+          "source": "recorded",
+          "after": [
+            "n0021_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X0ZUT1Fmd1hwOVh5RXhRV256d2RSUSIsInR5cGUiOiJjb252ZXJzYXRpb24uaXRlbS5jcmVhdGVkIiwicHJldmlvdXNfaXRlbV9pZCI6Iml0ZW1fVGQ3OVVFdDlaUVJ1RDI4cXVSd0ZiIiwiaXRlbSI6eyJpZCI6Iml0ZW1fU09obmJpOWdkUUVTdTZDVGxmaUxKIiwib2JqZWN0IjoicmVhbHRpbWUuaXRlbSIsInR5cGUiOiJmdW5jdGlvbl9jYWxsIiwic3RhdHVzIjoiaW5fcHJvZ3Jlc3MiLCJjYWxsX2lkIjoiY2FsbF8wYTllMDNlZmU1NTY0ZDhmOGNhOTU0ZmMiLCJuYW1lIjoidGVzdF9jb2xvciIsImFyZ3VtZW50cyI6IiJ9fQ=="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_31"
+            },
+            {
+              "pointer": "/item/call_id",
+              "mode": "reference",
+              "namespace": "call",
+              "symbol": "call_29"
+            },
+            {
+              "pointer": "/item/id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_30"
+            }
+          ]
+        },
+        {
+          "id": "n0022_1",
+          "point": "client.receive",
+          "source": "golden",
+          "after": [
+            "n0022_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X0ZUT1Fmd1hwOVh5RXhRV256d2RSUSIsInR5cGUiOiJjb252ZXJzYXRpb24uaXRlbS5jcmVhdGVkIiwicHJldmlvdXNfaXRlbV9pZCI6Iml0ZW1fVGQ3OVVFdDlaUVJ1RDI4cXVSd0ZiIiwiaXRlbSI6eyJpZCI6Iml0ZW1fU09obmJpOWdkUUVTdTZDVGxmaUxKIiwib2JqZWN0IjoicmVhbHRpbWUuaXRlbSIsInR5cGUiOiJmdW5jdGlvbl9jYWxsIiwic3RhdHVzIjoiaW5fcHJvZ3Jlc3MiLCJjYWxsX2lkIjoiY2FsbF8wYTllMDNlZmU1NTY0ZDhmOGNhOTU0ZmMiLCJuYW1lIjoidGVzdF9jb2xvciIsImFyZ3VtZW50cyI6IiJ9fQ=="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_31"
+            },
+            {
+              "pointer": "/item/call_id",
+              "mode": "reference",
+              "namespace": "call",
+              "symbol": "call_29"
+            },
+            {
+              "pointer": "/item/id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_30"
+            }
+          ],
+          "forwarded_from": "n0022_0"
+        },
+        {
+          "id": "n0023_0",
+          "point": "upstream.send",
+          "source": "recorded",
+          "after": [
+            "n0022_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X0V6a2NJd3dtcmpTdjZIT1E0Q2tFciIsInR5cGUiOiJyZXNwb25zZS5mdW5jdGlvbl9jYWxsX2FyZ3VtZW50cy5kZWx0YSIsInJlc3BvbnNlX2lkIjoicmVzcF9XNm9BZWM4YXp3V2hFZTVQelJObU4iLCJpdGVtX2lkIjoiaXRlbV9TT2huYmk5Z2RRRVN1NkNUbGZpTEoiLCJvdXRwdXRfaW5kZXgiOjAsImNhbGxfaWQiOiJjYWxsXzBhOWUwM2VmZTU1NjRkOGY4Y2E5NTRmYyIsImRlbHRhIjoie30iLCJvYmZ1c2NhdGlvbiI6Ik5mTld0NXZ0a0RyUVJPIn0="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/call_id",
+              "mode": "reference",
+              "namespace": "call",
+              "symbol": "call_29"
+            },
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_32"
+            },
+            {
+              "pointer": "/item_id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_30"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_27"
+            }
+          ]
+        },
+        {
+          "id": "n0023_1",
+          "point": "client.receive",
+          "source": "golden",
+          "after": [
+            "n0023_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X0V6a2NJd3dtcmpTdjZIT1E0Q2tFciIsInR5cGUiOiJyZXNwb25zZS5mdW5jdGlvbl9jYWxsX2FyZ3VtZW50cy5kZWx0YSIsInJlc3BvbnNlX2lkIjoicmVzcF9XNm9BZWM4YXp3V2hFZTVQelJObU4iLCJpdGVtX2lkIjoiaXRlbV9TT2huYmk5Z2RRRVN1NkNUbGZpTEoiLCJvdXRwdXRfaW5kZXgiOjAsImNhbGxfaWQiOiJjYWxsXzBhOWUwM2VmZTU1NjRkOGY4Y2E5NTRmYyIsImRlbHRhIjoie30iLCJvYmZ1c2NhdGlvbiI6Ik5mTld0NXZ0a0RyUVJPIn0="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/call_id",
+              "mode": "reference",
+              "namespace": "call",
+              "symbol": "call_29"
+            },
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_32"
+            },
+            {
+              "pointer": "/item_id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_30"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_27"
+            }
+          ],
+          "forwarded_from": "n0023_0"
+        },
+        {
+          "id": "n0024_0",
+          "point": "upstream.send",
+          "source": "recorded",
+          "after": [
+            "n0023_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X1hHdXJRakRHOEdNUks3R2RpMkk1eSIsInR5cGUiOiJyZXNwb25zZS5mdW5jdGlvbl9jYWxsX2FyZ3VtZW50cy5kb25lIiwicmVzcG9uc2VfaWQiOiJyZXNwX1c2b0FlYzhhendXaEVlNVB6Uk5tTiIsIml0ZW1faWQiOiJpdGVtX1NPaG5iaTlnZFFFU3U2Q1RsZmlMSiIsIm91dHB1dF9pbmRleCI6MCwibmFtZSI6InRlc3RfY29sb3IiLCJjYWxsX2lkIjoiY2FsbF8wYTllMDNlZmU1NTY0ZDhmOGNhOTU0ZmMiLCJhcmd1bWVudHMiOiJ7fSJ9"
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/call_id",
+              "mode": "reference",
+              "namespace": "call",
+              "symbol": "call_29"
+            },
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_33"
+            },
+            {
+              "pointer": "/item_id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_30"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_27"
+            }
+          ]
+        },
+        {
+          "id": "n0024_1",
+          "point": "client.receive",
+          "source": "golden",
+          "after": [
+            "n0024_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X1hHdXJRakRHOEdNUks3R2RpMkk1eSIsInR5cGUiOiJyZXNwb25zZS5mdW5jdGlvbl9jYWxsX2FyZ3VtZW50cy5kb25lIiwicmVzcG9uc2VfaWQiOiJyZXNwX1c2b0FlYzhhendXaEVlNVB6Uk5tTiIsIml0ZW1faWQiOiJpdGVtX1NPaG5iaTlnZFFFU3U2Q1RsZmlMSiIsIm91dHB1dF9pbmRleCI6MCwibmFtZSI6InRlc3RfY29sb3IiLCJjYWxsX2lkIjoiY2FsbF8wYTllMDNlZmU1NTY0ZDhmOGNhOTU0ZmMiLCJhcmd1bWVudHMiOiJ7fSJ9"
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/call_id",
+              "mode": "reference",
+              "namespace": "call",
+              "symbol": "call_29"
+            },
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_33"
+            },
+            {
+              "pointer": "/item_id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_30"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_27"
+            }
+          ],
+          "forwarded_from": "n0024_0"
+        },
+        {
+          "id": "n0025_0",
+          "point": "upstream.send",
+          "source": "recorded",
+          "after": [
+            "n0024_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X0lrRWMzQnRHZXNueUNiamtiSkFJcSIsInR5cGUiOiJyZXNwb25zZS5vdXRwdXRfaXRlbS5kb25lIiwicmVzcG9uc2VfaWQiOiJyZXNwX1c2b0FlYzhhendXaEVlNVB6Uk5tTiIsIm91dHB1dF9pbmRleCI6MCwiaXRlbSI6eyJpZCI6Iml0ZW1fU09obmJpOWdkUUVTdTZDVGxmaUxKIiwib2JqZWN0IjoicmVhbHRpbWUuaXRlbSIsInR5cGUiOiJmdW5jdGlvbl9jYWxsIiwic3RhdHVzIjoiY29tcGxldGVkIiwiY2FsbF9pZCI6ImNhbGxfMGE5ZTAzZWZlNTU2NGQ4ZjhjYTk1NGZjIiwibmFtZSI6InRlc3RfY29sb3IiLCJhcmd1bWVudHMiOiJ7fSJ9fQ=="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_34"
+            },
+            {
+              "pointer": "/item/call_id",
+              "mode": "reference",
+              "namespace": "call",
+              "symbol": "call_29"
+            },
+            {
+              "pointer": "/item/id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_30"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_27"
+            }
+          ]
+        },
+        {
+          "id": "n0025_1",
+          "point": "client.receive",
+          "source": "golden",
+          "after": [
+            "n0025_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X0lrRWMzQnRHZXNueUNiamtiSkFJcSIsInR5cGUiOiJyZXNwb25zZS5vdXRwdXRfaXRlbS5kb25lIiwicmVzcG9uc2VfaWQiOiJyZXNwX1c2b0FlYzhhendXaEVlNVB6Uk5tTiIsIm91dHB1dF9pbmRleCI6MCwiaXRlbSI6eyJpZCI6Iml0ZW1fU09obmJpOWdkUUVTdTZDVGxmaUxKIiwib2JqZWN0IjoicmVhbHRpbWUuaXRlbSIsInR5cGUiOiJmdW5jdGlvbl9jYWxsIiwic3RhdHVzIjoiY29tcGxldGVkIiwiY2FsbF9pZCI6ImNhbGxfMGE5ZTAzZWZlNTU2NGQ4ZjhjYTk1NGZjIiwibmFtZSI6InRlc3RfY29sb3IiLCJhcmd1bWVudHMiOiJ7fSJ9fQ=="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_34"
+            },
+            {
+              "pointer": "/item/call_id",
+              "mode": "reference",
+              "namespace": "call",
+              "symbol": "call_29"
+            },
+            {
+              "pointer": "/item/id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_30"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_27"
+            }
+          ],
+          "forwarded_from": "n0025_0"
+        },
+        {
+          "id": "n0026_0",
+          "point": "upstream.send",
+          "source": "recorded",
+          "after": [
+            "n0025_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X1k2cGp1U3U2WGJudFJ1VUZOVnhLYiIsInR5cGUiOiJyZXNwb25zZS5vdXRwdXRfaXRlbS5hZGRlZCIsInJlc3BvbnNlX2lkIjoicmVzcF9XNm9BZWM4YXp3V2hFZTVQelJObU4iLCJvdXRwdXRfaW5kZXgiOjEsIml0ZW0iOnsiaWQiOiJpdGVtX1p0ZGlzeEduSGR1SHZMSWFQN1FmQSIsIm9iamVjdCI6InJlYWx0aW1lLml0ZW0iLCJ0eXBlIjoiZnVuY3Rpb25fY2FsbCIsInN0YXR1cyI6ImluX3Byb2dyZXNzIiwiY2FsbF9pZCI6ImNhbGxfMDU5NGFlNTljM2E0NDIxYWE3ODcxZDY0IiwibmFtZSI6InRlc3Rfc2hhcGUiLCJhcmd1bWVudHMiOiIifX0="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_35"
+            },
+            {
+              "pointer": "/item/call_id",
+              "mode": "bind",
+              "namespace": "call",
+              "symbol": "call_36"
+            },
+            {
+              "pointer": "/item/id",
+              "mode": "bind",
+              "namespace": "item",
+              "symbol": "item_37"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_27"
+            }
+          ]
+        },
+        {
+          "id": "n0026_1",
+          "point": "client.receive",
+          "source": "golden",
+          "after": [
+            "n0026_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X1k2cGp1U3U2WGJudFJ1VUZOVnhLYiIsInR5cGUiOiJyZXNwb25zZS5vdXRwdXRfaXRlbS5hZGRlZCIsInJlc3BvbnNlX2lkIjoicmVzcF9XNm9BZWM4YXp3V2hFZTVQelJObU4iLCJvdXRwdXRfaW5kZXgiOjEsIml0ZW0iOnsiaWQiOiJpdGVtX1p0ZGlzeEduSGR1SHZMSWFQN1FmQSIsIm9iamVjdCI6InJlYWx0aW1lLml0ZW0iLCJ0eXBlIjoiZnVuY3Rpb25fY2FsbCIsInN0YXR1cyI6ImluX3Byb2dyZXNzIiwiY2FsbF9pZCI6ImNhbGxfMDU5NGFlNTljM2E0NDIxYWE3ODcxZDY0IiwibmFtZSI6InRlc3Rfc2hhcGUiLCJhcmd1bWVudHMiOiIifX0="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_35"
+            },
+            {
+              "pointer": "/item/call_id",
+              "mode": "reference",
+              "namespace": "call",
+              "symbol": "call_36"
+            },
+            {
+              "pointer": "/item/id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_37"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_27"
+            }
+          ],
+          "forwarded_from": "n0026_0"
+        },
+        {
+          "id": "n0027_0",
+          "point": "upstream.send",
+          "source": "recorded",
+          "after": [
+            "n0026_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X0J5YXdjakF4eVBNRmJuOG55eXVYQyIsInR5cGUiOiJjb252ZXJzYXRpb24uaXRlbS5jcmVhdGVkIiwicHJldmlvdXNfaXRlbV9pZCI6Iml0ZW1fU09obmJpOWdkUUVTdTZDVGxmaUxKIiwiaXRlbSI6eyJpZCI6Iml0ZW1fWnRkaXN4R25IZHVIdkxJYVA3UWZBIiwib2JqZWN0IjoicmVhbHRpbWUuaXRlbSIsInR5cGUiOiJmdW5jdGlvbl9jYWxsIiwic3RhdHVzIjoiaW5fcHJvZ3Jlc3MiLCJjYWxsX2lkIjoiY2FsbF8wNTk0YWU1OWMzYTQ0MjFhYTc4NzFkNjQiLCJuYW1lIjoidGVzdF9zaGFwZSIsImFyZ3VtZW50cyI6IiJ9fQ=="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_38"
+            },
+            {
+              "pointer": "/item/call_id",
+              "mode": "reference",
+              "namespace": "call",
+              "symbol": "call_36"
+            },
+            {
+              "pointer": "/item/id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_37"
+            }
+          ]
+        },
+        {
+          "id": "n0027_1",
+          "point": "client.receive",
+          "source": "golden",
+          "after": [
+            "n0027_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X0J5YXdjakF4eVBNRmJuOG55eXVYQyIsInR5cGUiOiJjb252ZXJzYXRpb24uaXRlbS5jcmVhdGVkIiwicHJldmlvdXNfaXRlbV9pZCI6Iml0ZW1fU09obmJpOWdkUUVTdTZDVGxmaUxKIiwiaXRlbSI6eyJpZCI6Iml0ZW1fWnRkaXN4R25IZHVIdkxJYVA3UWZBIiwib2JqZWN0IjoicmVhbHRpbWUuaXRlbSIsInR5cGUiOiJmdW5jdGlvbl9jYWxsIiwic3RhdHVzIjoiaW5fcHJvZ3Jlc3MiLCJjYWxsX2lkIjoiY2FsbF8wNTk0YWU1OWMzYTQ0MjFhYTc4NzFkNjQiLCJuYW1lIjoidGVzdF9zaGFwZSIsImFyZ3VtZW50cyI6IiJ9fQ=="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_38"
+            },
+            {
+              "pointer": "/item/call_id",
+              "mode": "reference",
+              "namespace": "call",
+              "symbol": "call_36"
+            },
+            {
+              "pointer": "/item/id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_37"
+            }
+          ],
+          "forwarded_from": "n0027_0"
+        },
+        {
+          "id": "n0028_0",
+          "point": "upstream.send",
+          "source": "recorded",
+          "after": [
+            "n0027_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X0wxNk4xUFpCcU5QTHV6MmV5NjFjaSIsInR5cGUiOiJyZXNwb25zZS5mdW5jdGlvbl9jYWxsX2FyZ3VtZW50cy5kb25lIiwicmVzcG9uc2VfaWQiOiJyZXNwX1c2b0FlYzhhendXaEVlNVB6Uk5tTiIsIml0ZW1faWQiOiJpdGVtX1p0ZGlzeEduSGR1SHZMSWFQN1FmQSIsIm91dHB1dF9pbmRleCI6MSwibmFtZSI6InRlc3Rfc2hhcGUiLCJjYWxsX2lkIjoiY2FsbF8wNTk0YWU1OWMzYTQ0MjFhYTc4NzFkNjQiLCJhcmd1bWVudHMiOiJ7fSJ9"
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/call_id",
+              "mode": "reference",
+              "namespace": "call",
+              "symbol": "call_36"
+            },
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_39"
+            },
+            {
+              "pointer": "/item_id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_37"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_27"
+            }
+          ]
+        },
+        {
+          "id": "n0028_1",
+          "point": "client.receive",
+          "source": "golden",
+          "after": [
+            "n0028_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X0wxNk4xUFpCcU5QTHV6MmV5NjFjaSIsInR5cGUiOiJyZXNwb25zZS5mdW5jdGlvbl9jYWxsX2FyZ3VtZW50cy5kb25lIiwicmVzcG9uc2VfaWQiOiJyZXNwX1c2b0FlYzhhendXaEVlNVB6Uk5tTiIsIml0ZW1faWQiOiJpdGVtX1p0ZGlzeEduSGR1SHZMSWFQN1FmQSIsIm91dHB1dF9pbmRleCI6MSwibmFtZSI6InRlc3Rfc2hhcGUiLCJjYWxsX2lkIjoiY2FsbF8wNTk0YWU1OWMzYTQ0MjFhYTc4NzFkNjQiLCJhcmd1bWVudHMiOiJ7fSJ9"
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/call_id",
+              "mode": "reference",
+              "namespace": "call",
+              "symbol": "call_36"
+            },
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_39"
+            },
+            {
+              "pointer": "/item_id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_37"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_27"
+            }
+          ],
+          "forwarded_from": "n0028_0"
+        },
+        {
+          "id": "n0029_0",
+          "point": "upstream.send",
+          "source": "recorded",
+          "after": [
+            "n0028_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X0lkUGdqWENJUFZNVmJrbUJiNjhVMSIsInR5cGUiOiJyZXNwb25zZS5vdXRwdXRfaXRlbS5kb25lIiwicmVzcG9uc2VfaWQiOiJyZXNwX1c2b0FlYzhhendXaEVlNVB6Uk5tTiIsIm91dHB1dF9pbmRleCI6MSwiaXRlbSI6eyJpZCI6Iml0ZW1fWnRkaXN4R25IZHVIdkxJYVA3UWZBIiwib2JqZWN0IjoicmVhbHRpbWUuaXRlbSIsInR5cGUiOiJmdW5jdGlvbl9jYWxsIiwic3RhdHVzIjoiY29tcGxldGVkIiwiY2FsbF9pZCI6ImNhbGxfMDU5NGFlNTljM2E0NDIxYWE3ODcxZDY0IiwibmFtZSI6InRlc3Rfc2hhcGUiLCJhcmd1bWVudHMiOiJ7fSJ9fQ=="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_40"
+            },
+            {
+              "pointer": "/item/call_id",
+              "mode": "reference",
+              "namespace": "call",
+              "symbol": "call_36"
+            },
+            {
+              "pointer": "/item/id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_37"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_27"
+            }
+          ]
+        },
+        {
+          "id": "n0029_1",
+          "point": "client.receive",
+          "source": "golden",
+          "after": [
+            "n0029_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X0lkUGdqWENJUFZNVmJrbUJiNjhVMSIsInR5cGUiOiJyZXNwb25zZS5vdXRwdXRfaXRlbS5kb25lIiwicmVzcG9uc2VfaWQiOiJyZXNwX1c2b0FlYzhhendXaEVlNVB6Uk5tTiIsIm91dHB1dF9pbmRleCI6MSwiaXRlbSI6eyJpZCI6Iml0ZW1fWnRkaXN4R25IZHVIdkxJYVA3UWZBIiwib2JqZWN0IjoicmVhbHRpbWUuaXRlbSIsInR5cGUiOiJmdW5jdGlvbl9jYWxsIiwic3RhdHVzIjoiY29tcGxldGVkIiwiY2FsbF9pZCI6ImNhbGxfMDU5NGFlNTljM2E0NDIxYWE3ODcxZDY0IiwibmFtZSI6InRlc3Rfc2hhcGUiLCJhcmd1bWVudHMiOiJ7fSJ9fQ=="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_40"
+            },
+            {
+              "pointer": "/item/call_id",
+              "mode": "reference",
+              "namespace": "call",
+              "symbol": "call_36"
+            },
+            {
+              "pointer": "/item/id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_37"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_27"
+            }
+          ],
+          "forwarded_from": "n0029_0"
+        },
+        {
+          "id": "n0030_0",
+          "point": "upstream.send",
+          "source": "recorded",
+          "after": [
+            "n0029_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X1F5ZXhGZlJsZVFGeE15dDR3V2ZibyIsInR5cGUiOiJyZXNwb25zZS5kb25lIiwicmVzcG9uc2UiOnsiaWQiOiJyZXNwX1c2b0FlYzhhendXaEVlNVB6Uk5tTiIsIm9iamVjdCI6InJlYWx0aW1lLnJlc3BvbnNlIiwiY29udmVyc2F0aW9uX2lkIjoiY29udl9ObGprRUtzUW5pdWMyNEwxU0IxZ0ciLCJzdGF0dXMiOiJjb21wbGV0ZWQiLCJtb2RhbGl0aWVzIjpbInRleHQiXSwidm9pY2UiOiJUaW5hIiwib3V0cHV0X2F1ZGlvX2Zvcm1hdCI6InBjbSIsIm91dHB1dCI6W3siaWQiOiJpdGVtX1NPaG5iaTlnZFFFU3U2Q1RsZmlMSiIsIm9iamVjdCI6InJlYWx0aW1lLml0ZW0iLCJ0eXBlIjoiZnVuY3Rpb25fY2FsbCIsInN0YXR1cyI6ImNvbXBsZXRlZCIsImNhbGxfaWQiOiJjYWxsXzBhOWUwM2VmZTU1NjRkOGY4Y2E5NTRmYyIsIm5hbWUiOiJ0ZXN0X2NvbG9yIiwiYXJndW1lbnRzIjoie30ifSx7ImlkIjoiaXRlbV9adGRpc3hHbkhkdUh2TElhUDdRZkEiLCJvYmplY3QiOiJyZWFsdGltZS5pdGVtIiwidHlwZSI6ImZ1bmN0aW9uX2NhbGwiLCJzdGF0dXMiOiJjb21wbGV0ZWQiLCJjYWxsX2lkIjoiY2FsbF8wNTk0YWU1OWMzYTQ0MjFhYTc4NzFkNjQiLCJuYW1lIjoidGVzdF9zaGFwZSIsImFyZ3VtZW50cyI6Int9In1dLCJ1c2FnZSI6eyJ0b3RhbF90b2tlbnMiOjQwOCwiaW5wdXRfdG9rZW5zIjozODAsIm91dHB1dF90b2tlbnMiOjI4LCJpbnB1dF90b2tlbnNfZGV0YWlscyI6eyJ0ZXh0X3Rva2VucyI6MzgwfSwib3V0cHV0X3Rva2Vuc19kZXRhaWxzIjp7InRleHRfdG9rZW5zIjoyOH19fX0="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_41"
+            },
+            {
+              "pointer": "/response/id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_27"
+            },
+            {
+              "pointer": "/response/output/0/call_id",
+              "mode": "reference",
+              "namespace": "call",
+              "symbol": "call_29"
+            },
+            {
+              "pointer": "/response/output/0/id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_30"
+            },
+            {
+              "pointer": "/response/output/1/call_id",
+              "mode": "reference",
+              "namespace": "call",
+              "symbol": "call_36"
+            },
+            {
+              "pointer": "/response/output/1/id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_37"
+            }
+          ]
+        },
+        {
+          "id": "n0030_1",
+          "point": "client.receive",
+          "source": "golden",
+          "after": [
+            "n0030_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X1F5ZXhGZlJsZVFGeE15dDR3V2ZibyIsInR5cGUiOiJyZXNwb25zZS5kb25lIiwicmVzcG9uc2UiOnsiaWQiOiJyZXNwX1c2b0FlYzhhendXaEVlNVB6Uk5tTiIsIm9iamVjdCI6InJlYWx0aW1lLnJlc3BvbnNlIiwiY29udmVyc2F0aW9uX2lkIjoiY29udl9ObGprRUtzUW5pdWMyNEwxU0IxZ0ciLCJzdGF0dXMiOiJjb21wbGV0ZWQiLCJtb2RhbGl0aWVzIjpbInRleHQiXSwidm9pY2UiOiJUaW5hIiwib3V0cHV0X2F1ZGlvX2Zvcm1hdCI6InBjbSIsIm91dHB1dCI6W3siaWQiOiJpdGVtX1NPaG5iaTlnZFFFU3U2Q1RsZmlMSiIsIm9iamVjdCI6InJlYWx0aW1lLml0ZW0iLCJ0eXBlIjoiZnVuY3Rpb25fY2FsbCIsInN0YXR1cyI6ImNvbXBsZXRlZCIsImNhbGxfaWQiOiJjYWxsXzBhOWUwM2VmZTU1NjRkOGY4Y2E5NTRmYyIsIm5hbWUiOiJ0ZXN0X2NvbG9yIiwiYXJndW1lbnRzIjoie30ifSx7ImlkIjoiaXRlbV9adGRpc3hHbkhkdUh2TElhUDdRZkEiLCJvYmplY3QiOiJyZWFsdGltZS5pdGVtIiwidHlwZSI6ImZ1bmN0aW9uX2NhbGwiLCJzdGF0dXMiOiJjb21wbGV0ZWQiLCJjYWxsX2lkIjoiY2FsbF8wNTk0YWU1OWMzYTQ0MjFhYTc4NzFkNjQiLCJuYW1lIjoidGVzdF9zaGFwZSIsImFyZ3VtZW50cyI6Int9In1dLCJ1c2FnZSI6eyJ0b3RhbF90b2tlbnMiOjQwOCwiaW5wdXRfdG9rZW5zIjozODAsIm91dHB1dF90b2tlbnMiOjI4LCJpbnB1dF90b2tlbnNfZGV0YWlscyI6eyJ0ZXh0X3Rva2VucyI6MzgwfSwib3V0cHV0X3Rva2Vuc19kZXRhaWxzIjp7InRleHRfdG9rZW5zIjoyOH19fX0="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_41"
+            },
+            {
+              "pointer": "/response/id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_27"
+            },
+            {
+              "pointer": "/response/output/0/call_id",
+              "mode": "reference",
+              "namespace": "call",
+              "symbol": "call_29"
+            },
+            {
+              "pointer": "/response/output/0/id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_30"
+            },
+            {
+              "pointer": "/response/output/1/call_id",
+              "mode": "reference",
+              "namespace": "call",
+              "symbol": "call_36"
+            },
+            {
+              "pointer": "/response/output/1/id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_37"
+            }
+          ],
+          "forwarded_from": "n0030_0"
+        },
+        {
+          "id": "n0031_0",
+          "point": "client.send",
+          "source": "authored",
+          "after": [
+            "n0030_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6InJlY29yZF8wMDYiLCJpdGVtIjp7ImNhbGxfaWQiOiJjYWxsXzBhOWUwM2VmZTU1NjRkOGY4Y2E5NTRmYyIsIm91dHB1dCI6IuiTneiJsiIsInR5cGUiOiJmdW5jdGlvbl9jYWxsX291dHB1dCJ9LCJ0eXBlIjoiY29udmVyc2F0aW9uLml0ZW0uY3JlYXRlIn0="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_42"
+            },
+            {
+              "pointer": "/item/call_id",
+              "mode": "reference",
+              "namespace": "call",
+              "symbol": "call_29"
+            }
+          ]
+        },
+        {
+          "id": "n0031_1",
+          "point": "upstream.receive",
+          "source": "upstream-accepted",
+          "after": [
+            "n0031_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6InJlY29yZF8wMDYiLCJpdGVtIjp7ImNhbGxfaWQiOiJjYWxsXzBhOWUwM2VmZTU1NjRkOGY4Y2E5NTRmYyIsIm91dHB1dCI6IuiTneiJsiIsInR5cGUiOiJmdW5jdGlvbl9jYWxsX291dHB1dCJ9LCJ0eXBlIjoiY29udmVyc2F0aW9uLml0ZW0uY3JlYXRlIn0="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_42"
+            },
+            {
+              "pointer": "/item/call_id",
+              "mode": "reference",
+              "namespace": "call",
+              "symbol": "call_29"
+            }
+          ],
+          "forwarded_from": "n0031_0"
+        },
+        {
+          "id": "n0032_0",
+          "point": "upstream.send",
+          "source": "recorded",
+          "after": [
+            "n0031_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X0F1b0dKVGpLNEZUYU5aVGZvTGlGNCIsInR5cGUiOiJjb252ZXJzYXRpb24uaXRlbS5jcmVhdGVkIiwicHJldmlvdXNfaXRlbV9pZCI6Iml0ZW1fWnRkaXN4R25IZHVIdkxJYVA3UWZBIiwiaXRlbSI6eyJpZCI6Iml0ZW1fQ1dETmtSQWNBNHBIZklmMVQ2eUZtIiwib2JqZWN0IjoicmVhbHRpbWUuaXRlbSIsInR5cGUiOiJmdW5jdGlvbl9jYWxsX291dHB1dCIsInN0YXR1cyI6ImNvbXBsZXRlZCIsImNhbGxfaWQiOiJjYWxsXzBhOWUwM2VmZTU1NjRkOGY4Y2E5NTRmYyIsIm91dHB1dCI6IuiTneiJsiJ9fQ=="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_43"
+            },
+            {
+              "pointer": "/item/call_id",
+              "mode": "reference",
+              "namespace": "call",
+              "symbol": "call_29"
+            },
+            {
+              "pointer": "/item/id",
+              "mode": "bind",
+              "namespace": "item",
+              "symbol": "item_44"
+            }
+          ]
+        },
+        {
+          "id": "n0032_1",
+          "point": "client.receive",
+          "source": "golden",
+          "after": [
+            "n0032_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X0F1b0dKVGpLNEZUYU5aVGZvTGlGNCIsInR5cGUiOiJjb252ZXJzYXRpb24uaXRlbS5jcmVhdGVkIiwicHJldmlvdXNfaXRlbV9pZCI6Iml0ZW1fWnRkaXN4R25IZHVIdkxJYVA3UWZBIiwiaXRlbSI6eyJpZCI6Iml0ZW1fQ1dETmtSQWNBNHBIZklmMVQ2eUZtIiwib2JqZWN0IjoicmVhbHRpbWUuaXRlbSIsInR5cGUiOiJmdW5jdGlvbl9jYWxsX291dHB1dCIsInN0YXR1cyI6ImNvbXBsZXRlZCIsImNhbGxfaWQiOiJjYWxsXzBhOWUwM2VmZTU1NjRkOGY4Y2E5NTRmYyIsIm91dHB1dCI6IuiTneiJsiJ9fQ=="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_43"
+            },
+            {
+              "pointer": "/item/call_id",
+              "mode": "reference",
+              "namespace": "call",
+              "symbol": "call_29"
+            },
+            {
+              "pointer": "/item/id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_44"
+            }
+          ],
+          "forwarded_from": "n0032_0"
+        },
+        {
+          "id": "n0033_0",
+          "point": "client.send",
+          "source": "authored",
+          "after": [
+            "n0032_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6InJlY29yZF8wMDciLCJpdGVtIjp7ImNhbGxfaWQiOiJjYWxsXzA1OTRhZTU5YzNhNDQyMWFhNzg3MWQ2NCIsIm91dHB1dCI6IuaWueWdlyIsInR5cGUiOiJmdW5jdGlvbl9jYWxsX291dHB1dCJ9LCJ0eXBlIjoiY29udmVyc2F0aW9uLml0ZW0uY3JlYXRlIn0="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_45"
+            },
+            {
+              "pointer": "/item/call_id",
+              "mode": "reference",
+              "namespace": "call",
+              "symbol": "call_36"
+            }
+          ]
+        },
+        {
+          "id": "n0033_1",
+          "point": "upstream.receive",
+          "source": "upstream-accepted",
+          "after": [
+            "n0033_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6InJlY29yZF8wMDciLCJpdGVtIjp7ImNhbGxfaWQiOiJjYWxsXzA1OTRhZTU5YzNhNDQyMWFhNzg3MWQ2NCIsIm91dHB1dCI6IuaWueWdlyIsInR5cGUiOiJmdW5jdGlvbl9jYWxsX291dHB1dCJ9LCJ0eXBlIjoiY29udmVyc2F0aW9uLml0ZW0uY3JlYXRlIn0="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_45"
+            },
+            {
+              "pointer": "/item/call_id",
+              "mode": "reference",
+              "namespace": "call",
+              "symbol": "call_36"
+            }
+          ],
+          "forwarded_from": "n0033_0"
+        },
+        {
+          "id": "n0034_0",
+          "point": "upstream.send",
+          "source": "recorded",
+          "after": [
+            "n0033_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X1FqS1JrM0JGdExwWnEzUHZoWXZhSCIsInR5cGUiOiJjb252ZXJzYXRpb24uaXRlbS5jcmVhdGVkIiwicHJldmlvdXNfaXRlbV9pZCI6Iml0ZW1fQ1dETmtSQWNBNHBIZklmMVQ2eUZtIiwiaXRlbSI6eyJpZCI6Iml0ZW1fUjd4Zk5nR1FJNTlvSWxaR002aFZFIiwib2JqZWN0IjoicmVhbHRpbWUuaXRlbSIsInR5cGUiOiJmdW5jdGlvbl9jYWxsX291dHB1dCIsInN0YXR1cyI6ImNvbXBsZXRlZCIsImNhbGxfaWQiOiJjYWxsXzA1OTRhZTU5YzNhNDQyMWFhNzg3MWQ2NCIsIm91dHB1dCI6IuaWueWdlyJ9fQ=="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_46"
+            },
+            {
+              "pointer": "/item/call_id",
+              "mode": "reference",
+              "namespace": "call",
+              "symbol": "call_36"
+            },
+            {
+              "pointer": "/item/id",
+              "mode": "bind",
+              "namespace": "item",
+              "symbol": "item_47"
+            }
+          ]
+        },
+        {
+          "id": "n0034_1",
+          "point": "client.receive",
+          "source": "golden",
+          "after": [
+            "n0034_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X1FqS1JrM0JGdExwWnEzUHZoWXZhSCIsInR5cGUiOiJjb252ZXJzYXRpb24uaXRlbS5jcmVhdGVkIiwicHJldmlvdXNfaXRlbV9pZCI6Iml0ZW1fQ1dETmtSQWNBNHBIZklmMVQ2eUZtIiwiaXRlbSI6eyJpZCI6Iml0ZW1fUjd4Zk5nR1FJNTlvSWxaR002aFZFIiwib2JqZWN0IjoicmVhbHRpbWUuaXRlbSIsInR5cGUiOiJmdW5jdGlvbl9jYWxsX291dHB1dCIsInN0YXR1cyI6ImNvbXBsZXRlZCIsImNhbGxfaWQiOiJjYWxsXzA1OTRhZTU5YzNhNDQyMWFhNzg3MWQ2NCIsIm91dHB1dCI6IuaWueWdlyJ9fQ=="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_46"
+            },
+            {
+              "pointer": "/item/call_id",
+              "mode": "reference",
+              "namespace": "call",
+              "symbol": "call_36"
+            },
+            {
+              "pointer": "/item/id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_47"
+            }
+          ],
+          "forwarded_from": "n0034_0"
+        },
+        {
+          "id": "n0035_0",
+          "point": "client.send",
+          "source": "authored",
+          "after": [
+            "n0034_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6InJlY29yZF8wMDgiLCJ0eXBlIjoicmVzcG9uc2UuY3JlYXRlIn0="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_48"
+            }
+          ]
+        },
+        {
+          "id": "n0035_1",
+          "point": "upstream.receive",
+          "source": "upstream-accepted",
+          "after": [
+            "n0035_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6InJlY29yZF8wMDgiLCJ0eXBlIjoicmVzcG9uc2UuY3JlYXRlIn0="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_48"
+            }
+          ],
+          "forwarded_from": "n0035_0"
+        },
+        {
+          "id": "n0036_0",
+          "point": "upstream.send",
+          "source": "recorded",
+          "after": [
+            "n0035_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X0FIRjlCc1NHaGxWTHBVb0RMbjUzWiIsInR5cGUiOiJyZXNwb25zZS5jcmVhdGVkIiwicmVzcG9uc2UiOnsiaWQiOiJyZXNwX1BkNzRVTGpsZ1c4a3dVSXhBcFhHSCIsIm9iamVjdCI6InJlYWx0aW1lLnJlc3BvbnNlIiwiY29udmVyc2F0aW9uX2lkIjoiY29udl9ObGprRUtzUW5pdWMyNEwxU0IxZ0ciLCJzdGF0dXMiOiJpbl9wcm9ncmVzcyIsIm1vZGFsaXRpZXMiOlsidGV4dCJdLCJ2b2ljZSI6IlRpbmEiLCJvdXRwdXRfYXVkaW9fZm9ybWF0IjoicGNtIiwib3V0cHV0IjpbXX19"
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_49"
+            },
+            {
+              "pointer": "/response/id",
+              "mode": "bind",
+              "namespace": "response",
+              "symbol": "response_50"
+            }
+          ]
+        },
+        {
+          "id": "n0036_1",
+          "point": "client.receive",
+          "source": "golden",
+          "after": [
+            "n0036_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X0FIRjlCc1NHaGxWTHBVb0RMbjUzWiIsInR5cGUiOiJyZXNwb25zZS5jcmVhdGVkIiwicmVzcG9uc2UiOnsiaWQiOiJyZXNwX1BkNzRVTGpsZ1c4a3dVSXhBcFhHSCIsIm9iamVjdCI6InJlYWx0aW1lLnJlc3BvbnNlIiwiY29udmVyc2F0aW9uX2lkIjoiY29udl9ObGprRUtzUW5pdWMyNEwxU0IxZ0ciLCJzdGF0dXMiOiJpbl9wcm9ncmVzcyIsIm1vZGFsaXRpZXMiOlsidGV4dCJdLCJ2b2ljZSI6IlRpbmEiLCJvdXRwdXRfYXVkaW9fZm9ybWF0IjoicGNtIiwib3V0cHV0IjpbXX19"
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_49"
+            },
+            {
+              "pointer": "/response/id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_50"
+            }
+          ],
+          "forwarded_from": "n0036_0"
+        },
+        {
+          "id": "n0037_0",
+          "point": "upstream.send",
+          "source": "recorded",
+          "after": [
+            "n0036_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X0JSRTh0RlFheU54eldwM0Q1WjZVVSIsInR5cGUiOiJyZXNwb25zZS5vdXRwdXRfaXRlbS5hZGRlZCIsInJlc3BvbnNlX2lkIjoicmVzcF9QZDc0VUxqbGdXOGt3VUl4QXBYR0giLCJvdXRwdXRfaW5kZXgiOjAsIml0ZW0iOnsiaWQiOiJpdGVtX0l6WWIxaDZobkxXZTNSRFFJVERKTCIsIm9iamVjdCI6InJlYWx0aW1lLml0ZW0iLCJ0eXBlIjoibWVzc2FnZSIsInN0YXR1cyI6ImluX3Byb2dyZXNzIiwicm9sZSI6ImFzc2lzdGFudCIsImNvbnRlbnQiOltdfX0="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_51"
+            },
+            {
+              "pointer": "/item/id",
+              "mode": "bind",
+              "namespace": "item",
+              "symbol": "item_52"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_50"
+            }
+          ]
+        },
+        {
+          "id": "n0037_1",
+          "point": "client.receive",
+          "source": "golden",
+          "after": [
+            "n0037_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X0JSRTh0RlFheU54eldwM0Q1WjZVVSIsInR5cGUiOiJyZXNwb25zZS5vdXRwdXRfaXRlbS5hZGRlZCIsInJlc3BvbnNlX2lkIjoicmVzcF9QZDc0VUxqbGdXOGt3VUl4QXBYR0giLCJvdXRwdXRfaW5kZXgiOjAsIml0ZW0iOnsiaWQiOiJpdGVtX0l6WWIxaDZobkxXZTNSRFFJVERKTCIsIm9iamVjdCI6InJlYWx0aW1lLml0ZW0iLCJ0eXBlIjoibWVzc2FnZSIsInN0YXR1cyI6ImluX3Byb2dyZXNzIiwicm9sZSI6ImFzc2lzdGFudCIsImNvbnRlbnQiOltdfX0="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_51"
+            },
+            {
+              "pointer": "/item/id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_52"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_50"
+            }
+          ],
+          "forwarded_from": "n0037_0"
+        },
+        {
+          "id": "n0038_0",
+          "point": "upstream.send",
+          "source": "recorded",
+          "after": [
+            "n0037_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X0NlamlSMkFBMjZGNUh6OHVBbjhkcyIsInR5cGUiOiJjb252ZXJzYXRpb24uaXRlbS5jcmVhdGVkIiwicHJldmlvdXNfaXRlbV9pZCI6Iml0ZW1fUjd4Zk5nR1FJNTlvSWxaR002aFZFIiwiaXRlbSI6eyJpZCI6Iml0ZW1fSXpZYjFoNmhuTFdlM1JEUUlUREpMIiwib2JqZWN0IjoicmVhbHRpbWUuaXRlbSIsInR5cGUiOiJtZXNzYWdlIiwic3RhdHVzIjoiaW5fcHJvZ3Jlc3MiLCJyb2xlIjoiYXNzaXN0YW50IiwiY29udGVudCI6W119fQ=="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_53"
+            },
+            {
+              "pointer": "/item/id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_52"
+            }
+          ]
+        },
+        {
+          "id": "n0038_1",
+          "point": "client.receive",
+          "source": "golden",
+          "after": [
+            "n0038_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X0NlamlSMkFBMjZGNUh6OHVBbjhkcyIsInR5cGUiOiJjb252ZXJzYXRpb24uaXRlbS5jcmVhdGVkIiwicHJldmlvdXNfaXRlbV9pZCI6Iml0ZW1fUjd4Zk5nR1FJNTlvSWxaR002aFZFIiwiaXRlbSI6eyJpZCI6Iml0ZW1fSXpZYjFoNmhuTFdlM1JEUUlUREpMIiwib2JqZWN0IjoicmVhbHRpbWUuaXRlbSIsInR5cGUiOiJtZXNzYWdlIiwic3RhdHVzIjoiaW5fcHJvZ3Jlc3MiLCJyb2xlIjoiYXNzaXN0YW50IiwiY29udGVudCI6W119fQ=="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_53"
+            },
+            {
+              "pointer": "/item/id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_52"
+            }
+          ],
+          "forwarded_from": "n0038_0"
+        },
+        {
+          "id": "n0039_0",
+          "point": "upstream.send",
+          "source": "recorded",
+          "after": [
+            "n0038_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X1pYWmtHbFljWkI3V2YxS09oaUhqaCIsInR5cGUiOiJyZXNwb25zZS5jb250ZW50X3BhcnQuYWRkZWQiLCJyZXNwb25zZV9pZCI6InJlc3BfUGQ3NFVMamxnVzhrd1VJeEFwWEdIIiwiaXRlbV9pZCI6Iml0ZW1fSXpZYjFoNmhuTFdlM1JEUUlUREpMIiwib3V0cHV0X2luZGV4IjowLCJjb250ZW50X2luZGV4IjowLCJwYXJ0Ijp7InR5cGUiOiJ0ZXh0IiwidGV4dCI6IiJ9fQ=="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_54"
+            },
+            {
+              "pointer": "/item_id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_52"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_50"
+            }
+          ]
+        },
+        {
+          "id": "n0039_1",
+          "point": "client.receive",
+          "source": "golden",
+          "after": [
+            "n0039_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X1pYWmtHbFljWkI3V2YxS09oaUhqaCIsInR5cGUiOiJyZXNwb25zZS5jb250ZW50X3BhcnQuYWRkZWQiLCJyZXNwb25zZV9pZCI6InJlc3BfUGQ3NFVMamxnVzhrd1VJeEFwWEdIIiwiaXRlbV9pZCI6Iml0ZW1fSXpZYjFoNmhuTFdlM1JEUUlUREpMIiwib3V0cHV0X2luZGV4IjowLCJjb250ZW50X2luZGV4IjowLCJwYXJ0Ijp7InR5cGUiOiJ0ZXh0IiwidGV4dCI6IiJ9fQ=="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_54"
+            },
+            {
+              "pointer": "/item_id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_52"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_50"
+            }
+          ],
+          "forwarded_from": "n0039_0"
+        },
+        {
+          "id": "n0040_0",
+          "point": "upstream.send",
+          "source": "recorded",
+          "after": [
+            "n0039_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJkZWx0YSI6IuiTneiJsiIsImV2ZW50X2lkIjoiZXZlbnRfTTVZT3Aydk9Sc2lDRXJZM0ZQa25uIiwidHlwZSI6InJlc3BvbnNlLnRleHQuZGVsdGEiLCJyZXNwb25zZV9pZCI6InJlc3BfUGQ3NFVMamxnVzhrd1VJeEFwWEdIIiwiaXRlbV9pZCI6Iml0ZW1fSXpZYjFoNmhuTFdlM1JEUUlUREpMIiwib3V0cHV0X2luZGV4IjowLCJjb250ZW50X2luZGV4IjowfQ=="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_55"
+            },
+            {
+              "pointer": "/item_id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_52"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_50"
+            }
+          ]
+        },
+        {
+          "id": "n0040_1",
+          "point": "client.receive",
+          "source": "golden",
+          "after": [
+            "n0040_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJkZWx0YSI6IuiTneiJsiIsImV2ZW50X2lkIjoiZXZlbnRfTTVZT3Aydk9Sc2lDRXJZM0ZQa25uIiwidHlwZSI6InJlc3BvbnNlLnRleHQuZGVsdGEiLCJyZXNwb25zZV9pZCI6InJlc3BfUGQ3NFVMamxnVzhrd1VJeEFwWEdIIiwiaXRlbV9pZCI6Iml0ZW1fSXpZYjFoNmhuTFdlM1JEUUlUREpMIiwib3V0cHV0X2luZGV4IjowLCJjb250ZW50X2luZGV4IjowfQ=="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_55"
+            },
+            {
+              "pointer": "/item_id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_52"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_50"
+            }
+          ],
+          "forwarded_from": "n0040_0"
+        },
+        {
+          "id": "n0041_0",
+          "point": "upstream.send",
+          "source": "recorded",
+          "after": [
+            "n0040_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJkZWx0YSI6IuaWueWdl+OAgiIsImV2ZW50X2lkIjoiZXZlbnRfVTc1VFZBTUdCc0VPRHdvTEZqUmp4IiwidHlwZSI6InJlc3BvbnNlLnRleHQuZGVsdGEiLCJyZXNwb25zZV9pZCI6InJlc3BfUGQ3NFVMamxnVzhrd1VJeEFwWEdIIiwiaXRlbV9pZCI6Iml0ZW1fSXpZYjFoNmhuTFdlM1JEUUlUREpMIiwib3V0cHV0X2luZGV4IjowLCJjb250ZW50X2luZGV4IjowfQ=="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_56"
+            },
+            {
+              "pointer": "/item_id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_52"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_50"
+            }
+          ]
+        },
+        {
+          "id": "n0041_1",
+          "point": "client.receive",
+          "source": "golden",
+          "after": [
+            "n0041_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJkZWx0YSI6IuaWueWdl+OAgiIsImV2ZW50X2lkIjoiZXZlbnRfVTc1VFZBTUdCc0VPRHdvTEZqUmp4IiwidHlwZSI6InJlc3BvbnNlLnRleHQuZGVsdGEiLCJyZXNwb25zZV9pZCI6InJlc3BfUGQ3NFVMamxnVzhrd1VJeEFwWEdIIiwiaXRlbV9pZCI6Iml0ZW1fSXpZYjFoNmhuTFdlM1JEUUlUREpMIiwib3V0cHV0X2luZGV4IjowLCJjb250ZW50X2luZGV4IjowfQ=="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_56"
+            },
+            {
+              "pointer": "/item_id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_52"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_50"
+            }
+          ],
+          "forwarded_from": "n0041_0"
+        },
+        {
+          "id": "n0042_0",
+          "point": "upstream.send",
+          "source": "recorded",
+          "after": [
+            "n0041_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJkZWx0YSI6IuminOiJsiIsImV2ZW50X2lkIjoiZXZlbnRfSHJ6eW5nV251N09BVlg2Y3F1bUVjIiwidHlwZSI6InJlc3BvbnNlLnRleHQuZGVsdGEiLCJyZXNwb25zZV9pZCI6InJlc3BfUGQ3NFVMamxnVzhrd1VJeEFwWEdIIiwiaXRlbV9pZCI6Iml0ZW1fSXpZYjFoNmhuTFdlM1JEUUlUREpMIiwib3V0cHV0X2luZGV4IjowLCJjb250ZW50X2luZGV4IjowfQ=="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_57"
+            },
+            {
+              "pointer": "/item_id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_52"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_50"
+            }
+          ]
+        },
+        {
+          "id": "n0042_1",
+          "point": "client.receive",
+          "source": "golden",
+          "after": [
+            "n0042_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJkZWx0YSI6IuminOiJsiIsImV2ZW50X2lkIjoiZXZlbnRfSHJ6eW5nV251N09BVlg2Y3F1bUVjIiwidHlwZSI6InJlc3BvbnNlLnRleHQuZGVsdGEiLCJyZXNwb25zZV9pZCI6InJlc3BfUGQ3NFVMamxnVzhrd1VJeEFwWEdIIiwiaXRlbV9pZCI6Iml0ZW1fSXpZYjFoNmhuTFdlM1JEUUlUREpMIiwib3V0cHV0X2luZGV4IjowLCJjb250ZW50X2luZGV4IjowfQ=="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_57"
+            },
+            {
+              "pointer": "/item_id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_52"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_50"
+            }
+          ],
+          "forwarded_from": "n0042_0"
+        },
+        {
+          "id": "n0043_0",
+          "point": "upstream.send",
+          "source": "recorded",
+          "after": [
+            "n0042_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJkZWx0YSI6Iu+8miIsImV2ZW50X2lkIjoiZXZlbnRfVnE2cklHck9TcmRua21rSmM0RnMxIiwidHlwZSI6InJlc3BvbnNlLnRleHQuZGVsdGEiLCJyZXNwb25zZV9pZCI6InJlc3BfUGQ3NFVMamxnVzhrd1VJeEFwWEdIIiwiaXRlbV9pZCI6Iml0ZW1fSXpZYjFoNmhuTFdlM1JEUUlUREpMIiwib3V0cHV0X2luZGV4IjowLCJjb250ZW50X2luZGV4IjowfQ=="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_58"
+            },
+            {
+              "pointer": "/item_id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_52"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_50"
+            }
+          ]
+        },
+        {
+          "id": "n0043_1",
+          "point": "client.receive",
+          "source": "golden",
+          "after": [
+            "n0043_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJkZWx0YSI6Iu+8miIsImV2ZW50X2lkIjoiZXZlbnRfVnE2cklHck9TcmRua21rSmM0RnMxIiwidHlwZSI6InJlc3BvbnNlLnRleHQuZGVsdGEiLCJyZXNwb25zZV9pZCI6InJlc3BfUGQ3NFVMamxnVzhrd1VJeEFwWEdIIiwiaXRlbV9pZCI6Iml0ZW1fSXpZYjFoNmhuTFdlM1JEUUlUREpMIiwib3V0cHV0X2luZGV4IjowLCJjb250ZW50X2luZGV4IjowfQ=="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_58"
+            },
+            {
+              "pointer": "/item_id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_52"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_50"
+            }
+          ],
+          "forwarded_from": "n0043_0"
+        },
+        {
+          "id": "n0044_0",
+          "point": "upstream.send",
+          "source": "recorded",
+          "after": [
+            "n0043_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJkZWx0YSI6IuiTneiJsu+8jOW9oueKtu+8muaWueWdlyIsImV2ZW50X2lkIjoiZXZlbnRfWTlxaVFjRFhLQTF6ZUFwQ3pETEVOIiwidHlwZSI6InJlc3BvbnNlLnRleHQuZGVsdGEiLCJyZXNwb25zZV9pZCI6InJlc3BfUGQ3NFVMamxnVzhrd1VJeEFwWEdIIiwiaXRlbV9pZCI6Iml0ZW1fSXpZYjFoNmhuTFdlM1JEUUlUREpMIiwib3V0cHV0X2luZGV4IjowLCJjb250ZW50X2luZGV4IjowfQ=="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_59"
+            },
+            {
+              "pointer": "/item_id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_52"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_50"
+            }
+          ]
+        },
+        {
+          "id": "n0044_1",
+          "point": "client.receive",
+          "source": "golden",
+          "after": [
+            "n0044_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJkZWx0YSI6IuiTneiJsu+8jOW9oueKtu+8muaWueWdlyIsImV2ZW50X2lkIjoiZXZlbnRfWTlxaVFjRFhLQTF6ZUFwQ3pETEVOIiwidHlwZSI6InJlc3BvbnNlLnRleHQuZGVsdGEiLCJyZXNwb25zZV9pZCI6InJlc3BfUGQ3NFVMamxnVzhrd1VJeEFwWEdIIiwiaXRlbV9pZCI6Iml0ZW1fSXpZYjFoNmhuTFdlM1JEUUlUREpMIiwib3V0cHV0X2luZGV4IjowLCJjb250ZW50X2luZGV4IjowfQ=="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_59"
+            },
+            {
+              "pointer": "/item_id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_52"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_50"
+            }
+          ],
+          "forwarded_from": "n0044_0"
+        },
+        {
+          "id": "n0045_0",
+          "point": "upstream.send",
+          "source": "recorded",
+          "after": [
+            "n0044_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJkZWx0YSI6IuOAgiIsImV2ZW50X2lkIjoiZXZlbnRfUmpWVkQ2SHdMT3JYVWc0S1R6dWZHIiwidHlwZSI6InJlc3BvbnNlLnRleHQuZGVsdGEiLCJyZXNwb25zZV9pZCI6InJlc3BfUGQ3NFVMamxnVzhrd1VJeEFwWEdIIiwiaXRlbV9pZCI6Iml0ZW1fSXpZYjFoNmhuTFdlM1JEUUlUREpMIiwib3V0cHV0X2luZGV4IjowLCJjb250ZW50X2luZGV4IjowfQ=="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_60"
+            },
+            {
+              "pointer": "/item_id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_52"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_50"
+            }
+          ]
+        },
+        {
+          "id": "n0045_1",
+          "point": "client.receive",
+          "source": "golden",
+          "after": [
+            "n0045_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJkZWx0YSI6IuOAgiIsImV2ZW50X2lkIjoiZXZlbnRfUmpWVkQ2SHdMT3JYVWc0S1R6dWZHIiwidHlwZSI6InJlc3BvbnNlLnRleHQuZGVsdGEiLCJyZXNwb25zZV9pZCI6InJlc3BfUGQ3NFVMamxnVzhrd1VJeEFwWEdIIiwiaXRlbV9pZCI6Iml0ZW1fSXpZYjFoNmhuTFdlM1JEUUlUREpMIiwib3V0cHV0X2luZGV4IjowLCJjb250ZW50X2luZGV4IjowfQ=="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_60"
+            },
+            {
+              "pointer": "/item_id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_52"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_50"
+            }
+          ],
+          "forwarded_from": "n0045_0"
+        },
+        {
+          "id": "n0046_0",
+          "point": "upstream.send",
+          "source": "recorded",
+          "after": [
+            "n0045_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJ0ZXh0Ijoi6JOd6Imy5pa55Z2X44CC6aKc6Imy77ya6JOd6Imy77yM5b2i54q277ya5pa55Z2X44CCIiwiZXZlbnRfaWQiOiJldmVudF9UUHA5aHh6RGxYWjJCQmRUVU10YXAiLCJ0eXBlIjoicmVzcG9uc2UudGV4dC5kb25lIiwicmVzcG9uc2VfaWQiOiJyZXNwX1BkNzRVTGpsZ1c4a3dVSXhBcFhHSCIsIml0ZW1faWQiOiJpdGVtX0l6WWIxaDZobkxXZTNSRFFJVERKTCIsIm91dHB1dF9pbmRleCI6MCwiY29udGVudF9pbmRleCI6MH0="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_61"
+            },
+            {
+              "pointer": "/item_id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_52"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_50"
+            }
+          ]
+        },
+        {
+          "id": "n0046_1",
+          "point": "client.receive",
+          "source": "golden",
+          "after": [
+            "n0046_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJ0ZXh0Ijoi6JOd6Imy5pa55Z2X44CC6aKc6Imy77ya6JOd6Imy77yM5b2i54q277ya5pa55Z2X44CCIiwiZXZlbnRfaWQiOiJldmVudF9UUHA5aHh6RGxYWjJCQmRUVU10YXAiLCJ0eXBlIjoicmVzcG9uc2UudGV4dC5kb25lIiwicmVzcG9uc2VfaWQiOiJyZXNwX1BkNzRVTGpsZ1c4a3dVSXhBcFhHSCIsIml0ZW1faWQiOiJpdGVtX0l6WWIxaDZobkxXZTNSRFFJVERKTCIsIm91dHB1dF9pbmRleCI6MCwiY29udGVudF9pbmRleCI6MH0="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_61"
+            },
+            {
+              "pointer": "/item_id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_52"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_50"
+            }
+          ],
+          "forwarded_from": "n0046_0"
+        },
+        {
+          "id": "n0047_0",
+          "point": "upstream.send",
+          "source": "recorded",
+          "after": [
+            "n0046_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X0FxVjlLNjJad1p1Nk5TNGZIT2VqcyIsInR5cGUiOiJyZXNwb25zZS5jb250ZW50X3BhcnQuZG9uZSIsInJlc3BvbnNlX2lkIjoicmVzcF9QZDc0VUxqbGdXOGt3VUl4QXBYR0giLCJpdGVtX2lkIjoiaXRlbV9JelliMWg2aG5MV2UzUkRRSVRESkwiLCJvdXRwdXRfaW5kZXgiOjAsImNvbnRlbnRfaW5kZXgiOjAsInBhcnQiOnsidHlwZSI6InRleHQiLCJ0ZXh0Ijoi6JOd6Imy5pa55Z2X44CC6aKc6Imy77ya6JOd6Imy77yM5b2i54q277ya5pa55Z2X44CCIn19"
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_62"
+            },
+            {
+              "pointer": "/item_id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_52"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_50"
+            }
+          ]
+        },
+        {
+          "id": "n0047_1",
+          "point": "client.receive",
+          "source": "golden",
+          "after": [
+            "n0047_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X0FxVjlLNjJad1p1Nk5TNGZIT2VqcyIsInR5cGUiOiJyZXNwb25zZS5jb250ZW50X3BhcnQuZG9uZSIsInJlc3BvbnNlX2lkIjoicmVzcF9QZDc0VUxqbGdXOGt3VUl4QXBYR0giLCJpdGVtX2lkIjoiaXRlbV9JelliMWg2aG5MV2UzUkRRSVRESkwiLCJvdXRwdXRfaW5kZXgiOjAsImNvbnRlbnRfaW5kZXgiOjAsInBhcnQiOnsidHlwZSI6InRleHQiLCJ0ZXh0Ijoi6JOd6Imy5pa55Z2X44CC6aKc6Imy77ya6JOd6Imy77yM5b2i54q277ya5pa55Z2X44CCIn19"
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_62"
+            },
+            {
+              "pointer": "/item_id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_52"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_50"
+            }
+          ],
+          "forwarded_from": "n0047_0"
+        },
+        {
+          "id": "n0048_0",
+          "point": "upstream.send",
+          "source": "recorded",
+          "after": [
+            "n0047_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X1pXVkwydU5MUEFyZkJUblphMWN6cSIsInR5cGUiOiJyZXNwb25zZS5vdXRwdXRfaXRlbS5kb25lIiwicmVzcG9uc2VfaWQiOiJyZXNwX1BkNzRVTGpsZ1c4a3dVSXhBcFhHSCIsIm91dHB1dF9pbmRleCI6MCwiaXRlbSI6eyJpZCI6Iml0ZW1fSXpZYjFoNmhuTFdlM1JEUUlUREpMIiwib2JqZWN0IjoicmVhbHRpbWUuaXRlbSIsInR5cGUiOiJtZXNzYWdlIiwic3RhdHVzIjoiY29tcGxldGVkIiwicm9sZSI6ImFzc2lzdGFudCIsImNvbnRlbnQiOlt7InR5cGUiOiJ0ZXh0In1dfX0="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_63"
+            },
+            {
+              "pointer": "/item/id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_52"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_50"
+            }
+          ]
+        },
+        {
+          "id": "n0048_1",
+          "point": "client.receive",
+          "source": "golden",
+          "after": [
+            "n0048_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X1pXVkwydU5MUEFyZkJUblphMWN6cSIsInR5cGUiOiJyZXNwb25zZS5vdXRwdXRfaXRlbS5kb25lIiwicmVzcG9uc2VfaWQiOiJyZXNwX1BkNzRVTGpsZ1c4a3dVSXhBcFhHSCIsIm91dHB1dF9pbmRleCI6MCwiaXRlbSI6eyJpZCI6Iml0ZW1fSXpZYjFoNmhuTFdlM1JEUUlUREpMIiwib2JqZWN0IjoicmVhbHRpbWUuaXRlbSIsInR5cGUiOiJtZXNzYWdlIiwic3RhdHVzIjoiY29tcGxldGVkIiwicm9sZSI6ImFzc2lzdGFudCIsImNvbnRlbnQiOlt7InR5cGUiOiJ0ZXh0In1dfX0="
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_63"
+            },
+            {
+              "pointer": "/item/id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_52"
+            },
+            {
+              "pointer": "/response_id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_50"
+            }
+          ],
+          "forwarded_from": "n0048_0"
+        },
+        {
+          "id": "n0049_0",
+          "point": "upstream.send",
+          "source": "recorded",
+          "after": [
+            "n0048_1"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X1FUQ2p6b0RheTZOVEwyVFZvazl2RCIsInR5cGUiOiJyZXNwb25zZS5kb25lIiwicmVzcG9uc2UiOnsiaWQiOiJyZXNwX1BkNzRVTGpsZ1c4a3dVSXhBcFhHSCIsIm9iamVjdCI6InJlYWx0aW1lLnJlc3BvbnNlIiwiY29udmVyc2F0aW9uX2lkIjoiY29udl9ObGprRUtzUW5pdWMyNEwxU0IxZ0ciLCJzdGF0dXMiOiJjb21wbGV0ZWQiLCJtb2RhbGl0aWVzIjpbInRleHQiXSwidm9pY2UiOiJUaW5hIiwib3V0cHV0X2F1ZGlvX2Zvcm1hdCI6InBjbSIsIm91dHB1dCI6W3siaWQiOiJpdGVtX0l6WWIxaDZobkxXZTNSRFFJVERKTCIsIm9iamVjdCI6InJlYWx0aW1lLml0ZW0iLCJ0eXBlIjoibWVzc2FnZSIsInN0YXR1cyI6ImNvbXBsZXRlZCIsInJvbGUiOiJhc3Npc3RhbnQiLCJjb250ZW50IjpbeyJ0eXBlIjoidGV4dCIsInRleHQiOiLok53oibLmlrnlnZfjgILpopzoibLvvJrok53oibLvvIzlvaLnirbvvJrmlrnlnZfjgIIifV19XSwidXNhZ2UiOnsidG90YWxfdG9rZW5zIjo0NTYsImlucHV0X3Rva2VucyI6NDQ0LCJvdXRwdXRfdG9rZW5zIjoxMiwiaW5wdXRfdG9rZW5zX2RldGFpbHMiOnsidGV4dF90b2tlbnMiOjQ0NH0sIm91dHB1dF90b2tlbnNfZGV0YWlscyI6eyJ0ZXh0X3Rva2VucyI6MTJ9fX19"
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "bind",
+              "namespace": "event",
+              "symbol": "event_64"
+            },
+            {
+              "pointer": "/response/id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_50"
+            },
+            {
+              "pointer": "/response/output/0/id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_52"
+            }
+          ]
+        },
+        {
+          "id": "n0049_1",
+          "point": "client.receive",
+          "source": "golden",
+          "after": [
+            "n0049_0"
+          ],
+          "kind": "message",
+          "message": {
+            "opcode": 1,
+            "payload": "eyJldmVudF9pZCI6ImV2ZW50X1FUQ2p6b0RheTZOVEwyVFZvazl2RCIsInR5cGUiOiJyZXNwb25zZS5kb25lIiwicmVzcG9uc2UiOnsiaWQiOiJyZXNwX1BkNzRVTGpsZ1c4a3dVSXhBcFhHSCIsIm9iamVjdCI6InJlYWx0aW1lLnJlc3BvbnNlIiwiY29udmVyc2F0aW9uX2lkIjoiY29udl9ObGprRUtzUW5pdWMyNEwxU0IxZ0ciLCJzdGF0dXMiOiJjb21wbGV0ZWQiLCJtb2RhbGl0aWVzIjpbInRleHQiXSwidm9pY2UiOiJUaW5hIiwib3V0cHV0X2F1ZGlvX2Zvcm1hdCI6InBjbSIsIm91dHB1dCI6W3siaWQiOiJpdGVtX0l6WWIxaDZobkxXZTNSRFFJVERKTCIsIm9iamVjdCI6InJlYWx0aW1lLml0ZW0iLCJ0eXBlIjoibWVzc2FnZSIsInN0YXR1cyI6ImNvbXBsZXRlZCIsInJvbGUiOiJhc3Npc3RhbnQiLCJjb250ZW50IjpbeyJ0eXBlIjoidGV4dCIsInRleHQiOiLok53oibLmlrnlnZfjgILpopzoibLvvJrok53oibLvvIzlvaLnirbvvJrmlrnlnZfjgIIifV19XSwidXNhZ2UiOnsidG90YWxfdG9rZW5zIjo0NTYsImlucHV0X3Rva2VucyI6NDQ0LCJvdXRwdXRfdG9rZW5zIjoxMiwiaW5wdXRfdG9rZW5zX2RldGFpbHMiOnsidGV4dF90b2tlbnMiOjQ0NH0sIm91dHB1dF90b2tlbnNfZGV0YWlscyI6eyJ0ZXh0X3Rva2VucyI6MTJ9fX19"
+          },
+          "match": "json",
+          "fields": [
+            {
+              "pointer": "/event_id",
+              "mode": "reference",
+              "namespace": "event",
+              "symbol": "event_64"
+            },
+            {
+              "pointer": "/response/id",
+              "mode": "reference",
+              "namespace": "response",
+              "symbol": "response_50"
+            },
+            {
+              "pointer": "/response/output/0/id",
+              "mode": "reference",
+              "namespace": "item",
+              "symbol": "item_52"
+            }
+          ],
+          "forwarded_from": "n0049_0"
+        },
+        {
+          "id": "n0050_0",
+          "point": "client.send",
+          "source": "authored",
+          "after": [
+            "n0049_1"
+          ],
+          "kind": "close",
+          "close_code": 1000
+        },
+        {
+          "id": "n0050_1",
+          "point": "upstream.receive",
+          "source": "upstream-accepted",
+          "after": [
+            "n0050_0"
+          ],
+          "kind": "close",
+          "close_code": 1000
+        }
+      ],
+      "outcome": {
+        "kind": "completed",
+        "terminal": [
+          {
+            "node": "n0016_1",
+            "namespace": "response",
+            "symbol": "response_10",
+            "id_pointer": "/response/id",
+            "state_pointer": "/response/status",
+            "state": "completed"
+          },
+          {
+            "node": "n0030_1",
+            "namespace": "response",
+            "symbol": "response_27",
+            "id_pointer": "/response/id",
+            "state_pointer": "/response/status",
+            "state": "completed"
+          },
+          {
+            "node": "n0049_1",
+            "namespace": "response",
+            "symbol": "response_50",
+            "id_pointer": "/response/id",
+            "state_pointer": "/response/status",
+            "state": "completed"
+          }
+        ]
+      }
+    }
+  }
+}

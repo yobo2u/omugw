@@ -14,6 +14,14 @@ server:
   # metrics 与网关分开监听。metrics 端点不应暴露在对外端口上。
   metrics_addr: "127.0.0.1:9090"
 
+# WS 的单消息、pending+active 会话与全进程受控 payload 分开限额，防止连接数放大内存。
+# 最低为 2*M + min(M, 32 KiB)，M 为单消息上限，含双向完整消息和出站掩码工作区。
+# 多会话聚合、扩容时的新旧数组、控制帧与关闭原因仍计额；不保证任意并发满额，也不是 RSS。
+websocket:
+  max_message_bytes: 33554432 # 32 MiB，最大 64 MiB
+  max_sessions: 128 # 最大 4096，含等待握手的会话
+  max_buffered_bytes: 268435456 # 256 MiB，最大 2 GiB
+
 # 网关自身的鉴权。**不可省略**——一个不鉴权的 AI 网关等于把上游凭据免费送人。
 auth:
   keys:

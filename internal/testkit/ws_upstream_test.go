@@ -23,14 +23,31 @@ func TestWSUpstreamHandshake(t *testing.T) {
 		f := wsUpstreamFixture()
 		f.Response.WS.Upstream.Headers["Sec-WebSocket-Protocol"] = "realtime, openai-beta.realtime-v1"
 		u, srv := newWSUpstreamTest(t, f, DefaultWSLimits())
-		headers := wsUpstreamTestHeaders()
-		headers.Set("Sec-WebSocket-Protocol", "openai-beta.realtime-v1, openai-insecure-api-key.synthetic-private, realtime")
-		peer, resp := dialWSUpstreamTest(t, srv, headers)
+		// 此处验证回放 matcher 的安全 token 与脱敏契约，不能借生产 Dial
+		// 发出它不支持的协商提议；原始请求仍完整经过 WSReplayUpstream。
+		r := wsUpstreamHTTPRequest(t, srv)
+		r.URL.RawQuery = "tag=b&tag=a&model=synthetic-model&tag=a&token=synthetic-private"
+		r.Header.Set("Sec-WebSocket-Protocol", "openai-beta.realtime-v1, openai-insecure-api-key.synthetic-private, realtime")
+		peer, err := net.DialTimeout("tcp", r.URL.Host, 2*time.Second)
+		if err != nil {
+			t.Fatal("本地原始 TCP 拨号失败")
+		}
+		t.Cleanup(func() { _ = peer.Close() })
+		if err := peer.SetDeadline(time.Now().Add(2 * time.Second)); err != nil {
+			t.Fatal("本地原始 TCP 期限设置失败")
+		}
+		if err := r.Write(peer); err != nil {
+			t.Fatal("本地原始握手发送失败")
+		}
+		resp, err := http.ReadResponse(bufio.NewReader(peer), r)
+		if err != nil {
+			t.Fatal("本地原始握手响应读取失败")
+		}
 		if resp.StatusCode != 101 || resp.Header.Get("Sec-WebSocket-Protocol") != "" {
 			t.Fatal("升级状态错误或回放端伪造了尚未实现的子协议选择")
 		}
 		conn := claimWSUpstreamTest(t, u)
-		if err := peer.WriteMessage(ws.OpText, []byte("synthetic-message")); err != nil {
+		if err := ws.WriteFrame(peer, ws.Frame{FIN: true, Opcode: ws.OpText, Payload: []byte("synthetic-message")}, true); err != nil {
 			t.Fatal("本地消息发送失败")
 		}
 		result := readWSUpstreamTest(t, conn)

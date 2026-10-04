@@ -4,6 +4,7 @@ import (
 	"crypto/subtle"
 	"net/http"
 	"strings"
+	"unicode"
 
 	"github.com/yobo2u/omugw/internal/canonical"
 	"github.com/yobo2u/omugw/internal/config"
@@ -31,7 +32,31 @@ func NewAuthenticator(keys []config.AuthKey) *Authenticator {
 // 通过响应时间的差异一个字节一个字节地把密钥试出来。多比几次的开销可以忽略，
 // 而时间侧信道一旦漏出去就补不回来。
 func (a *Authenticator) Authenticate(r *http.Request) (Caller, error) {
-	presented := bearerToken(r)
+	return a.authenticateToken(bearerToken(r))
+}
+
+// AuthenticateUnique 防止长连接一次握手携带多把钥匙时，网关与上游各认一把。
+// HTTP 旧入口仍保留原契约；WS 入口只能消费一个请求头来源，不从 Cookie/query 取钥匙。
+func (a *Authenticator) AuthenticateUnique(r *http.Request) (Caller, error) {
+	var presented string
+	sources := 0
+	for name, values := range r.Header {
+		if !strings.EqualFold(name, "Authorization") && !strings.EqualFold(name, "Api-Key") {
+			continue
+		}
+		sources++
+		if sources > 1 || len(values) != 1 || strings.ContainsFunc(values[0], unicode.IsControl) {
+			return Caller{}, canonical.Newf(canonical.ClassBadRequest, "鉴权请求头必须唯一且无控制字符")
+		}
+		presented = values[0]
+		if strings.EqualFold(name, "Authorization") {
+			presented = strings.TrimPrefix(presented, "Bearer ")
+		}
+	}
+	return a.authenticateToken(strings.TrimSpace(presented))
+}
+
+func (a *Authenticator) authenticateToken(presented string) (Caller, error) {
 	if presented == "" {
 		return Caller{}, canonical.Newf(canonical.ClassAuth,
 			"缺少 Authorization: Bearer <key>")

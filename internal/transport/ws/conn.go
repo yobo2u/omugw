@@ -1,6 +1,7 @@
 package ws
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -8,6 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 )
 
 // Role 决定本端在 RFC 6455 里的方向，进而决定发出的帧要不要掩码。
@@ -40,16 +42,32 @@ var (
 // 独立成类型是为了让上层能拿到状态码：实测中 DashScope 用 1011 +
 // "To many requests..." 表达过载。把它当成普通 EOF 会让网关以为上游正常
 // 收尾从而不重试——而这恰恰是最该换一个凭据重试的场景。
+//
+// 配置 Budget 的 ReadOwnedMessage 会把 Reason 所有权交给调用方，须在使用完后
+// Release；之后本对象、浅拷贝及全部 Reason 别名都不得继续使用（包括 Error）。
+// 无 Budget 的旧调用没有新增释放义务，Release 是空操作。
 type CloseError struct {
 	Code   uint16
 	Reason string
 	// IncompleteMessage 保留关闭前仍在重组的分片证据，不把正常 close 当完整业务终结。
 	// 它不改变关闭码、错误文本或自动回应，也不表示此关闭违反 RFC。
 	IncompleteMessage bool
+	owned             *messageOwnership
 }
 
 func (e *CloseError) Error() string {
 	return fmt.Sprintf("ws: 对端关闭连接 (code=%d reason=%q)", e.Code, e.Reason)
+}
+
+// Release 与浅拷贝共享一次归还；可重复并发调用，但不能与 Reason 的使用并发。
+func (e *CloseError) Release() {
+	if e == nil || e.owned == nil {
+		return
+	}
+	e.owned.once.Do(func() {
+		e.Reason = ""
+		e.owned.budget.release(e.owned.size)
+	})
 }
 
 // Conn 是一条已完成握手的 WebSocket 连接。
@@ -57,10 +75,13 @@ func (e *CloseError) Error() string {
 // 它只负责帧层的生命周期：按角色掩码、自动回 pong、空闲超时、关闭握手。
 // 业务语义（事件改写、采样率协商）一概不碰——那属于协议层。
 type Conn struct {
-	conn   net.Conn
-	role   Role
-	idle   time.Duration
-	reader *Reader
+	conn         net.Conn
+	role         Role
+	idle         time.Duration
+	reader       *Reader
+	budget       *BufferBudget
+	writeTimeout time.Duration
+	readMu       sync.Mutex
 
 	// writeMu 串行化帧写。
 	//
@@ -69,6 +90,10 @@ type Conn struct {
 	// 绝不在持有它的时候读，否则自动回 pong 会和对端的下一帧互相死等。
 	writeMu sync.Mutex
 	closed  atomic.Bool
+	// BeginClose 保留读侧时先封写；发送权与自动回应/最终释放共享，不能各发一帧。
+	closing       atomic.Bool
+	closeClaimed  atomic.Bool
+	closeDeadline atomic.Pointer[time.Time]
 }
 
 // NewConn 包装一条已握手的连接。limit 是单条消息重组后的负载上限，
@@ -97,50 +122,48 @@ func newConnBuffered(conn net.Conn, r io.Reader, role Role, limit int64, idle ti
 // 根本不会去读，而对端收不到 pong 就会判定链路已死并断开——那时数据其实
 // 还在正常传输。表现是「长会话莫名其妙断连」。
 func (c *Conn) ReadMessage() (Opcode, []byte, error) {
-	for {
-		op, payload, err := c.reader.ReadMessage()
-		if err != nil {
-			var ne net.Error
-			if errors.As(err, &ne) && ne.Timeout() {
-				return 0, nil, ErrIdleTimeout
-			}
-			return 0, nil, err
-		}
-
-		switch op {
-		case OpPing:
-			// 负载必须原样带回（RFC 6455 §5.5.3）——对端用它来配对请求。
-			if err := c.writeFrame(OpPong, payload); err != nil {
-				return 0, nil, err
-			}
-		case OpPong:
-			// 对端主动发的心跳应答，与业务无关，丢弃。
-		case OpClose:
-			code, reason, derr := DecodeClosePayload(payload)
-			if derr != nil {
-				return 0, nil, derr
-			}
-			c.respondToPeerClose()
-			return 0, nil, &CloseError{Code: code, Reason: reason, IncompleteMessage: c.reader.fragments}
-		default:
-			return op, payload, nil
-		}
+	if c.budget != nil {
+		return 0, nil, errors.New("ws: 配置 Budget 后必须使用 ReadOwnedMessage 并 Release")
 	}
+	m, err := c.ReadOwnedMessage(context.Background())
+	if err != nil {
+		return 0, nil, err
+	}
+	op, payload := m.Opcode, m.Payload
+	m.Release()
+	return op, payload, nil
 }
 
 // WriteMessage 发一条业务消息。
 func (c *Conn) WriteMessage(op Opcode, payload []byte) error {
+	if op == OpText && !utf8.Valid(payload) {
+		return fmt.Errorf("%w: 文本不是合法 UTF-8", ErrInvalidUTF8)
+	}
+	if op == OpClose {
+		if _, _, err := parseClosePayload(payload); err != nil {
+			return err
+		}
+	}
 	return c.writeFrame(op, payload)
 }
+
+// Ping 与业务写、自动 pong 共用写锁和期限，不能旁路成一个无限写。
+func (c *Conn) Ping(payload []byte) error { return c.writeFrame(OpPing, payload) }
 
 func (c *Conn) writeFrame(op Opcode, payload []byte) error {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
 
-	if c.closed.Load() {
+	if c.closed.Load() || c.closing.Load() {
 		return ErrClosed
 	}
-	return WriteFrame(c.conn, Frame{FIN: true, Opcode: op, Payload: payload}, c.role.masks())
+	if c.writeTimeout > 0 {
+		if err := c.conn.SetWriteDeadline(time.Now().Add(c.writeTimeout)); err != nil {
+			return err
+		}
+		defer c.conn.SetWriteDeadline(time.Time{})
+	}
+	return writeFrameBudget(c.conn, Frame{FIN: true, Opcode: op, Payload: payload}, c.role.masks(), c.budget)
 }
 
 // Close 发出关闭帧并释放底层连接。重复调用是空操作。
@@ -167,27 +190,55 @@ func (c *Conn) CloseWithResult(code uint16, reason string) (sent bool, err error
 	if !c.closed.CompareAndSwap(false, true) {
 		return false, nil
 	}
+	start := time.Now()
+	if code != CloseNoStatus && !validCloseCode(code) || code == CloseNoStatus && reason != "" {
+		_ = abortTransport(c.conn)
+		return false, fmt.Errorf("%w: 主动关闭状态码或原因非法", ErrProtocol)
+	}
+	if !utf8.ValidString(reason) {
+		_ = abortTransport(c.conn)
+		return false, fmt.Errorf("%w: close 原因不是合法 UTF-8", ErrInvalidUTF8)
+	}
 
 	// 已有业务帧阻塞时不能等写锁：直接关底层连接才能把那个写唤醒。
-	// 没有并发写时尽力发送关闭帧，并给这次礼貌收尾一个有限期限。
-	if c.writeMu.TryLock() {
-		deadline := time.Second
-		if c.idle > 0 && c.idle < deadline {
-			deadline = c.idle
+	if !c.writeMu.TryLock() {
+		return false, abortTransport(c.conn)
+	}
+	defer c.writeMu.Unlock()
+	timeout := time.Second
+	if c.idle > 0 && c.idle < timeout {
+		timeout = c.idle
+	}
+	if c.writeTimeout > 0 && c.writeTimeout < timeout {
+		timeout = c.writeTimeout
+	}
+	deadline := c.limitCloseDeadline(start.Add(timeout))
+	join := watchTransportClose(c.conn, deadline)
+	defer join()
+	defer func() {
+		if cerr := c.conn.Close(); err == nil {
+			err = cerr
 		}
-		_ = c.conn.SetWriteDeadline(time.Now().Add(deadline))
-		err = WriteFrame(c.conn, Frame{
-			FIN:     true,
-			Opcode:  OpClose,
-			Payload: EncodeClosePayload(code, reason),
-		}, c.role.masks())
-		sent = err == nil
-		c.writeMu.Unlock()
+	}()
+	if err = c.conn.SetWriteDeadline(deadline); err != nil {
+		return false, err
 	}
-
-	if cerr := c.conn.Close(); err == nil {
-		err = cerr
+	if !c.closeClaimed.CompareAndSwap(false, true) {
+		return false, nil
 	}
+	// 原因先按协议上限截断，避免超长 reason 让编码器保留一个超大容量。
+	size := closePayloadSize(code, reason)
+	if err = c.budget.acquire(int64(size)); err != nil {
+		return false, err
+	}
+	payload := EncodeClosePayload(code, reason)
+	defer func() { payload = nil; c.budget.release(int64(size)) }()
+	err = writeFrameBudget(c.conn, Frame{
+		FIN:     true,
+		Opcode:  OpClose,
+		Payload: payload,
+	}, c.role.masks(), c.budget)
+	sent = err == nil
 	return sent, err
 }
 
@@ -196,20 +247,22 @@ func (c *Conn) CloseWithResult(code uint16, reason string) (sent bool, err error
 // 按 RFC 6455 §5.5.1，收到 close 且自己没发过时必须回一个 close——不回的话
 // 对端只能等自己的超时才断开。回完即释放本端连接：调用方那句惯常的
 // defer Close() 此时会因为「已关闭」直接返回，fd 就此永远挂着。
-func (c *Conn) respondToPeerClose() {
-	if !c.closed.CompareAndSwap(false, true) {
-		return
+func (c *Conn) respondToPeerClose(code uint16) {
+	if code != CloseNoStatus {
+		code = CloseNormal
 	}
-	if c.writeMu.TryLock() {
-		_ = c.conn.SetWriteDeadline(time.Now().Add(time.Second))
-		_ = WriteFrame(c.conn, Frame{
-			FIN:     true,
-			Opcode:  OpClose,
-			Payload: EncodeClosePayload(CloseNormal, ""),
-		}, c.role.masks())
-		c.writeMu.Unlock()
+	_, _ = c.CloseWithResult(code, "")
+}
+
+func closePayloadSize(code uint16, reason string) int {
+	if code == CloseNoStatus {
+		return 0
 	}
-	_ = c.conn.Close()
+	n := min(len(reason), maxControlPayload-2)
+	for n < len(reason) && n > 0 && !utf8.RuneStart(reason[n]) {
+		n--
+	}
+	return 2 + n
 }
 
 // deadlineReader 在每次需要更多字节前刷新读期限。Reader 可能在一条消息里读取

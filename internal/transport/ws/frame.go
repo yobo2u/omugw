@@ -75,8 +75,14 @@ var (
 	// 超限只是这一帧太大。前者该断连，后者可以只拒这条消息。
 	ErrProtocol = errors.New("ws: 协议错误")
 
+	// ErrInvalidUTF8 供 relay 区分 1007 与其他 RFC 错误的 1002；仍属于 ErrProtocol。
+	ErrInvalidUTF8 = fmt.Errorf("%w: 非法 UTF-8", ErrProtocol)
+
 	// ErrTooLarge 表示负载超过本地上限。
 	ErrTooLarge = errors.New("ws: 负载超过上限")
+
+	// 新调用方用消息级名称；保留旧哨兵身份，不破坏 errors.Is(ErrTooLarge)。
+	ErrMessageTooLarge = ErrTooLarge
 )
 
 // Frame 是一个 WebSocket 帧。
@@ -92,6 +98,18 @@ type Frame struct {
 // 1002 断开。方向由调用方决定——网关对上游是客户端（要掩码），
 // 对下游是服务端（不得掩码）。
 func WriteFrame(w io.Writer, f Frame, masked bool) error {
+	return writeFrameBudget(w, f, masked, nil)
+}
+
+const maskChunkBytes = 32 << 10
+
+// MaskWorkspaceBytes 供配置与实际掩码分配共用，防止最低预算与分块大小漂移。
+// payloadBytes 是非负的单帧负载长度；工作区不改变调用方持有的原始负载。
+func MaskWorkspaceBytes(payloadBytes int64) int64 {
+	return min(payloadBytes, maskChunkBytes)
+}
+
+func writeFrameBudget(w io.Writer, f Frame, masked bool, budget *BufferBudget) error {
 	if f.Opcode.isControl() {
 		if len(f.Payload) > maxControlPayload {
 			return fmt.Errorf("%w: 控制帧负载 %d 字节超过上限 %d",
@@ -130,28 +148,50 @@ func WriteFrame(w io.Writer, f Frame, masked bool) error {
 		hdr = append(hdr, b[:]...)
 	}
 
-	body := f.Payload
+	var key [4]byte
+	var scratch []byte
 	if masked {
-		var key [4]byte
 		if _, err := rand.Read(key[:]); err != nil {
 			return fmt.Errorf("ws: 生成掩码失败: %w", err)
 		}
 		hdr = append(hdr, key[:]...)
 
-		// 复制后异或，不原地改调用方的切片——上层可能还要复用那段负载。
-		body = make([]byte, n)
-		for i := 0; i < n; i++ {
-			body[i] = f.Payload[i] ^ key[i%4]
+		// 先拿到整个临时块的容量，再写帧头；额度不足时不留下半个线上帧。
+		size := MaskWorkspaceBytes(int64(n))
+		if err := budget.acquire(size); err != nil {
+			return err
 		}
+		scratch = make([]byte, size)
+		defer func() { scratch = nil; budget.release(size) }()
 	}
 
-	if _, err := w.Write(hdr); err != nil {
+	if err := writeFull(w, hdr); err != nil {
 		return err
 	}
-	if len(body) == 0 {
+	if n == 0 {
 		return nil
 	}
-	_, err := w.Write(body)
+	if !masked {
+		return writeFull(w, f.Payload)
+	}
+	for offset := 0; offset < n; {
+		count := min(len(scratch), n-offset)
+		for i := 0; i < count; i++ {
+			scratch[i] = f.Payload[offset+i] ^ key[(offset+i)%4]
+		}
+		if err := writeFull(w, scratch[:count]); err != nil {
+			return err
+		}
+		offset += count
+	}
+	return nil
+}
+
+func writeFull(w io.Writer, p []byte) error {
+	n, err := w.Write(p)
+	if err == nil && n != len(p) {
+		return io.ErrShortWrite
+	}
 	return err
 }
 
@@ -160,25 +200,48 @@ func WriteFrame(w io.Writer, f Frame, masked bool) error {
 // limit 是负载上限。长度字段是对端说了算的 64 位数，不设上限的话，
 // 一个声称负载 8 EiB 的帧只需十个字节就能让网关 OOM。
 func ReadFrame(r io.Reader, limit int64) (Frame, error) {
+	h, err := readFrameHeader(r)
+	if err != nil {
+		return Frame{}, err
+	}
+	if h.size > limit {
+		return Frame{}, fmt.Errorf("%w: 帧负载超过上限", ErrMessageTooLarge)
+	}
+	payload := make([]byte, int(h.size))
+	if err := readFramePayload(r, h, payload); err != nil {
+		return Frame{}, err
+	}
+	return Frame{FIN: h.fin, Opcode: h.opcode, Payload: payload}, nil
+}
+
+// 头解析与分配分开，防止生产读路径在校验角色、消息总量和共享额度之前分配。
+type frameHeader struct {
+	fin, masked bool
+	opcode      Opcode
+	size        int64
+	key         [4]byte
+}
+
+func readFrameHeader(r io.Reader) (frameHeader, error) {
 	var h [2]byte
 	if _, err := io.ReadFull(r, h[:]); err != nil {
 		// 干净 EOF 与「帧读到一半断了」必须区分：前者是对端正常关闭，
 		// 后者说明链路异常。io.ReadFull 已经替我们分好了。
-		return Frame{}, err
+		return frameHeader{}, err
 	}
 
 	fin := h[0]&0x80 != 0
 	if h[0]&0x70 != 0 {
 		// RSV1-3 置位说明对端启用了未协商的扩展（如 permessage-deflate）。
 		// 按普通帧解析会交出一段压缩后的乱码，宁可报错。
-		return Frame{}, fmt.Errorf("%w: RSV 位置位但未协商扩展", ErrProtocol)
+		return frameHeader{}, fmt.Errorf("%w: RSV 位置位但未协商扩展", ErrProtocol)
 	}
 
 	opcode := Opcode(h[0] & 0x0F)
 	switch opcode {
 	case OpContinuation, OpText, OpBinary, OpClose, OpPing, OpPong:
 	default:
-		return Frame{}, fmt.Errorf("%w: 未定义的 opcode 0x%x", ErrProtocol, byte(opcode))
+		return frameHeader{}, fmt.Errorf("%w: 未定义的 opcode 0x%x", ErrProtocol, byte(opcode))
 	}
 
 	masked := h[1]&0x80 != 0
@@ -186,11 +249,11 @@ func ReadFrame(r io.Reader, limit int64) (Frame, error) {
 
 	if opcode.isControl() {
 		if n > maxControlPayload {
-			return Frame{}, fmt.Errorf("%w: 控制帧负载 %d 字节超过上限 %d",
+			return frameHeader{}, fmt.Errorf("%w: 控制帧负载 %d 字节超过上限 %d",
 				ErrProtocol, n, maxControlPayload)
 		}
 		if !fin {
-			return Frame{}, fmt.Errorf("%w: 控制帧不得分片", ErrProtocol)
+			return frameHeader{}, fmt.Errorf("%w: 控制帧不得分片", ErrProtocol)
 		}
 	}
 
@@ -198,47 +261,54 @@ func ReadFrame(r io.Reader, limit int64) (Frame, error) {
 	case 126:
 		var b [2]byte
 		if _, err := io.ReadFull(r, b[:]); err != nil {
-			return Frame{}, unexpectedEOF(err)
+			return frameHeader{}, unexpectedEOF(err)
 		}
 		n = int64(binary.BigEndian.Uint16(b[:]))
+		if n < 126 {
+			return frameHeader{}, fmt.Errorf("%w: 负载长度未使用最小编码", ErrProtocol)
+		}
 	case 127:
 		var b [8]byte
 		if _, err := io.ReadFull(r, b[:]); err != nil {
-			return Frame{}, unexpectedEOF(err)
+			return frameHeader{}, unexpectedEOF(err)
 		}
 		v := binary.BigEndian.Uint64(b[:])
-		if v > 1<<62 {
+		if v>>63 != 0 {
 			// 最高位置位在 RFC 里就是非法的，同时也防 int64 溢出。
-			return Frame{}, fmt.Errorf("%w: 负载长度最高位置位", ErrProtocol)
+			return frameHeader{}, fmt.Errorf("%w: 负载长度最高位置位", ErrProtocol)
 		}
 		n = int64(v)
+		if n < 65536 {
+			return frameHeader{}, fmt.Errorf("%w: 负载长度未使用最小编码", ErrProtocol)
+		}
 	}
 
-	// 先判上限再分配。反过来写就等于让对端决定我们分配多少内存。
-	if n > limit {
-		return Frame{}, fmt.Errorf("%w: 负载 %d 字节超过上限 %d", ErrTooLarge, n, limit)
+	if uint64(n) > uint64(^uint(0)>>1) {
+		return frameHeader{}, fmt.Errorf("%w: 负载超过本机容量", ErrMessageTooLarge)
 	}
 
 	var key [4]byte
 	if masked {
 		if _, err := io.ReadFull(r, key[:]); err != nil {
-			return Frame{}, unexpectedEOF(err)
+			return frameHeader{}, unexpectedEOF(err)
 		}
 	}
 
-	payload := make([]byte, n)
-	if n > 0 {
+	return frameHeader{fin: fin, masked: masked, opcode: opcode, size: n, key: key}, nil
+}
+
+func readFramePayload(r io.Reader, h frameHeader, payload []byte) error {
+	if len(payload) > 0 {
 		if _, err := io.ReadFull(r, payload); err != nil {
-			return Frame{}, unexpectedEOF(err)
+			return unexpectedEOF(err)
 		}
 	}
-	if masked {
+	if h.masked {
 		for i := range payload {
-			payload[i] ^= key[i%4]
+			payload[i] ^= h.key[i%4]
 		}
 	}
-
-	return Frame{FIN: fin, Opcode: opcode, Payload: payload}, nil
+	return nil
 }
 
 // unexpectedEOF 把「帧读到一半断了」统一成 io.ErrUnexpectedEOF。
@@ -287,6 +357,12 @@ func (rd *Reader) ReadMessage() (Opcode, []byte, error) {
 		}
 
 		if f.Opcode.isControl() {
+			if f.Opcode == OpClose {
+				if _, _, err := parseClosePayload(f.Payload); err != nil {
+					rd.reset()
+					return 0, nil, err
+				}
+			}
 			return f.Opcode, f.Payload, nil
 		}
 
@@ -311,6 +387,10 @@ func (rd *Reader) ReadMessage() (Opcode, []byte, error) {
 		if f.FIN {
 			op, payload := rd.msgOp, rd.partial
 			rd.reset()
+			// 只能检查完整消息，不能把合法的跨帧 UTF-8 字符拒绝掉。
+			if op == OpText && !utf8.Valid(payload) {
+				return 0, nil, fmt.Errorf("%w: 文本不是合法 UTF-8", ErrInvalidUTF8)
+			}
 			return op, payload, nil
 		}
 	}
@@ -331,8 +411,9 @@ func (rd *Reader) reset() {
 // 原因会被截断到控制帧上限内。超长的 close 负载会让对端以协议错误断开——
 // 那会把一次本可以说清楚的正常关闭，变成一次谁也看不懂的异常断连。
 func EncodeClosePayload(code uint16, reason string) []byte {
-	out := make([]byte, 2, 2+len(reason))
-	binary.BigEndian.PutUint16(out, code)
+	if code == CloseNoStatus || !validCloseCode(code) || !utf8.ValidString(reason) {
+		return nil
+	}
 
 	// 留 2 字节给状态码。按 rune 边界截断，避免切出半个 UTF-8 字符——
 	// 那会让对端的 UTF-8 校验失败，同样引发协议错误。
@@ -343,7 +424,10 @@ func EncodeClosePayload(code uint16, reason string) []byte {
 		}
 		reason = reason[:limit]
 	}
-	return append(out, reason...)
+	out := make([]byte, 2+len(reason))
+	binary.BigEndian.PutUint16(out, code)
+	copy(out[2:], reason)
+	return out
 }
 
 // DecodeClosePayload 解析 close 帧负载。
@@ -352,17 +436,33 @@ func EncodeClosePayload(code uint16, reason string) []byte {
 // 用 1011 + 文本原因表达过载（"To many requests..."），网关要能读出来
 // 并映射成可重试的上游错误，而不是当成一次无缘无故的断连。
 func DecodeClosePayload(payload []byte) (uint16, string, error) {
+	code, reason, err := parseClosePayload(payload)
+	if err != nil {
+		return 0, "", err
+	}
+	return code, string(reason), nil
+}
+
+// 只借用原因切片，不先复制再校验；受控读取可在复制前预占并存容量，出站校验也不留副本。
+func parseClosePayload(payload []byte) (uint16, []byte, error) {
 	if len(payload) == 0 {
-		return CloseNoStatus, "", nil
+		return CloseNoStatus, nil, nil
 	}
 	if len(payload) == 1 {
-		return 0, "", fmt.Errorf("%w: close 负载只有 1 字节，状态码不完整", ErrProtocol)
+		return 0, nil, fmt.Errorf("%w: close 负载只有 1 字节，状态码不完整", ErrProtocol)
 	}
 
 	code := binary.BigEndian.Uint16(payload)
-	reason := string(payload[2:])
-	if !utf8.ValidString(reason) {
-		return 0, "", fmt.Errorf("%w: close 原因不是合法 UTF-8", ErrProtocol)
+	if !validCloseCode(code) {
+		return 0, nil, fmt.Errorf("%w: close 状态码非法", ErrProtocol)
+	}
+	reason := payload[2:]
+	if !utf8.Valid(reason) {
+		return 0, nil, fmt.Errorf("%w: close 原因不是合法 UTF-8", ErrInvalidUTF8)
 	}
 	return code, reason, nil
+}
+
+func validCloseCode(code uint16) bool {
+	return code >= 3000 && code <= 4999 || code >= 1000 && code <= 1014 && code != 1004 && code != 1005 && code != 1006
 }

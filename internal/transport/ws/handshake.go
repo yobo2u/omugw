@@ -42,6 +42,14 @@ type AcceptOptions struct {
 
 	// Idle 是两帧之间的最大间隔，0 表示不设空闲超时。
 	Idle time.Duration
+
+	// HandshakeDeadline 只约束 101 写入；交付连接前清除，避免截断长会话。
+	HandshakeDeadline time.Time
+
+	// WriteTimeout 限制业务帧与心跳写，0 保持原有合法调用的无期限行为。
+	WriteTimeout time.Duration
+	// Budget 共享 payload 容量；非 nil 时只能通过 ReadOwnedMessage 取得所有权。
+	Budget *BufferBudget
 }
 
 // Accept 把一个 HTTP 升级请求接管成 WebSocket 连接。
@@ -49,24 +57,21 @@ type AcceptOptions struct {
 // 接管之后 net/http 不再管这条连接——它既不会写响应，也不会在 handler
 // 返回时关闭它。因此这里必须自己写完 101 响应，调用方必须自己 Close。
 func Accept(w http.ResponseWriter, r *http.Request, opts AcceptOptions) (*Conn, error) {
-	if !headerContainsToken(r.Header, "Connection", "upgrade") ||
-		!strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
-		http.Error(w, "expected websocket upgrade", http.StatusBadRequest)
-		return nil, fmt.Errorf("%w: 不是 WebSocket 升级请求", ErrHandshake)
+	if opts.MaxPayload < 0 || opts.Idle < 0 || opts.WriteTimeout < 0 {
+		http.Error(w, "invalid websocket options", http.StatusInternalServerError)
+		return nil, fmt.Errorf("%w: 负限额或负时长非法", ErrHandshake)
 	}
-
-	if v := r.Header.Get("Sec-WebSocket-Version"); v != "13" {
-		// RFC 6455 §4.2.2 要求在拒绝时告知支持的版本，否则客户端只能盲试。
-		w.Header().Set("Sec-WebSocket-Version", "13")
-		http.Error(w, "unsupported websocket version", http.StatusUpgradeRequired)
-		return nil, fmt.Errorf("%w: 不支持的版本 %q", ErrHandshake, v)
+	if err := ValidateUpgrade(r); err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, errUpgradeVersion) {
+			// 拒绝版本时仍告知支持值，不能回显未经验证的客户端字段。
+			w.Header().Set("Sec-WebSocket-Version", "13")
+			status = http.StatusUpgradeRequired
+		}
+		http.Error(w, "invalid websocket upgrade", status)
+		return nil, err
 	}
-
 	key := r.Header.Get("Sec-WebSocket-Key")
-	if key == "" {
-		http.Error(w, "missing Sec-WebSocket-Key", http.StatusBadRequest)
-		return nil, fmt.Errorf("%w: 缺少 Sec-WebSocket-Key", ErrHandshake)
-	}
 
 	hj, ok := w.(http.ResponseWriter).(http.Hijacker)
 	if !ok {
@@ -76,7 +81,11 @@ func Accept(w http.ResponseWriter, r *http.Request, opts AcceptOptions) (*Conn, 
 
 	netConn, brw, err := hj.Hijack()
 	if err != nil {
-		return nil, fmt.Errorf("%w: 接管连接失败: %v", ErrHandshake, err)
+		return nil, fmt.Errorf("%w: 接管连接失败", ErrHandshake)
+	}
+	if err := netConn.SetWriteDeadline(opts.HandshakeDeadline); err != nil {
+		_ = abortTransport(netConn)
+		return nil, fmt.Errorf("%w: 设置 101 写期限失败", ErrHandshake)
 	}
 
 	// 手写 101：接管之后 net/http 的 WriteHeader 不再有效。
@@ -85,17 +94,23 @@ func Accept(w http.ResponseWriter, r *http.Request, opts AcceptOptions) (*Conn, 
 		"Connection: Upgrade\r\n" +
 		"Sec-WebSocket-Accept: " + acceptKey(key) + "\r\n\r\n"
 	if _, err := brw.WriteString(resp); err != nil {
-		_ = netConn.Close()
-		return nil, fmt.Errorf("%w: 写 101 响应失败: %v", ErrHandshake, err)
+		_ = abortTransport(netConn)
+		return nil, fmt.Errorf("%w: 写 101 响应失败", ErrHandshake)
 	}
 	if err := brw.Flush(); err != nil {
-		_ = netConn.Close()
-		return nil, fmt.Errorf("%w: 刷出 101 响应失败: %v", ErrHandshake, err)
+		_ = abortTransport(netConn)
+		return nil, fmt.Errorf("%w: 刷出 101 响应失败", ErrHandshake)
+	}
+	if err := netConn.SetDeadline(time.Time{}); err != nil {
+		_ = abortTransport(netConn)
+		return nil, fmt.Errorf("%w: 清除握手期限失败", ErrHandshake)
 	}
 
 	// 用 brw.Reader 而不是裸 netConn：握手期间 bufio 可能已经预读了
 	// 客户端紧跟着发来的帧字节。丢掉它等于丢掉客户端的第一条消息。
-	return newConnBuffered(netConn, brw.Reader, RoleServer, opts.MaxPayload, opts.Idle), nil
+	c := newConnBuffered(netConn, brw.Reader, RoleServer, opts.MaxPayload, opts.Idle)
+	c.writeTimeout, c.budget = opts.WriteTimeout, opts.Budget
+	return c, nil
 }
 
 // DialOptions 是客户端拨号的选项。
@@ -114,6 +129,20 @@ type DialOptions struct {
 
 	// TLS 用于 wss。为 nil 时用默认配置。
 	TLS *tls.Config
+
+	// ConnectTimeout 只覆盖 TCP/TLS，0 沿用 ctx；不能侵占后续握手和业务阶段。
+	ConnectTimeout time.Duration
+
+	// MaxHandshakeBytes 限制状态行与 HTTP 头，0 默认 64 KiB，不限制 WS 帧。
+	MaxHandshakeBytes int64
+
+	// MaxErrorBodyBytes 限制失败响应体，0 默认 64 KiB；返回的内存 Body 归调用方。
+	MaxErrorBodyBytes int64
+
+	// WriteTimeout 只在写锁内设置和清除，不能泄漏到后续会话阶段。
+	WriteTimeout time.Duration
+	// Budget 防止多个会话同时持有的大消息越过全局容量。
+	Budget *BufferBudget
 }
 
 // Dial 向 ws:// 或 wss:// 端点发起握手。
@@ -122,9 +151,18 @@ type DialOptions struct {
 // 往往就是唯一的线索：DashScope 对错误的 API Key 返回 401 而不是 101，
 // 吞掉它会让运维只看到「连不上」。
 func Dial(ctx context.Context, rawURL string, opts DialOptions) (*Conn, *http.Response, error) {
+	if opts.ConnectTimeout < 0 || opts.Idle < 0 || opts.MaxPayload < 0 || opts.MaxHandshakeBytes < 0 || opts.MaxErrorBodyBytes < 0 || opts.WriteTimeout < 0 {
+		return nil, nil, fmt.Errorf("%w: 负限额或负时长非法", ErrHandshake)
+	}
+	if opts.MaxHandshakeBytes == 0 {
+		opts.MaxHandshakeBytes = 64 << 10
+	}
+	if opts.MaxErrorBodyBytes == 0 {
+		opts.MaxErrorBodyBytes = 64 << 10
+	}
 	u, err := url.Parse(rawURL)
 	if err != nil {
-		return nil, nil, fmt.Errorf("%w: URL 非法: %v", ErrHandshake, err)
+		return nil, nil, fmt.Errorf("%w: URL 非法", ErrHandshake)
 	}
 
 	var secure bool
@@ -133,10 +171,17 @@ func Dial(ctx context.Context, rawURL string, opts DialOptions) (*Conn, *http.Re
 	case "wss":
 		secure = true
 	default:
-		return nil, nil, fmt.Errorf("%w: scheme %q 不是 ws 或 wss", ErrHandshake, u.Scheme)
+		return nil, nil, fmt.Errorf("%w: scheme 不是 ws 或 wss", ErrHandshake)
 	}
 
-	netConn, err := dialTCP(ctx, u, secure, opts.TLS)
+	connectCtx := ctx
+	cancelConnect := func() {}
+	if opts.ConnectTimeout > 0 {
+		connectCtx, cancelConnect = context.WithTimeout(ctx, opts.ConnectTimeout)
+	}
+	netConn, err := dialTCP(connectCtx, u, secure, opts.TLS)
+	// 子预算在 TCP/TLS 完成后立即释放；后面的 CAS watchdog 仍只属于原握手 ctx。
+	cancelConnect()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -156,7 +201,7 @@ func Dial(ctx context.Context, rawURL string, opts DialOptions) (*Conn, *http.Re
 		select {
 		case <-ctx.Done():
 			if handshakeClaimed.CompareAndSwap(false, true) {
-				_ = netConn.Close()
+				_ = abortTransport(netConn)
 			}
 		case <-handshakeDone:
 		}
@@ -164,36 +209,39 @@ func Dial(ctx context.Context, rawURL string, opts DialOptions) (*Conn, *http.Re
 
 	var nonce [16]byte
 	if _, err := rand.Read(nonce[:]); err != nil {
-		_ = netConn.Close()
-		return nil, nil, fmt.Errorf("%w: 生成 Sec-WebSocket-Key 失败: %v", ErrHandshake, err)
+		_ = abortTransport(netConn)
+		return nil, nil, fmt.Errorf("%w: 生成 Sec-WebSocket-Key 失败", ErrHandshake)
 	}
 	clientKey := base64.StdEncoding.EncodeToString(nonce[:])
 
 	if err := writeHandshakeRequest(netConn, u, clientKey, opts.Header); err != nil {
-		_ = netConn.Close()
+		_ = abortTransport(netConn)
 		return nil, nil, err
 	}
 
-	br := bufio.NewReader(netConn)
+	// 限额只在 HTTP 解析时生效；保留同一个 bufio 再解除底层限额，既不丢
+	// 预读首帧，也不把握手预算误用成后续整个 WebSocket 字节流的配额。
+	source := &struct{ io.Reader }{io.LimitReader(netConn, opts.MaxHandshakeBytes)}
+	br := bufio.NewReader(source)
 	resp, err := http.ReadResponse(br, &http.Request{Method: http.MethodGet})
 	if err != nil {
-		_ = netConn.Close()
+		_ = abortTransport(netConn)
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, nil, fmt.Errorf("%w: %v", ErrHandshake, ctxErr)
 		}
-		return nil, nil, fmt.Errorf("%w: 读握手响应失败: %v", ErrHandshake, err)
+		return nil, nil, fmt.Errorf("%w: 握手响应不完整、非法或头超限", ErrHandshake)
 	}
+	source.Reader = netConn
 
 	if resp.StatusCode != http.StatusSwitchingProtocols {
-		_ = netConn.Close()
-		return nil, resp, fmt.Errorf("%w: 上游未升级协议，状态码 %d", ErrHandshake, resp.StatusCode)
+		return nil, resp, retainHandshakeErrorBody(ctx, netConn, resp, opts.MaxErrorBodyBytes)
 	}
 
 	// 校验摘要：一个返回 101 却算错摘要的中间设备，会让我们把帧写进一个
 	// 根本不解析它的端点——表现是「连上了但一条消息都收不到」。
-	if got := resp.Header.Get("Sec-WebSocket-Accept"); got != acceptKey(clientKey) {
-		_ = netConn.Close()
-		return nil, resp, fmt.Errorf("%w: Sec-WebSocket-Accept 摘要不匹配", ErrHandshake)
+	if err := validateUpgradeResponse(resp, clientKey); err != nil {
+		_ = abortTransport(netConn)
+		return nil, resp, err
 	}
 
 	// 取消已取得关闭权时，101 与摘要校验通过也不能交付一条即将失效的连接。
@@ -201,7 +249,9 @@ func Dial(ctx context.Context, rawURL string, opts DialOptions) (*Conn, *http.Re
 	if !handshakeClaimed.CompareAndSwap(false, true) {
 		return nil, resp, fmt.Errorf("%w: %v", ErrHandshake, ctx.Err())
 	}
-	return newConnBuffered(netConn, br, RoleClient, opts.MaxPayload, opts.Idle), resp, nil
+	c := newConnBuffered(netConn, br, RoleClient, opts.MaxPayload, opts.Idle)
+	c.writeTimeout, c.budget = opts.WriteTimeout, opts.Budget
+	return c, resp, nil
 }
 
 func dialTCP(ctx context.Context, u *url.URL, secure bool, tlsCfg *tls.Config) (net.Conn, error) {
@@ -217,7 +267,7 @@ func dialTCP(ctx context.Context, u *url.URL, secure bool, tlsCfg *tls.Config) (
 	d := &net.Dialer{}
 	netConn, err := d.DialContext(ctx, "tcp", host)
 	if err != nil {
-		return nil, fmt.Errorf("%w: 连接 %s 失败: %v", ErrHandshake, host, err)
+		return nil, fmt.Errorf("%w: TCP 连接失败", ErrHandshake)
 	}
 	if !secure {
 		return netConn, nil
@@ -235,7 +285,7 @@ func dialTCP(ctx context.Context, u *url.URL, secure bool, tlsCfg *tls.Config) (
 	tlsConn := tls.Client(netConn, cfg)
 	if err := tlsConn.HandshakeContext(ctx); err != nil {
 		_ = netConn.Close()
-		return nil, fmt.Errorf("%w: TLS 握手失败: %v", ErrHandshake, err)
+		return nil, fmt.Errorf("%w: TLS 握手失败", ErrHandshake)
 	}
 	return tlsConn, nil
 }
@@ -267,14 +317,15 @@ func writeHandshakeRequest(w io.Writer, u *url.URL, clientKey string, extra http
 	b.WriteString("\r\n")
 
 	if _, err := io.WriteString(w, b.String()); err != nil {
-		return fmt.Errorf("%w: 写握手请求失败: %v", ErrHandshake, err)
+		return fmt.Errorf("%w: 写握手请求失败", ErrHandshake)
 	}
 	return nil
 }
 
 func isReservedHandshakeHeader(name string) bool {
 	switch http.CanonicalHeaderKey(name) {
-	case "Upgrade", "Connection", "Sec-Websocket-Key", "Sec-Websocket-Version", "Host":
+	case "Upgrade", "Connection", "Sec-Websocket-Key", "Sec-Websocket-Version", "Host",
+		"Sec-Websocket-Extensions", "Sec-Websocket-Protocol":
 		return true
 	default:
 		return false

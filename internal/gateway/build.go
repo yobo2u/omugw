@@ -17,9 +17,11 @@ import (
 	"github.com/yobo2u/omugw/internal/provider"
 	"github.com/yobo2u/omugw/internal/provider/dashscopecompat"
 	dsnativeprovider "github.com/yobo2u/omugw/internal/provider/dashscopenative"
+	dsws "github.com/yobo2u/omugw/internal/provider/dashscoperealtime"
 	"github.com/yobo2u/omugw/internal/provider/passthrough"
 	"github.com/yobo2u/omugw/internal/router"
 	"github.com/yobo2u/omugw/internal/transport/httpx"
+	"github.com/yobo2u/omugw/internal/transport/ws"
 )
 
 // Built 是从配置组装出来的网关。
@@ -35,7 +37,9 @@ type Built struct {
 	//
 	// 不在 Build 里直接起 goroutine：Build 没有进程生命周期的概念，
 	// 在这里起一个没人能停的后台任务，测试里每 Build 一次就漏一个。
-	Discovery *discovery.Refresher
+	Discovery  *discovery.Refresher
+	wsRegistry *wsRegistry
+	wsBudget   *ws.BufferBudget
 }
 
 // Build 从配置组装网关。
@@ -44,6 +48,11 @@ type Built struct {
 // 只可能是代码写错，因此一律返回错误让启动失败——一个跑起来才发现路由指向
 // 空气的网关，比一个起不来的网关难查得多。
 func Build(cfg config.Config, m *degrade.Matrix, metrics *obs.Metrics, log *slog.Logger) (*Built, error) {
+	// 未取得真实整门证据前只装配出站，不注册生产入口。
+	return buildWithWS(cfg, m, metrics, log, false)
+}
+
+func buildWithWS(cfg config.Config, m *degrade.Matrix, metrics *obs.Metrics, log *slog.Logger, registerWS bool) (*Built, error) {
 	availability := degrade.DefaultAvailability()
 	availability[degrade.FeatureConversationStore] = cfg.ConvStore.Enabled
 	m.WithAvailability(availability)
@@ -55,6 +64,13 @@ func Build(cfg config.Config, m *degrade.Matrix, metrics *obs.Metrics, log *slog
 	})
 
 	built := &Built{Mux: mux}
+	// 兼容直接构造的旧 HTTP 配置；Load 的默认填充仍是正式配置入口。
+	if cfg.WebSocket == (config.WebSocket{}) {
+		cfg.WebSocket = config.DefaultWebSocket()
+	}
+	if err := built.initWebSockets(cfg.WebSocket); err != nil {
+		return nil, err
+	}
 	for _, r := range m.Routes() {
 		built.Registered++
 		if r.Implemented() {
@@ -86,6 +102,7 @@ func Build(cfg config.Config, m *degrade.Matrix, metrics *obs.Metrics, log *slog
 
 	endpoints := make(map[string]config.ProviderSpec, len(cfg.Providers))
 	provs := make(map[string]provider.Provider, len(cfg.Providers))
+	streams := make(map[string]provider.StreamProvider, len(cfg.Providers))
 	for _, p := range cfg.Providers {
 		endpoints[p.Endpoint] = p
 
@@ -101,12 +118,14 @@ func Build(cfg config.Config, m *degrade.Matrix, metrics *obs.Metrics, log *slog
 			// wire-compatible 而语义异构：请求仍走 Chat wire，路径由 handler 注入
 			// /v1/chat/completions，适配器自带同名兜底默认值。
 			provs[p.Endpoint] = dashscopecompat.New(client, nil)
+		case degrade.ProviderDashScopeWSRealtime:
+			streams[p.Endpoint] = dsws.New(cfg.Timeouts, cfg.WebSocket, built.wsBudget)
 		default:
 			// 未实现的协议族在这里就拒绝，而不是等请求打进来才发现没有适配器。
 			return nil, fmt.Errorf(
-				"gateway: provider %q 的协议族 %q 尚无出站适配器（已实现 %s、%s 与 %s）",
+				"gateway: provider %q 的协议族 %q 尚无出站适配器（已实现 %s、%s、%s 与 %s）",
 				p.Endpoint, p.Kind, degrade.ProviderOpenAICompat,
-				degrade.ProviderDashScopeCompatible, degrade.ProviderDashScopeNative)
+				degrade.ProviderDashScopeCompatible, degrade.ProviderDashScopeNative, degrade.ProviderDashScopeWSRealtime)
 		}
 	}
 
@@ -194,6 +213,16 @@ func Build(cfg config.Config, m *degrade.Matrix, metrics *obs.Metrics, log *slog
 	for _, d := range doors {
 		mux.Handle("POST "+string(d.endpoint), d.handler)
 		registered = append(registered, d.inbound())
+	}
+	if registerWS {
+		h := NewDashScopeRealtimeHandler(WSDeps{Matrix: m, Router: rt, Auth: auth, Metrics: metrics, Log: log,
+			Pools: pools, Providers: streams, Timeouts: cfg.Timeouts, Limits: cfg.WebSocket, Budget: built.wsBudget, Registry: built.wsRegistry})
+		if err := checkWSDoor(m, h); err != nil {
+			return nil, err
+		}
+		in := h.inbound()
+		mux.Handle(h.method()+" "+string(in.Endpoint), h)
+		registered = append(registered, in)
 	}
 
 	// 命名空间的方法兜底：不带方法的模式最不具体，只有既没命中精确端点、
