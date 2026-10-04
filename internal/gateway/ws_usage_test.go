@@ -95,6 +95,110 @@ func TestWSUsageLedgerCharacters(t *testing.T) {
 	}
 }
 
+func TestWSUsageLedgerDualUnits(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	ledger := newWSUsage(obs.NewMetrics(reg), "dashscope.realtime", "dashscope.realtime")
+	chars := int64(25)
+	e := dashscoperealtime.Event{Source: "response", ID: "r", Terminal: true, Usage: canonical.Usage{Fidelity: canonical.FidelityAuthoritative, InputTokens: 8, OutputTokens: 32, AudioOutputTokens: 32}, Characters: &chars}
+	for _, next := range []dashscoperealtime.Event{e, e, {Source: "response", ID: "pending", Started: true}} {
+		if err := ledger.Observe(next); err != nil {
+			t.Fatal(err)
+		}
+	}
+	chars = 26
+	if err := ledger.Observe(e); err != nil {
+		t.Fatal(err)
+	}
+	chars, e.Usage.OutputTokens = 25, 33
+	if err := ledger.Observe(e); err != nil {
+		t.Fatal(err)
+	}
+	ledger.Finish()
+	ledger.Finish()
+	for _, tt := range []struct {
+		name   string
+		labels map[string]string
+		want   float64
+	}{
+		{"omugw_ws_characters_total", nil, 25},
+		{"omugw_ws_tokens_total", map[string]string{"kind": "input"}, 8},
+		{"omugw_ws_tokens_total", map[string]string{"kind": "output"}, 32},
+		{"omugw_ws_tokens_total", map[string]string{"kind": "audio_output"}, 32},
+		{"omugw_tokens_total", map[string]string{"kind": "input"}, 8},
+		{"omugw_tokens_total", map[string]string{"kind": "output"}, 32},
+		{"omugw_ws_usage_records_total", map[string]string{"unit": "characters", "fidelity": "authoritative"}, 1},
+		{"omugw_ws_usage_records_total", map[string]string{"unit": "tokens", "fidelity": "authoritative"}, 1},
+		{"omugw_ws_usage_records_total", map[string]string{"unit": "tokens", "fidelity": "unavailable"}, 1},
+		{"omugw_ws_diagnostics_total", map[string]string{"reason": "usage_conflict"}, 2},
+	} {
+		if got := wsUsageMetricSum(t, reg, tt.name, tt.labels); got != tt.want {
+			t.Errorf("%s %v = %v, want %v", tt.name, tt.labels, got, tt.want)
+		}
+	}
+}
+
+func TestWSUsageLedgerInspectedUnits(t *testing.T) {
+	for _, tt := range []struct {
+		name, usage            string
+		tokens, chars, invalid float64
+	}{
+		{"observed", `{"characters":25,"input_tokens":8,"output_tokens":32,"total_tokens":40,"input_tokens_details":{"text_tokens":8},"output_tokens_details":{"text_tokens":0,"audio_tokens":32}}`, 1, 1, 0},
+		{"zero", `{"characters":0,"input_tokens":0,"output_tokens":0}`, 1, 1, 0},
+		{"only_characters", `{"characters":25}`, 0, 1, 0},
+		{"bad_tokens", `{"characters":25,"input_tokens":8,"output_tokens":null}`, 0, 1, 1},
+		{"bad_characters", `{"characters":null,"input_tokens":8,"output_tokens":32}`, 1, 0, 1},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			reg := prometheus.NewRegistry()
+			ledger := newWSUsage(obs.NewMetrics(reg), "dashscope.realtime", "dashscope.realtime")
+			e, err := dashscoperealtime.Inspect([]byte(`{"type":"response.done","response":{"id":"r","usage":` + tt.usage + `}}`))
+			if err != nil {
+				t.Fatal(err)
+			}
+			for i := 0; i < 2; i++ {
+				if err := ledger.Observe(e); err != nil {
+					t.Fatal(err)
+				}
+			}
+			ledger.Finish()
+			for unit, want := range map[string]float64{"tokens": tt.tokens, "characters": tt.chars} {
+				if got := wsUsageMetricSum(t, reg, "omugw_ws_usage_records_total", map[string]string{"unit": unit}); got != want {
+					t.Errorf("%s records=%v want=%v", unit, got, want)
+				}
+			}
+			if got := wsUsageMetricSum(t, reg, "omugw_ws_diagnostics_total", map[string]string{"reason": "usage_invalid"}); got != tt.invalid {
+				t.Errorf("invalid=%v want=%v", got, tt.invalid)
+			}
+		})
+	}
+}
+
+func TestWSUsageLedgerLateInvalidUnit(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	ledger := newWSUsage(obs.NewMetrics(reg), "dashscope.realtime", "dashscope.realtime")
+	for _, usage := range []string{`{"characters":25}`, `{"characters":25,"input_tokens":null}`} {
+		e, err := dashscoperealtime.Inspect([]byte(`{"type":"response.done","response":{"id":"r","usage":` + usage + `}}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := ledger.Observe(e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ledger.Finish()
+	for _, reason := range []string{"usage_invalid", "usage_conflict"} {
+		if got := wsUsageMetricSum(t, reg, "omugw_ws_diagnostics_total", map[string]string{"reason": reason}); got != 1 {
+			t.Errorf("迟到非法单位被去重吞掉：%s=%v", reason, got)
+		}
+	}
+	if got := wsUsageMetricSum(t, reg, "omugw_ws_characters_total", nil); got != 25 {
+		t.Fatal(got)
+	}
+	if got := wsUsageMetricSum(t, reg, "omugw_ws_usage_records_total", map[string]string{"unit": "tokens"}); got != 0 {
+		t.Fatal(got)
+	}
+}
+
 func TestWSUsageLedgerBoundaries(t *testing.T) {
 	for _, pending := range []bool{false, true} {
 		t.Run(fmt.Sprint("pending=", pending), func(t *testing.T) {

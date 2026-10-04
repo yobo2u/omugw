@@ -123,46 +123,57 @@ func inspectUsage(v jsonValue) (canonical.Usage, *int64, string) {
 	if v[0] != '{' {
 		return unavailable, nil, "usage_unverified"
 	}
-	var values [6]jsonValue
-	for i, name := range [...]string{"characters", "input_tokens", "output_tokens", "total_tokens", "input_tokens_details", "output_tokens_details"} {
+	// 两组独立核验：一组坏值不能抹掉另一组已被上游明确报告的计量。
+	var characters *int64
+	raw, err := v.field("characters")
+	invalidCharacters := err != nil
+	if raw != nil {
+		n, ok := raw.count()
+		invalidCharacters = !ok
+		if ok {
+			characters = &n
+		}
+	}
+	u, diagnostic := inspectTokens(v)
+	if invalidCharacters {
+		diagnostic = "usage_invalid"
+	} else if characters != nil && diagnostic == "usage_unverified" {
+		// 没有 token 组的字符计量仍合法，不据此发布零 token。
+		diagnostic = ""
+	}
+	return u, characters, diagnostic
+}
+
+func inspectTokens(v jsonValue) (canonical.Usage, string) {
+	unavailable := canonical.UnavailableUsage()
+	var values [5]jsonValue
+	for i, name := range [...]string{"input_tokens", "output_tokens", "total_tokens", "input_tokens_details", "output_tokens_details"} {
 		var err error
 		values[i], err = v.field(name)
 		if err != nil {
-			return unavailable, nil, "usage_invalid"
+			return unavailable, "usage_invalid"
 		}
 	}
-	if values[0] != nil {
-		for _, tokenField := range values[1:] {
-			if tokenField != nil {
-				return unavailable, nil, "usage_ambiguous"
-			}
-		}
-		characters, ok := values[0].count()
-		if !ok {
-			return unavailable, nil, "usage_invalid"
-		}
-		return unavailable, &characters, ""
+	if values[0] == nil && values[1] == nil && values[2] == nil && values[3] == nil && values[4] == nil {
+		return unavailable, "usage_unverified"
 	}
-	if values[1] == nil && values[2] == nil && values[3] == nil && values[4] == nil && values[5] == nil {
-		return unavailable, nil, "usage_unverified"
-	}
-	input, okIn := values[1].count()
-	output, okOut := values[2].count()
+	input, okIn := values[0].count()
+	output, okOut := values[1].count()
 	if !okIn || !okOut || input > math.MaxInt64-output {
-		return unavailable, nil, "usage_invalid"
+		return unavailable, "usage_invalid"
 	}
-	if values[3] != nil {
-		total, ok := values[3].count()
+	if values[2] != nil {
+		total, ok := values[2].count()
 		if !ok || total != input+output {
-			return unavailable, nil, "usage_invalid"
+			return unavailable, "usage_invalid"
 		}
 	}
-	audioIn, okIn := audioTokens(values[4], input)
-	audioOut, okOut := audioTokens(values[5], output)
+	audioIn, okIn := audioTokens(values[3], input)
+	audioOut, okOut := audioTokens(values[4], output)
 	if !okIn || !okOut {
-		return unavailable, nil, "usage_invalid"
+		return unavailable, "usage_invalid"
 	}
-	return canonical.Usage{Fidelity: canonical.FidelityAuthoritative, InputTokens: input, OutputTokens: output, AudioInputTokens: audioIn, AudioOutputTokens: audioOut}, nil, ""
+	return canonical.Usage{Fidelity: canonical.FidelityAuthoritative, InputTokens: input, OutputTokens: output, AudioInputTokens: audioIn, AudioOutputTokens: audioOut}, ""
 }
 
 func audioTokens(v jsonValue, total int64) (int64, bool) {
@@ -170,6 +181,7 @@ func audioTokens(v jsonValue, total int64) (int64, bool) {
 		return 0, true
 	}
 	var audio, text int64
+	present := false
 	for _, name := range [...]string{"audio_tokens", "text_tokens"} {
 		raw, err := v.field(name)
 		if err != nil {
@@ -178,6 +190,7 @@ func audioTokens(v jsonValue, total int64) (int64, bool) {
 		if raw == nil {
 			continue
 		}
+		present = true
 		n, ok := raw.count()
 		if !ok || n > total {
 			return 0, false
@@ -188,7 +201,8 @@ func audioTokens(v jsonValue, total int64) (int64, bool) {
 			text = n
 		}
 	}
-	return audio, audio <= total-text
+	// 有明细就必须能对齐该侧总量；缺一项仅在已给项覆盖总量时成立，不估算余数。
+	return audio, present && audio == total-text
 }
 
 func inspectFailure(root jsonValue) *canonical.Error {

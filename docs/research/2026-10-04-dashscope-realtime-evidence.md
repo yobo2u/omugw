@@ -1,7 +1,8 @@
 # DashScope Realtime 独立录制与证据表
 
-日期：2026-10-04。Task 5 实现工具及离线验证；控制器随后实际调用两次，均在业务输入前
-因配置确认失败停止，未出现 usage。Task 6 据此离线修正录制器，**尚无完整真实能力结论**。
+日期：2026-10-04。Task 5 实现工具及离线验证；控制器随后实际调用三次。前两次在业务
+输入前因配置确认失败停止；第三次完成 TTS 业务但未取得关闭回应，仍是失败录制。
+Task 6 据此离线修正配置确认、收尾及双单位用量，**尚无完整真实能力结论**。
 
 ## 工具边界
 
@@ -55,9 +56,15 @@ URL、原始头、secret、消息正文或 close reason。原始消息是私有�
 - `upstream.send=recorded`；`client.receive=golden` 根据同契约保全要求派生。原消息字节
   不重编码，已知动态 ID 使用 testkit bind/reference；其他字段严格匹配，转发还检查字节。
 - `After` 固化本次序列和四点接收关系，只声明本候选的保守调度，不将录制时序当协议通则。
-- TTS 等待服务端 `session.finished` 及真实 close。Omni 发出正常 close 控制帧后独立等
-  上游回应。只写出 close、raw EOF、超时、错误、未确认配置都不能交付成功候选。
-- 原始轨迹保留双向 close。候选只表达主动关闭与对侧接收一对，自动 close 回应不重复
+- TTS 在配置、音频、response 终态及 `session.finished` 充分后，与 Omni 共用主动正常
+  close 握手，不再假设业务完成后上游必主动关 socket。close 写入和等待共享一秒计时，
+  仍受会话总期限约束，退出前 join worker。只写出 close、raw EOF、超时、额外业务消息、
+  非正常 close 或未确认配置都不能交付成功候选。
+- 对端先 close 时 transport 已自动回应，主动写可能返回 ErrClosed；录制器仍读取实际
+  CloseError，原样保留收到的 code/reason，只在显式写成功时记 send。不能把幂等成功、
+  自动回应或收到一帧推断成同码同 reason 的发送证据。自动回应不另造 send 记录。
+- 原始轨迹保留可观察的 send/receive close；自动回应无独立发送结果，不补写 send。
+  候选只表达主动关闭与对侧接收一对，自动 close 回应不重复
   排入回放；发送方主动关闭的接收证据来自匹配的实际回应。正常业务完成且关闭证据齐全
   才是 `completed`。取消响应场景为 `interrupted`，不伪造 completed 业务终态。
 - 来源摘要只证明账本自洽。离线 TCP 脚本和回放通过不证明真实上游支持。
@@ -89,8 +96,8 @@ URL、原始头、secret、消息正文或 close reason。原始消息是私有�
 
 ## 已执行批次与 Task 6 契约修正
 
-批次固定为 `.local/recordings/dsrealtime/batch-20261004`，已占用 `.attempt-1` 与
-`.attempt-2`，即 **2/8 次已使用、最多剩余 6 次**。两份 `recording.json` 的 payload
+批次固定为 `.local/recordings/dsrealtime/batch-20261004`，已占用 `.attempt-1` 至
+`.attempt-3`，即 **3/8 次已使用、最多剩余 5 次**。前两份 `recording.json` 的 payload
 均已 base64 解码核验：各只有接收 created、发送 update、接收 updated 和本地 close，
 101 成功后都以 `unconfirmed_config` 停止，`configuration_confirmed=false`。没有业务
 输入、response、usage、成功候选或音频样本；usage 缺失不等于零费用。
@@ -104,6 +111,19 @@ URL、原始头、secret、消息正文或 close reason。原始消息是私有�
 
 - `tts-commit/recording.json`：`c739b82a7e14bd6734a016c9489d3924dbf89b1db64e63b53ca936b0cf504b3e`
 - `text-tools/recording.json`：`422733c7d27dd5a94cc22dffa234d004d7ee4bea7c346b1e6d3db618ed775aa4`
+- 第三次 `tts-commit-v2/recording.json`：`e058ed64c661109c893bc01fc120585cb50658cfba91d14734a3a210e9468977`
+
+第三次真实调用为北京时间 12:50:57，模型仍为 `qwen3-tts-flash-realtime`。配置确认后
+实际提交固定短句及 commit，收到了 8 条 audio.delta、completed response.done，随后
+发送 session.finish 并收到了 session.finished。录制器继续等待供应商主动 close，约
+15 秒后 `read_failed_or_raw_eof`；末尾只有本地 send close，没有实际 receive close。
+历史文件保持失败，不能补造成功 candidate 或音频样本账本。
+
+该次 response.done 原始计量为 characters=25、input/output/total_tokens=8/32/40，
+input_tokens_details.text_tokens=8，output_tokens_details.text_tokens/audio_tokens=0/32。
+字符数与固定短句的字数不同，照实保留 25；两种原始单位既不相加，也不推算成双份账单。
+协议解析与账本的逐组校验、异常组保留策略详见
+[用量契约](2026-10-04-dashscope-realtime-usage-contract.md)。
 
 Task 6 的离线处理边界：
 
@@ -122,13 +142,18 @@ Task 6 的离线处理边界：
    或仅有 legacy 音频格式仍拒绝。
 5. 离线 TCP 回归使用两份实际回显的字面副本验证配置门禁，并保留失败负例、消息原字节、
    同 response 自动提交/取消证据链。后续合成业务事件仅验证工具，不填入真实能力账本。
+6. 新增第三次业务形状的 TCP 回归：空 committed.item_id、response 输出嵌套结构、八条
+   audio.delta、双单位 done、session.finished 后保持连接；只有客户端发 close 才回应。
+   动态 ID 简化，音频缩为合成 PCM，关闭来自本地测试连接。成功候选经过完整 testkit 回放；
+   同时保留 peer-first/竞争、raw EOF、无回应超时、额外消息、异常码负例。原实录未改写，
+   合成关闭与本地回放成功不能升级其来源或证明真实服务已成功关闭。
 
 ## 控制器显式命令
 
 以下是控制器后续显式执行的模板，Task 6 未执行任何真实调用。已失败的 `tts-commit`
 与 `text-tools` 目录不可覆盖；若控制器继续，使用下面同批次的新 run 目录，并核对总尝试数。
 请从仓库根执行。`DASHSCOPE_API_KEY` 由安全环境预先提供，禁止把值写进命令或日志。
-五条命令每条各消耗一个会话，先审阅上一份结果再执行下一条；本批最多八次，已使用两次，
+五条命令每条各消耗一个会话，先审阅上一份结果再执行下一条；本批最多八次，已使用三次，
 命令不循环、不自动重跑、不换 batch。
 
 ```bash
@@ -211,7 +236,9 @@ response.cancel 并绑定取消目标。官方 cancel 不带 response_id，录�
 ## 15 项能力的真实证据账本
 
 取得完整真实调用后填写：候选相对路径、SHA-256、`nodes[].id`、回显模型、usage、人工结论。
-15 项当前均未取得完整证据；只有上述两份失败配置轨迹。下列是审核标准，不是能力完成声明。
+15 项当前均未取得完整证据；上述两份配置失败轨迹及第三份收尾失败轨迹只能作局部事实与
+诊断依据。下表“未录制”指未取得可投放的完整 fixture，不否认第三次已收到 TTS 业务消息。
+下列是审核标准，不是能力完成声明。
 
 | 能力 | 场景 / 必须定位的轨迹与字段 | 保全断言 / 当前缺口 |
 |---|---|---|
@@ -225,7 +252,7 @@ response.cancel 并绑定取消目标。官方 cancel 不带 response_id，录�
 | speech_synthesis | TTS 固定短句、Cherry 回显、非空 PCM、done | 输入文本/音色/格式/输出字节，人工试听；未录制 |
 | speech_recognition | transcription.completed.item_id + 非空 transcript | 与真实落盘短句对应，不能以 chirp 或 commit 充当 ASR；未录制 |
 | stateful_conversation | 第二轮复述第一轮口令，发生在工具结果回传之前 | 人工核对轮次和正文，**不自动加 Coverage**；未录制 |
-| realtime_session | session.created/updated 的实际结构和配置 | 已录两份失败配置轨迹；未取得配置确认后的完整会话证据 |
+| realtime_session | session.created/updated 的实际结构和配置 | 两份配置失败、第三份已确认配置但关闭失败；未取得完整会话证据 |
 | realtime_server_vad | speech_started、speech_stopped、committed | item_id、时间字段、原消息因果顺序；未录制 |
 | realtime_interrupt_turns | response.created → 活跃时同实体非空 audio.delta → cancel → 同目标 cancelled done | 拒绝错ID、空音频、提前终结及终态ID复用；见证/Coverage绑定同链；未录制 |
 | realtime_image_input | 音频 append → image append → commit → 真实视觉回答 | 图像 SHA 和字节；理解证据人工审阅，**不自动加 Coverage**；未录制 |

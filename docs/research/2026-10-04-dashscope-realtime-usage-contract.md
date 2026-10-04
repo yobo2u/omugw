@@ -1,6 +1,6 @@
 # DashScope Realtime 只读用量契约
 
-核验日期：2026-10-04。范围为 S1 Task 2 的协议观测、去重账本与指标。
+核验日期：2026-10-04。范围为 S1 Task 2 的协议观测、去重账本与指标，以及 Task 6 实录驱动修正。
 
 ## 依据与证据边界
 
@@ -32,9 +32,18 @@
 - `bailian-docs-llm-wiki/raw/model-api-reference/audio-api-references/speech-synthesis-api-reference/qwen-tts-realtime-api-reference/qwen-tts-realtime-server-events.md`：
   7–40、594–754、757–774 行。
 
-以上证明**公开契约**，不证明指定模型/快照的线上实现与账单。测试数据是人工构造的离线数据，
-后续生产投放仍需独立直连录制：模型回显版本、真实 usage 形状、失败/取消是否携用量、
-重复终态及转写开关的行为。合成 wiki 与 raw 有冲突时不采用其合成结论。
+以上文档证明**公开契约**，不证明指定模型/快照的线上实现与账单。Task 6 核验控制器第三次
+直连实录 `.local/recordings/dsrealtime/batch-20261004/tts-commit-v2/recording.json`：
+`qwen3-tts-flash-realtime` 的 completed `response.done.response.usage` 同时包含
+`characters=25`、`input_tokens=8`、`output_tokens=32`、`total_tokens=40`，输入明细
+`text_tokens=8`，输出明细 `text_tokens=0/audio_tokens=32`。这推翻了 Task 2 从两个
+文档示例推断单位互斥的假设。原始文件 SHA-256 为
+`e058ed64c661109c893bc01fc120585cb50658cfba91d14734a3a210e9468977`。
+
+该次会话业务完成但关闭证据不足，原录制仍为失败，不构成完整能力 fixture；本次修正只做
+离线验证。25 是上游原始计量，不按固定输入的 13 字重算，不换算成 token；同时返回两种
+计量不代表应按两者重复收费。模型计价单位、原始计量和实际账单必须分别核对。后续仍需
+完整独立录制、失败/取消是否携用量、重复终态与转写开关的真实行为证据。
 
 ## 只读窥探器
 
@@ -58,14 +67,21 @@
 |---|---|---|
 | `response.usage` 中 input/output 都是非负 int64 整数 | `Usage.Authoritative` | 无 |
 | 仅已知字符形状 `characters`，含合法 0 | `Characters` 非 nil；`Usage.Unavailable` | 无 |
-| characters 与任一已知 token 总量/明细字段同时出现（包括 null） | 不发布数字 | `usage_ambiguous` |
+| 字符与 token 组均合法，含两组都是 0 | 同时返回 `Characters` 和 `Usage.Authoritative` | 无 |
+| 一组非法，另一组合法 | 仅保留合法组；非法字符组为 nil，非法 token 组为 unavailable | `usage_invalid` |
 | 缺失/null usage | unavailable | `usage_missing` |
 | 空对象或未验证的形状、转写/session 的新 usage | unavailable | `usage_unverified` |
-| 已识别形状含负数、浮点/指数、字符串数字、溢出、缺必要数字或重复关键字段 | unavailable | `usage_invalid` |
+| 已识别组含负数、浮点/指数、字符串数字、溢出、缺必要数字或重复关键字段 | 对应组不可用；两组都非法时不发布数字 | `usage_invalid` |
 
-token 总计若存在必须等于 input + output，两者相加也不能溢出 int64。
-可选明细对象若存在必须合法，audio/text 分项不能为负、溢出或超出该侧总量。
-未给明细时不推算音频分项。缓存、推理、插件计次等未知明细不外推到 Canonical 用量。
+两组分别校验，重复键也只使所属组失效；重复整个 `usage` 则没有可分离的可信组，全部拒收。
+字符组只有一个必需的非负 int64 字段。token 组以 input/output 为必需字段，总计和明细
+保持可选以兼容单单位契约；组完全缺失不是非法，出现任一 token 字段却缺 input/output
+就是残缺。显式 null 不等于缺字段。token 总计若存在必须等于 input + output，两者相加
+也不能溢出 int64。可选明细对象若存在，至少有一个已知 audio/text 数字，且已给分项之和
+必须等于该侧总量；允许实录的仅 `text_tokens=8`，不接受空对象、未知分项充数或未覆盖的
+差额。分项不能为负、溢出、null 或重复。完全未给明细时不推算音频分项。
+未知附加字段仍不外推；仅未知形状为 `usage_unverified`，只有未知明细的已识别 token
+组因无法对账为 `usage_invalid`。缓存、推理、插件计次等不外推到 Canonical 用量。
 `cancelled`、`failed` 终态带合法 usage 仍照实采集，不因状态丢掉账。
 相同数值格式不代表相同计量单位；characters 永远不换算 token。
 
@@ -82,8 +98,9 @@ token 总计若存在必须等于 input + output，两者相加也不能溢出 i
 - 已结和未结合计最多 **4096 笔**；第 4097 个新键返回 `errWSUsageLimit` 并记
   `ledger_limit`。旧键不淘汰，到限后已有未结项仍可结算、旧终态仍可去重。
   后续 relay 应把此本地策略错误作为 1008 终止原因；本任务没有接管连接关闭。
-- 首份终态胜出；比较完整 `canonical.Usage` 与字符存在性/值，字符数按值保存。
+- 首份终态胜出；比较完整 `canonical.Usage`、字符存在性/值和诊断，字符数按值保存。
   同值重复不再计数；不同值只报 `usage_conflict`，不补差、不撤销已发布数字。
+  迟到非法组即使归一后仍是 unavailable，也因诊断改变报冲突并报告新诊断，不能被去重吞掉。
   终态后的迟到 started 不能重开账。状态与原始 JSON 排序不参与计费比较。
 - `Finish` 幂等，仅将仍未结项发布为 unavailable + `usage_unfinished`；已收权威记录
   不被断开清零。Finish 后 Observe 返回固定错误，不能重新开账。
@@ -94,13 +111,15 @@ token 总计若存在必须等于 input + output，两者相加也不能溢出 i
 
 | 指标 | 标签 | 口径 |
 |---|---|---|
-| `omugw_ws_usage_records_total` | protocol, source, unit, fidelity | 独立已结记录数；零值与不可知均可见 |
+| `omugw_ws_usage_records_total` | protocol, source, unit, fidelity | 每单位的已结记录数；一个双单位终态各记一笔，不能加总为响应数 |
 | `omugw_ws_tokens_total` | protocol, source, fidelity, kind | input/output/audio_input/audio_output 正数分项 |
 | `omugw_ws_characters_total` | protocol, source, fidelity | 上游字符单位，fidelity 固定 authoritative |
 | `omugw_ws_diagnostics_total` | protocol, reason | 固定诊断分类 |
 
-合法字符事件只发布 `unit=characters/fidelity=authoritative` 的记录及字符数，
-不会发布虚构的零 token 记录；正常 token 事件也同步现有 `omugw_tokens_total`，
+仅有合法字符的事件只发布 `unit=characters/fidelity=authoritative` 的记录及字符数，
+不会发布虚构的零 token 记录；两单位都合法时各自发布，字符组与 token 组绝不相加。
+一组非法时只发布另一合法组并报告诊断，两组都不可用时沿用 unavailable 记录。
+正常 token 事件也同步现有 `omugw_tokens_total`，
 两类 token 指标是不同观测视角，不应再相加。
 缺少 session/transcription 用量时只发布 unavailable 记录，不发布 token 数字。
 协议、来源、诊断均有白名单，标签没有动态 ID/model/message。

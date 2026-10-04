@@ -66,10 +66,6 @@ func TestInspectRealtimeUsageShapes(t *testing.T) {
 		{"characters_overflow", `{"characters":9223372036854775808}`, "usage_invalid", 0, 0, 0, false},
 		{"characters_float", `{"characters":1.0}`, "usage_invalid", 0, 0, 0, false},
 		{"characters_null", `{"characters":null}`, "usage_invalid", 0, 0, 0, false},
-		{"characters_and_tokens", `{"characters":25,"input_tokens":1,"output_tokens":2}`, "usage_ambiguous", 0, 0, 0, false},
-		{"characters_and_null_tokens", `{"characters":25,"input_tokens":null}`, "usage_ambiguous", 0, 0, 0, false},
-		{"characters_and_details", `{"characters":25,"output_tokens_details":{"audio_tokens":1}}`, "usage_ambiguous", 0, 0, 0, false},
-		{"characters_and_total", `{"characters":25,"total_tokens":2}`, "usage_ambiguous", 0, 0, 0, false},
 		{"negative", `{"input_tokens":-1,"output_tokens":2}`, "usage_invalid", 0, 0, 0, false},
 		{"overflow", `{"input_tokens":9223372036854775808,"output_tokens":2}`, "usage_invalid", 0, 0, 0, false},
 		{"sum_overflow", `{"input_tokens":9223372036854775807,"output_tokens":1}`, "usage_invalid", 0, 0, 0, false},
@@ -111,6 +107,57 @@ func TestInspectRealtimeUsageShapes(t *testing.T) {
 			}
 			if !bytes.Equal(raw, before) {
 				t.Fatal("负载发生变更")
+			}
+		})
+	}
+}
+
+func TestInspectRealtimeDualUsage(t *testing.T) {
+	// 第三次实录的两个单位独立保全；25 不是从输入文字长度或 token 推算。
+	const tokens = `"input_tokens":8,"output_tokens":32,"total_tokens":40,"input_tokens_details":{"text_tokens":8},"output_tokens_details":{"text_tokens":0,"audio_tokens":32}`
+	wantTokens := canonical.Usage{Fidelity: canonical.FidelityAuthoritative, InputTokens: 8, OutputTokens: 32, AudioOutputTokens: 32}
+	for _, tt := range []struct {
+		name, fields, diagnostic string
+		usage                    canonical.Usage
+		chars                    int64
+	}{
+		{"observed", `"characters":25,` + tokens, "", wantTokens, 25},
+		{"zero", `"characters":0,"input_tokens":0,"output_tokens":0,"total_tokens":0,"input_tokens_details":{"text_tokens":0},"output_tokens_details":{"text_tokens":0,"audio_tokens":0}`, "", canonical.Usage{Fidelity: canonical.FidelityAuthoritative}, 0},
+		{"missing_characters", tokens, "", wantTokens, -1},
+		{"null_characters", `"characters":null,` + tokens, "usage_invalid", wantTokens, -1},
+		{"negative_characters", `"characters":-1,` + tokens, "usage_invalid", wantTokens, -1},
+		{"overflow_characters", `"characters":9223372036854775808,` + tokens, "usage_invalid", wantTokens, -1},
+		{"duplicate_characters", `"characters":25,"charact\u0065rs":26,` + tokens, "usage_invalid", wantTokens, -1},
+		{"missing_tokens", `"characters":25`, "", canonical.UnavailableUsage(), 25},
+		{"missing_output", `"characters":25,"input_tokens":8`, "usage_invalid", canonical.UnavailableUsage(), 25},
+		{"null_input", `"characters":25,"input_tokens":null,"output_tokens":32`, "usage_invalid", canonical.UnavailableUsage(), 25},
+		{"negative_output", `"characters":25,"input_tokens":8,"output_tokens":-1`, "usage_invalid", canonical.UnavailableUsage(), 25},
+		{"overflow_output", `"characters":25,"input_tokens":8,"output_tokens":9223372036854775808`, "usage_invalid", canonical.UnavailableUsage(), 25},
+		{"sum_overflow", `"characters":25,"input_tokens":9223372036854775807,"output_tokens":1`, "usage_invalid", canonical.UnavailableUsage(), 25},
+		{"null_total", `"characters":25,"input_tokens":8,"output_tokens":32,"total_tokens":null`, "usage_invalid", canonical.UnavailableUsage(), 25},
+		{"wrong_total", `"characters":25,"input_tokens":8,"output_tokens":32,"total_tokens":41`, "usage_invalid", canonical.UnavailableUsage(), 25},
+		{"only_total", `"characters":25,"total_tokens":40`, "usage_invalid", canonical.UnavailableUsage(), 25},
+		{"only_details", `"characters":25,"output_tokens_details":{"audio_tokens":32}`, "usage_invalid", canonical.UnavailableUsage(), 25},
+		{"duplicate_tokens", `"characters":25,"input_tokens":8,"input_tokens":9,"output_tokens":32`, "usage_invalid", canonical.UnavailableUsage(), 25},
+		{"both_invalid", `"characters":null,"input_tokens":null`, "usage_invalid", canonical.UnavailableUsage(), -1},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			raw := []byte(`{"type":"response.done","response":{"id":"r","status":"completed","usage":{` + tt.fields + `}}}`)
+			before := bytes.Clone(raw)
+			e, err := Inspect(raw)
+			if err != nil || e.Usage != tt.usage || e.Diagnostic != tt.diagnostic || (e.Characters != nil) != (tt.chars >= 0) || e.Characters != nil && *e.Characters != tt.chars {
+				t.Fatalf("event=%+v characters=%v err=%v", e, e.Characters, err)
+			}
+			if !bytes.Equal(raw, before) {
+				t.Fatal("双单位观测改写了原始负载")
+			}
+		})
+	}
+	for _, details := range []string{`null`, `{}`, `{"future_tokens":32}`, `{"audio_tokens":null}`, `{"audio_tokens":-1}`, `{"audio_tokens":9223372036854775808}`, `{"audio_tokens":33}`, `{"text_tokens":1,"audio_tokens":32}`, `{"text_tokens":0,"audio_tokens":31}`, `{"audio_tokens":32,"audio_tokens":0}`} {
+		t.Run("invalid_details_"+details, func(t *testing.T) {
+			e, err := Inspect([]byte(`{"type":"response.done","response":{"id":"r","usage":{"characters":25,"input_tokens":8,"output_tokens":32,"output_tokens_details":` + details + `}}}`))
+			if err != nil || e.Diagnostic != "usage_invalid" || e.Usage != canonical.UnavailableUsage() || e.Characters == nil || *e.Characters != 25 {
+				t.Fatalf("非法 token 明细污染了独立字符组：%+v %v", e, err)
 			}
 		})
 	}
@@ -235,6 +282,7 @@ func FuzzInspectRealtimeReadOnly(f *testing.F) {
 	for _, seed := range []string{
 		`{"type":"response.done","response":{"id":"r","usage":{"input_tokens":1,"output_tokens":2}}}`,
 		`{"type":"response.done","response":{"id":"r","usage":{"characters":0}}}`,
+		`{"type":"response.done","response":{"id":"r","usage":{"characters":25,"input_tokens":8,"output_tokens":32,"total_tokens":40,"input_tokens_details":{"text_tokens":8},"output_tokens_details":{"text_tokens":0,"audio_tokens":32}}}}`,
 		`{"ignored":[{"x":"\\\"{}"},true,null,1e2],"type":"future"}`,
 		`{"ty\u0070e":"response.created","response":{"id":"\ud83d\ude00"}}`,
 		`{"type":"response.done","response":{"id":"\ud800"}}`,
@@ -257,8 +305,8 @@ func FuzzInspectRealtimeReadOnly(f *testing.F) {
 		if e.Usage.Validate() != nil || len(e.ID) > 512 || len(e.Type) > 128 || len(e.Status) > 128 {
 			t.Fatal("返回观测值越界")
 		}
-		if e.Characters != nil && (*e.Characters < 0 || e.Usage.Fidelity != canonical.FidelityUnavailable) {
-			t.Fatal("字符与 token 形状混淆")
+		if e.Characters != nil && *e.Characters < 0 {
+			t.Fatal("字符数不得为负")
 		}
 	})
 }

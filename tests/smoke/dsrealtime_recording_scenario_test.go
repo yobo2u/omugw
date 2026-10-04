@@ -154,12 +154,13 @@ func dsCapture(parent context.Context, cfg dsConfig) dsRecording {
 // CloseWithResult 会立即释放 socket；录制器先显式发控制帧并独立读回应，才有跨端证据。
 // 等待被一秒及会话总期限双重约束；失败仍由 capture 的关闭/worker join 兜底。
 func (d *dsDriver) closeHandshake() error {
-	if err := d.c.WriteMessage(ws.OpClose, ws.EncodeClosePayload(1000, "")); err != nil {
-		return errors.New("close_write_failed")
-	}
-	d.r.Records = append(d.r.Records, dsRecord{Direction: "send", Kind: "close", CloseCode: 1000})
+	// 写也占用这一秒；对端可能已被 reader 自动关闭，或在本次写持锁期间抢先关闭。
+	// ErrClosed/底层写错都不是发送证据，但仍须读取通道里的实际关闭码与原因。
 	timer := time.NewTimer(time.Second)
 	defer timer.Stop()
+	if err := d.c.WriteMessage(ws.OpClose, ws.EncodeClosePayload(1000, "")); err == nil {
+		d.r.Records = append(d.r.Records, dsRecord{Direction: "send", Kind: "close", CloseCode: 1000})
+	}
 	select {
 	case <-d.ctx.Done():
 		return errors.New("timeout_or_cancelled")
@@ -455,8 +456,7 @@ func (d *dsDriver) tts() error {
 	if len(d.responseDone) != 1 || len(d.r.Audio) == 0 {
 		return errors.New("missing_tts_audio_or_terminal")
 	}
-	_, err := d.wait("recorder.peer_close")
-	return err
+	return nil
 }
 
 func (d *dsDriver) textItem(id, text string) error {

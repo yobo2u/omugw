@@ -23,6 +23,7 @@ type wsUsageRecord struct {
 	usage         canonical.Usage
 	characters    int64
 	hasCharacters bool
+	diagnostic    string
 }
 
 // wsUsage 只由上游观测 goroutine 调用；Finish 须在它退出后调用。
@@ -67,14 +68,18 @@ func (w *wsUsage) Observe(e dashscoperealtime.Event) error {
 	if e.Source == "session" {
 		w.sessionID = e.ID
 	}
-	record := wsUsageRecord{terminal: e.Terminal, usage: e.Usage, hasCharacters: e.Characters != nil}
+	record := wsUsageRecord{terminal: e.Terminal, usage: e.Usage, hasCharacters: e.Characters != nil, diagnostic: e.Diagnostic}
 	if e.Characters != nil {
 		// 不借用调用方的字符指针，防外部复用内存使重复校验失效。
 		record.characters = *e.Characters
 	}
 	if previous.terminal {
-		if e.Terminal && (previous.usage != record.usage || previous.hasCharacters != record.hasCharacters || previous.characters != record.characters) {
+		if e.Terminal && previous != record {
 			w.diagnostic("usage_conflict")
+			// 缺单位与非法单位都会产生 unavailable；不能据此吞掉迟到的非法组诊断。
+			if previous.diagnostic != record.diagnostic {
+				w.diagnostic(record.diagnostic)
+			}
 		}
 		return nil
 	}
@@ -108,7 +113,9 @@ func (w *wsUsage) publish(source string, record wsUsageRecord) {
 	}
 	if record.hasCharacters {
 		w.metrics.ObserveWSCharacters(w.protocol, source, record.characters)
-	} else {
+	}
+	// 字符与 token 是独立单位；只有字符时不能另记一份不可知/零 token。
+	if !record.hasCharacters || record.usage.Fidelity == canonical.FidelityAuthoritative {
 		w.metrics.ObserveWSUsage(w.protocol, source, record.usage)
 		w.metrics.ObserveUsage(w.outbound, record.usage)
 	}
