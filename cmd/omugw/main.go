@@ -118,11 +118,13 @@ func run() error {
 		ReadTimeout: cfg.Timeouts.Total,
 		// WriteTimeout 会把长流式响应直接掐断，因此只限制请求读取。
 		ReadHeaderTimeout: cfg.Timeouts.Connect,
+		MaxHeaderBytes:    64 << 10,
 	}
 	metricsSrv := &http.Server{
 		Addr:              cfg.Server.MetricsAddr,
 		Handler:           metricsMux(reg),
 		ReadHeaderTimeout: 5 * time.Second,
+		MaxHeaderBytes:    64 << 10,
 	}
 
 	errCh := make(chan error, 2)
@@ -139,18 +141,32 @@ func run() error {
 		"discovery_enabled", cfg.Discovery.Enabled,
 	)
 
+	var serveErr error
 	select {
 	case err := <-errCh:
-		return err
+		serveErr = err
 	case <-ctx.Done():
 		log.Info("收到退出信号，开始优雅关闭")
 	}
+	stop()
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	_ = metricsSrv.Shutdown(shutdownCtx)
-	return gwSrv.Shutdown(shutdownCtx)
+	return errors.Join(serveErr, shutdownServers(shutdownCtx, built, gwSrv, metricsSrv))
+}
+
+// 封口必须先于 HTTP 停机；但 WS join 不能串行占尽同一退出预算。已取消 ctx
+// 只退出第一次等待，registry 的封口/排空仍生效，后一次调用 join 同一生命周期。
+func shutdownServers(ctx context.Context, built interface{ ShutdownWebSockets(context.Context) error }, gateway, metrics *http.Server) error {
+	seal, cancel := context.WithCancel(ctx)
+	cancel()
+	_ = built.ShutdownWebSockets(seal)
+	results := make(chan error, 3)
+	go func() { results <- built.ShutdownWebSockets(ctx) }()
+	go func() { results <- gateway.Shutdown(ctx) }()
+	go func() { results <- metrics.Shutdown(ctx) }()
+	return errors.Join(<-results, <-results, <-results)
 }
 
 func serve(s *http.Server, name string, log interface{ Error(string, ...any) }, errCh chan<- error) {
