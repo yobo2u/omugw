@@ -966,6 +966,94 @@ func TestProductionCloseReasonCancellation(t *testing.T) {
 	})
 }
 
+// 只在真实 pong 完整写出后的期限清除处暂停，防止以伪造写结果冒充心跳交换。
+type productionPongReturnGate struct {
+	net.Conn
+	entered, release chan struct{}
+	once, opened     sync.Once
+}
+
+func (g *productionPongReturnGate) SetWriteDeadline(d time.Time) error {
+	err := g.Conn.SetWriteDeadline(d)
+	if d.IsZero() {
+		g.once.Do(func() { close(g.entered); <-g.release })
+	}
+	return err
+}
+
+func (g *productionPongReturnGate) open() { g.opened.Do(func() { close(g.release) }) }
+
+// 读循环先观察到取消时也必须释放 TCP；撤销迟到回调不能把错误退出当成成功交接。
+func TestProductionOwnedReadCancellationBeforeCallback(t *testing.T) {
+	for _, partial := range []bool{false, true} {
+		t.Run(fmt.Sprint("partial=", partial), func(t *testing.T) {
+			a, raw := tcpPair(t)
+			gate := &productionPongReturnGate{Conn: a, entered: make(chan struct{}), release: make(chan struct{})}
+			c := NewConn(gate, RoleClient, 1024, 0)
+			c.budget = productionBudget(t, 128)
+			c.writeTimeout = time.Second
+			base, cancel := context.WithCancel(context.Background())
+			ctx := &productionDeferredCancelContext{Context: base, entered: make(chan struct{}), release: make(chan struct{}), exited: make(chan struct{})}
+			done, exited := make(chan error, 1), make(chan struct{})
+			callbackEntered := false
+			t.Cleanup(func() {
+				cancel()
+				ctx.open()
+				gate.open()
+				_ = a.Close()
+				_ = raw.Close()
+				awaitDialHandoff(t, exited, "取消读工作者未退出")
+				if callbackEntered {
+					awaitDialHandoff(t, ctx.exited, "迟到回调调度未退出")
+				}
+			})
+			go func() {
+				defer close(exited)
+				m, err := c.ReadOwnedMessage(ctx)
+				if m != nil {
+					m.Release()
+					err = errors.New("取消却交付了消息")
+				}
+				done <- err
+			}()
+			_ = raw.SetDeadline(time.Now().Add(3 * time.Second))
+			if partial {
+				if err := WriteFrame(raw, Frame{Opcode: OpText, Payload: []byte("half")}, false); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := WriteFrame(raw, Frame{FIN: true, Opcode: OpPing, Payload: []byte("hb")}, false); err != nil {
+				t.Fatal(err)
+			}
+			awaitDialHandoff(t, gate.entered, "自动 pong 未完整写出")
+			if f, err := ReadFrame(raw, 125); err != nil || f.Opcode != OpPong || string(f.Payload) != "hb" {
+				t.Fatalf("没有实际心跳交换: %+v %v", f, err)
+			}
+			cancel()
+			awaitDialHandoff(t, ctx.entered, "取消回调未被暂停")
+			callbackEntered = true
+			gate.open()
+			if err := awaitDialHandoff(t, done, "读循环未先观察到取消"); !errors.Is(err, context.Canceled) {
+				t.Fatalf("取消错误分类改变: %v", err)
+			}
+			if c.budget.Used() != 0 {
+				t.Error("取消遗留控制帧或部分消息额度")
+			}
+			// 对端已读完唯一 pong，既无待发帧也无未读输入；必须看到真正 EOF，不能接受超时。
+			_ = raw.SetReadDeadline(time.Now().Add(time.Second))
+			var b [1]byte
+			if n, err := raw.Read(b[:]); n != 0 || !errors.Is(err, io.EOF) {
+				t.Errorf("取消返回后 TCP 仍未释放: n=%d err=%v", n, err)
+			}
+			ctx.open()
+			awaitDialHandoff(t, ctx.exited, "迟到回调未退出")
+			if err := c.Ping(nil); !errors.Is(err, ErrClosed) {
+				t.Errorf("取消返回后仍允许业务写: %v", err)
+			}
+		})
+	}
+}
+
 // 合法的自定义 context 将回调调度门闩与 Done/Err 分离，确定性覆盖取消回调迟到的交错。
 type productionDeferredCancelContext struct {
 	context.Context

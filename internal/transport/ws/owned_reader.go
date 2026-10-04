@@ -47,6 +47,10 @@ func (c *Conn) ReadOwnedMessage(ctx context.Context) (*Message, error) {
 	}
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
+			// 读循环可能先于回调观察到取消；既已取得 CAS，就须自己释放 TCP，
+			// 不能只撤销回调并返回取消错误，把失败退出冒充成功交接。
+			c.closed.Store(true)
+			_ = abortTransport(c.conn)
 			releaseCloseError(err)
 			return nil, ctxErr
 		}
