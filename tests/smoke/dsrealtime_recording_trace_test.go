@@ -128,7 +128,7 @@ func dsCandidate(r dsRecording) (testkit.Fixture, error) {
 	}
 	s.Provenance.SourceSHA256 = digest
 	if err := testkit.ValidateWSSession(f, testkit.DefaultWSLimits()); err != nil {
-		return empty, errors.New("候选未通过 testkit 验证")
+		return empty, fmt.Errorf("候选未通过 testkit 验证: %w", err)
 	}
 	return f, nil
 }
@@ -216,7 +216,9 @@ func dsIDRules(value any, bindings map[string]string) []testkit.WSFieldRule {
 					ns = "response"
 				case "session_id":
 					ns = "session"
-				case "item_id", "previous_item_id":
+				// previous_item_id 不在 testkit 的动态 ID 契约内，保留严格字面匹配，
+				// 防止生成非法引用规则；原始前驱关系不能被忽略或改写。
+				case "item_id":
 					ns = "item"
 				case "call_id":
 					ns = "call"
