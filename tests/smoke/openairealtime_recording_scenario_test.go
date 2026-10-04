@@ -17,11 +17,21 @@ import (
 type oaOutput struct {
 	id, kind, name, call string
 	parts                map[int]*oaPart
+	arguments            string
+	argumentsDone        bool
+	itemDone             bool
 }
 type oaPart struct {
 	kind, text string
 	audio      int
 }
+
+// committed、conversation 回显与 response 输出共用身份表，不能把用户输入重新绑定成助手输出。
+type oaItemIdentity struct {
+	kind, role, name, call string
+	output                 *oaOutput
+}
+
 type oaDriver struct {
 	scenario                                                   string
 	sample                                                     *oaSample
@@ -30,7 +40,7 @@ type oaDriver struct {
 	serial                                                     int
 	session, model, active, input, vadStart, vadStop, cancelID string
 	responseIDs                                                map[string]bool
-	itemIDs                                                    map[string]bool
+	itemIDs                                                    map[string]*oaItemIdentity
 	outputs                                                    map[int]*oaOutput
 	waitingResponse                                            bool
 	asr, confirmed                                             bool
@@ -42,7 +52,7 @@ type oaDriver struct {
 }
 
 func oaNewDriver(s string, sample *oaSample) *oaDriver {
-	return &oaDriver{scenario: s, sample: sample, responseIDs: map[string]bool{}, itemIDs: map[string]bool{}, coverage: map[string]bool{}}
+	return &oaDriver{scenario: s, sample: sample, responseIDs: map[string]bool{}, itemIDs: map[string]*oaItemIdentity{}, coverage: map[string]bool{}}
 }
 func (d *oaDriver) write(kind string, body map[string]any) error {
 	if body == nil {
@@ -106,7 +116,19 @@ func (d *oaDriver) observe(e map[string]any) error {
 		if d.sample == nil || id == "" || d.input != "" || d.scenario == "vad-interrupt" && (id != d.vadStop || id != d.vadStart) {
 			return errors.New("commit_identity")
 		}
+		if _, err := d.bindItem(map[string]any{"id": id, "type": "message", "role": "user"}); err != nil {
+			return err
+		}
 		d.input = id
+	case "conversation.item.added", "conversation.item.done":
+		item := oaMap(e, "item")
+		identity, err := d.bindItem(item)
+		if err != nil {
+			return err
+		}
+		if t == "conversation.item.done" && identity.kind == "function_call" && (identity.output == nil || !identity.output.toolTerminalMatches(item)) {
+			return errors.New("tool_item_terminal_mismatch")
+		}
 	case "conversation.item.input_audio_transcription.completed":
 		part, ok := oaIndex(e, "content_index")
 		if !ok || part != 0 || d.input == "" || oaString(e, "item_id") != d.input || d.asr || strings.TrimSpace(oaString(e, "transcript")) == "" {
@@ -132,14 +154,63 @@ func (d *oaDriver) observe(e map[string]any) error {
 		item := oaMap(e, "item")
 		id := oaString(item, "id")
 		kind := oaString(item, "type")
-		if !ok || d.active == "" || oaString(e, "response_id") != d.active || id == "" || d.itemIDs[id] || d.outputs[i] != nil || kind != "message" && kind != "function_call" {
+		if !ok || d.active == "" || oaString(e, "response_id") != d.active || id == "" || d.outputs[i] != nil || kind != "message" && kind != "function_call" {
 			return errors.New("output_identity")
 		}
 		if kind == "message" && oaString(item, "role") != "assistant" {
 			return errors.New("output_role")
 		}
-		d.itemIDs[id] = true
-		d.outputs[i] = &oaOutput{id: id, kind: kind, name: oaString(item, "name"), call: oaString(item, "call_id"), parts: map[int]*oaPart{}}
+		arguments, hasArguments := item["arguments"].(string)
+		if kind == "function_call" && (!hasArguments || oaString(item, "name") == "" || oaString(item, "call_id") == "") {
+			return errors.New("tool_identity")
+		}
+		identity, err := d.bindItem(item)
+		if err != nil {
+			return err
+		}
+		if identity.output != nil {
+			return errors.New("output_identity")
+		}
+		o := &oaOutput{id: id, kind: kind, name: oaString(item, "name"), call: oaString(item, "call_id"), parts: map[int]*oaPart{}, arguments: arguments}
+		identity.output = o
+		d.outputs[i] = o
+	case "response.output_item.done":
+		i, ok := oaIndex(e, "output_index")
+		o := d.outputs[i]
+		item := oaMap(e, "item")
+		if !ok || o == nil || d.active == "" || oaString(e, "response_id") != d.active || oaString(e, "event_id") == "" || oaString(item, "id") != o.id || oaString(item, "type") != o.kind {
+			return errors.New("output_identity")
+		}
+		if _, err := d.bindItem(item); err != nil {
+			return err
+		}
+		if o.kind == "function_call" && !o.toolTerminalMatches(item) {
+			return errors.New("tool_item_terminal_mismatch")
+		}
+		o.itemDone = true
+	case "response.function_call_arguments.delta", "response.function_call_arguments.done":
+		i, ok := oaIndex(e, "output_index")
+		o := d.outputs[i]
+		if !ok || o == nil || o.kind != "function_call" || d.active == "" || oaString(e, "response_id") != d.active || oaString(e, "item_id") != o.id || oaString(e, "call_id") != o.call || oaString(e, "event_id") == "" {
+			return errors.New("tool_arguments_identity")
+		}
+		// GA delta 不要求 name；done 必须有 name。若 delta 额外回显也不能与绑定冲突。
+		if name, present := e["name"]; (present || t == "response.function_call_arguments.done") && name != o.name {
+			return errors.New("tool_arguments_identity")
+		}
+		if t == "response.function_call_arguments.delta" {
+			delta, ok := e["delta"].(string)
+			if !ok || o.argumentsDone || len(delta) > oaMaxBytes-len(o.arguments) {
+				return errors.New("tool_arguments_sequence")
+			}
+			o.arguments += delta
+		} else {
+			arguments, ok := e["arguments"].(string)
+			if !ok || arguments != o.arguments || !json.Valid([]byte(arguments)) {
+				return errors.New("tool_arguments_mismatch")
+			}
+			o.argumentsDone = true
+		}
 	case "response.content_part.added":
 		o, part, err := d.partEntity(e, false)
 		if err != nil {
@@ -189,8 +260,11 @@ func (d *oaDriver) observe(e map[string]any) error {
 			if o == nil || oaString(m, "id") != o.id || oaString(m, "type") != o.kind {
 				return errors.New("terminal_output_identity")
 			}
+			if _, err := d.bindItem(m); err != nil {
+				return err
+			}
 			if o.kind == "function_call" {
-				if oaString(m, "name") != o.name || oaString(m, "call_id") != o.call {
+				if !o.itemDone || !o.toolTerminalMatches(m) {
 					return errors.New("terminal_tool_identity")
 				}
 			} else {
@@ -233,6 +307,9 @@ func (d *oaDriver) observe(e map[string]any) error {
 					if oaString(item, "id") != o.id || oaString(item, "type") != o.kind || o.kind == "function_call" && (oaString(item, "name") != o.name || oaString(item, "call_id") != o.call) {
 						return errors.New("output_identity")
 					}
+					if _, err := d.bindItem(item); err != nil {
+						return err
+					}
 				}
 			}
 			if e["content_index"] != nil {
@@ -251,6 +328,44 @@ func (d *oaDriver) observe(e map[string]any) error {
 		}
 	}
 	return nil
+}
+
+// 最终合法 response.done 不能洗掉参数流、参数 done 或 item done 的冲突。
+func (o *oaOutput) toolTerminalMatches(item map[string]any) bool {
+	arguments, ok := item["arguments"].(string)
+	return o.argumentsDone && ok && arguments == o.arguments && oaString(item, "name") == o.name && oaString(item, "call_id") == o.call
+}
+
+func (d *oaDriver) bindItem(item map[string]any) (*oaItemIdentity, error) {
+	id := oaString(item, "id")
+	identity := oaItemIdentity{kind: oaString(item, "type"), role: oaString(item, "role"), name: oaString(item, "name"), call: oaString(item, "call_id")}
+	if id == "" {
+		return nil, errors.New("conversation_item_identity")
+	}
+	switch identity.kind {
+	case "message":
+		if identity.role != "user" && identity.role != "assistant" && identity.role != "system" {
+			return nil, errors.New("conversation_item_identity")
+		}
+	case "function_call":
+		if identity.name == "" || identity.call == "" {
+			return nil, errors.New("conversation_item_identity")
+		}
+	case "function_call_output":
+		if identity.call == "" {
+			return nil, errors.New("conversation_item_identity")
+		}
+	default:
+		return nil, errors.New("conversation_item_identity")
+	}
+	if existing := d.itemIDs[id]; existing != nil {
+		if existing.kind != identity.kind || existing.role != identity.role || existing.name != identity.name || existing.call != identity.call {
+			return nil, errors.New("conversation_item_identity")
+		}
+		return existing, nil
+	}
+	d.itemIDs[id] = &identity
+	return &identity, nil
 }
 
 func (d *oaDriver) partEntity(e map[string]any, existing bool) (*oaOutput, int, error) {
@@ -343,8 +458,11 @@ func (d *oaDriver) run() error {
 
 func (d *oaDriver) item(item map[string]any) error {
 	id := oaString(item, "id")
-	if id == "" || d.itemIDs[id] {
+	if id == "" || d.itemIDs[id] != nil {
 		return errors.New("duplicate_authored_item")
+	}
+	if _, err := d.bindItem(item); err != nil {
+		return err
 	}
 	if err := d.write("conversation.item.create", map[string]any{"item": item}); err != nil {
 		return err
@@ -356,7 +474,6 @@ func (d *oaDriver) item(item map[string]any) error {
 	if !oaMatches(item, oaMap(e, "item")) {
 		return errors.New("item_ack_mismatch")
 	}
-	d.itemIDs[id] = true
 	return nil
 }
 func (d *oaDriver) textItem(id, text string) error {

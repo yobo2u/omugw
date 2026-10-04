@@ -66,7 +66,7 @@ func (p *oaPeer) text(id, text string) {
 	p.write(fmt.Sprintf(`{"type":"response.output_text.delta","response_id":%q,"item_id":"out_%s","output_index":0,"content_index":0,"delta":%q}`, id, id, text))
 	p.write(fmt.Sprintf(`{"type":"response.output_text.done","response_id":%q,"item_id":"out_%s","output_index":0,"content_index":0,"text":%q}`, id, id, text))
 	p.write(fmt.Sprintf(`{"type":"response.content_part.done","response_id":%q,"item_id":"out_%s","output_index":0,"content_index":0,"part":{"type":"text","text":%q}}`, id, id, text))
-	p.write(fmt.Sprintf(`{"type":"response.output_item.done","response_id":%q,"output_index":0,"item":{"id":"out_%s","type":"message","role":"assistant","content":[{"type":"output_text","text":%q}]}}`, id, id, text))
+	p.write(fmt.Sprintf(`{"type":"response.output_item.done","response_id":%q,"output_index":0,"item":{"id":"out_%s","type":"message","role":"assistant","content":[{"type":"output_text","text":%q}]},"event_id":"item_done_%s"}`, id, id, text, id))
 	p.write(fmt.Sprintf(`{"type":"response.done","response":{"id":%q,"status":"completed","output":[{"id":"out_%s","type":"message","role":"assistant","content":[{"type":"output_text","text":%q}]}],"usage":{"input_tokens":5,"output_tokens":10,"total_tokens":15}}}`, id, id, text))
 }
 
@@ -101,6 +101,13 @@ func oaOfflineScript(p *oaPeer, scenario string) {
 		p.start("r3")
 		p.write(`{"type":"response.output_item.added","response_id":"r3","output_index":0,"item":{"id":"fc1","type":"function_call","name":"test_color","call_id":"call1","arguments":""}}`)
 		p.write(`{"type":"response.output_item.added","response_id":"r3","output_index":1,"item":{"id":"fc2","type":"function_call","name":"test_shape","call_id":"call2","arguments":""}}`)
+		p.write(`{"type":"response.function_call_arguments.delta","event_id":"args_delta_1a","response_id":"r3","item_id":"fc1","output_index":0,"call_id":"call1","delta":"{"}`)
+		p.write(`{"type":"response.function_call_arguments.delta","event_id":"args_delta_2","response_id":"r3","item_id":"fc2","output_index":1,"call_id":"call2","delta":"{}"}`)
+		p.write(`{"type":"response.function_call_arguments.delta","event_id":"args_delta_1b","response_id":"r3","item_id":"fc1","output_index":0,"call_id":"call1","delta":"}"}`)
+		p.write(`{"type":"response.function_call_arguments.done","event_id":"args_done_1","response_id":"r3","item_id":"fc1","output_index":0,"call_id":"call1","name":"test_color","arguments":"{}"}`)
+		p.write(`{"type":"response.function_call_arguments.done","event_id":"args_done_2","response_id":"r3","item_id":"fc2","output_index":1,"call_id":"call2","name":"test_shape","arguments":"{}"}`)
+		p.write(`{"type":"response.output_item.done","event_id":"tool_done_1","response_id":"r3","output_index":0,"item":{"id":"fc1","type":"function_call","name":"test_color","call_id":"call1","arguments":"{}"}}`)
+		p.write(`{"type":"response.output_item.done","event_id":"tool_done_2","response_id":"r3","output_index":1,"item":{"id":"fc2","type":"function_call","name":"test_shape","call_id":"call2","arguments":"{}"}}`)
 		p.write(`{"type":"response.done","response":{"id":"r3","status":"completed","output":[{"id":"fc1","type":"function_call","name":"test_color","call_id":"call1","arguments":"{}"},{"id":"fc2","type":"function_call","name":"test_shape","call_id":"call2","arguments":"{}"}],"usage":{"input_tokens":5,"output_tokens":20,"total_tokens":25}}}`)
 		for i, v := range []string{"绿色", "三角形"} {
 			e = p.read("conversation.item.create")
@@ -140,10 +147,13 @@ func oaOfflineScript(p *oaPeer, scenario string) {
 		p.write(`{"type":"input_audio_buffer.speech_stopped","item_id":"input1","audio_end_ms":100}`)
 	}
 	p.write(`{"type":"input_audio_buffer.committed","item_id":"input1"}`)
+	p.write(`{"type":"conversation.item.added","item":{"id":"input1","type":"message","role":"user","content":[{"type":"input_audio","transcript":null}]}}`)
+	p.write(`{"type":"conversation.item.done","item":{"id":"input1","type":"message","role":"user","content":[{"type":"input_audio","transcript":null}]}}`)
 	if scenario == "audio-manual" {
 		p.read("response.create")
 	}
 	p.start("r1")
+	p.write(`{"type":"conversation.item.added","item":{"id":"audio1","type":"message","role":"assistant","content":[]}}`)
 	p.write(`{"type":"response.output_item.added","response_id":"r1","output_index":0,"item":{"id":"audio1","type":"message","role":"assistant"}}`)
 	p.write(`{"type":"response.content_part.added","response_id":"r1","item_id":"audio1","output_index":0,"content_index":0,"part":{"type":"audio","transcript":""}}`)
 	p.write(`{"type":"response.output_audio.delta","response_id":"r1","item_id":"audio1","output_index":0,"content_index":0,"delta":"AAECAw=="}`)
@@ -155,10 +165,14 @@ func oaOfflineScript(p *oaPeer, scenario string) {
 		}
 		status = "cancelled"
 	}
+	p.write(`{"type":"conversation.item.done","item":{"id":"audio1","type":"message","role":"assistant","content":[{"type":"output_audio","transcript":"一二三"}]}}`)
 	p.write(fmt.Sprintf(`{"type":"response.done","response":{"id":"r1","status":%q,"output":[{"id":"audio1","type":"message","role":"assistant","content":[{"type":"output_audio","transcript":"一二三"}]}],"usage":{"input_tokens":5,"output_tokens":10,"total_tokens":15}}}`, status))
 	if scenario == "vad-interrupt" {
 		e = p.read("conversation.item.truncate")
-		if !oaMatches(map[string]any{"item_id": "audio1", "content_index": 0, "audio_end_ms": 0}, e) {
+		// ID 冲突反例也同步脚本的截断坐标，防止仅由 peer 拒绝请求而伪绿。
+		var expected map[string]any
+		_ = json.Unmarshal([]byte(p.mutate(`{"item_id":"audio1","content_index":0,"audio_end_ms":0}`)), &expected)
+		if !oaMatches(expected, e) {
 			p.err = errors.New("截断实体不符")
 		}
 		p.write(`{"type":"conversation.item.truncated","item_id":"audio1","content_index":0,"audio_end_ms":0}`)
