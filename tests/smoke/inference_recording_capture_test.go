@@ -51,6 +51,12 @@ type inferenceRecording struct {
 	awaitingPeer                         bool
 }
 
+// Validate以json.Marshal限制完整manifest为64KiB；summary同编码且清空两个路径字段，只会缩小。
+// 摘要19字段的语法开销223B（含Manifest键），9个固定ASCII/hex字符串各≤64B（含引号594B），
+// 两个RFC3339Nano时间≤74B、4个整数≤80B、两个null=8B、bool≤5B：额外≤984B。
+// 独立预留1KiB；路径/来源的HTML转义已计入manifest额度，不能再用缩进放大。
+const inferenceMetadataLimit = inferenceManifestLimit + 1024
+
 var errInferenceCloseBudget = errors.New("关闭证据预算不足")
 
 func inferenceRecordUpper(rec inferenceRecord) int64 {
@@ -398,8 +404,8 @@ func inferenceSave(output string, r inferenceRecording) error {
 	summary.Sample = nil
 	summary.Manifest.SamplePath = ""
 	summary.Manifest.Endpoint = ""
-	b, err := json.MarshalIndent(summary, "", "  ")
-	if err != nil || len(b) > 64<<10 {
+	b, err := json.Marshal(summary)
+	if err != nil || len(b) > inferenceMetadataLimit {
 		return errors.New("元数据超限")
 	}
 	if err := inferenceWrite(d, "recording.json", b); err != nil {

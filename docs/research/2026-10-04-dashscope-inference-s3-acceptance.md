@@ -48,6 +48,9 @@ Task7没有增加 `testdata/fixtures/dashscope-inference/`，普通测试不要�
 终态后抢先close竞争、关闭期间安全拒绝不能裁剪成candidate、原始与候选分开预算、raw/candidate逐行对账。
 Fix round1另覆盖failed尾部model/task/streaming重申、重复failed的累计/presence冲突；矛盾raw保留而candidate unavailable。
 1024记录满时真实本地peer不得收到额外close；关闭额度在BeginClose前检查，失败强制释放/join，预留不记作已发送。
+Fix round2修复N1：完整manifest按含HTML转义的紧凑编码≤64KiB准入，recording摘要同编码且独立≤65KiB。
+固定摘要开销≤984B（见录制指南的逐项证明）；六项完整合成费用材料在边界值下，失败握手及本地正常捕获均保存全部摘录、raw和摘要。
+源文件虽小但HTML转义后超限的输入在reserve/Dial前拒绝；最长时间/整数/Outcome等固定字段包络亦有保存断言。
 
 Task7初次提交的历史输出（485e195；不代表fix round1复核）：
 
@@ -66,7 +69,7 @@ $ git diff --check
 
 这些检查仅代表Task7，**不代替下面的全分支与SDK关口**。录制器没有使用真实key、公网请求或既有实验ledger。
 
-Fix round1最后一次代码修改后的验证（I1/I2/I3修复仍待控制器独立复审）：
+Fix round1最后一次代码修改后的历史验证（I1/I2/I3现已独立复审标为ADDRESSED）：
 
 ```text
 $ go test ./tests/smoke -run '^TestInferenceRecorderOffline' -count=1
@@ -83,6 +86,10 @@ $ git diff --check
 
 费用测试包括本槽可达且其他token槽未知、两种ceil范围、2^53边界、缺证/假verified/错绑/不够费用/量与费溢出、
 补证明不重置批次、Dial前证据封存与共享分币预算不可提高。成功数据均为SYNTHETIC，不认证真实计费材料。
+
+Fix round2最终定向验证：Metadata/MetadataBounds及Evidence中raw对账、终态篡改与分开预算、合法raw超candidate预算、凭据不落盘四例，
+普通`go test`通过（1.483s），`-race`通过（3.099s）；`go test -tags=smoke ./tests/smoke -run '^$' -count=1`
+通过（0.986s，未执行测试），`go vet -tags=smoke ./tests/smoke`无输出/exit 0。N1待控制器同范围独立复审。
 
 ## 控制器最终关口（均待验）
 

@@ -334,6 +334,8 @@ seconds/characters按完整允许输入上限、`bounded_input`依据计算，�
 `server_limit`最大量与价格，不能凭短音频、45秒或轨迹字节猜测。逐task按Quantum向上取整，随后按声明的
 逐槽或逐task分币ceil规则计算费用，结果须落在本槽WorstCaseFen及批次持久预算内。正整数或verified布尔不足以授权。
 具体字段及公式见[录制指南](../../research/2026-10-04-dashscope-inference-s3-recording.md#本槽costevidence载体)。
+manifest文件及含HTML转义的紧凑重编码各≤64KiB；recording摘要同编码、独立≤65KiB，保全全部来源摘录。
+固定摘要开销≤984B，预留1KiB（算术见录制指南）；输入级超限在reserve/Dial前拒绝，不能调用后才因缩进丢失摘要。
 
 冻结的批次身份/共享预算投影不含可补齐的CostEvidence及token最大量；完整选中Slot、费用材料、计算分值随reserve封存，
 Dial前逐字节重核。token最大量只可在该槽未占用前补齐，不改变固定人民币/task/墙钟预算；已占槽不可替换证明或退款。

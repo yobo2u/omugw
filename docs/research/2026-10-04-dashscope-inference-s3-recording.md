@@ -41,6 +41,8 @@ TTS固定两段 `这是网关测试。` 与 `请确认声音清晰。`；duplex�
 ## manifest字段与校验
 
 manifest为至多64KiB的普通JSON文件，六项Slots恰好齐全；未知字段、重复键（含JSON转义等价）、未知模型和地域不符全部拒绝。
+文件原始字节及解码后`json.Marshal`紧凑编码（含HTML转义）**各≤65,536B**；不能用未转义的`<>&`规避编码预算。
+超限在配置/reserve/Dial前拒绝，不消耗槽。保存摘要采用同一紧凑编码口径。
 
 | 字段 | 约束 |
 |---|---|
@@ -99,12 +101,18 @@ URL≤1024字节。控制器须核对摘录是否真实、完整、适用于该�
 - 未占槽的费用证据与token最大量可补齐；已占槽证据不能换摘录/摘要/数量，Dial前重新计算并逐字节核对reserve。补其他槽证明不使已占槽失效，不恢复任何次数。
 - `dial-N`：实际调用前第二道持久一次性认领。删除/改名输出不复活reserve或Dial；失败不删除这两个文件。
 - `slot-N/records.jsonl`：每次应用写完成或ReadOwnedMessage交付后，按原字节、opcode、相对时间及payload SHA逐条刷盘。
-- `slot-N/recording.json`：绝对Started/Ended、业务Outcome、HTTP状态、原始文件SHA、failed与peer-close时刻、PassiveEnd/TransportEnd等；不含key、响应头或错误body。
+- `slot-N/recording.json`：紧凑JSON，独立上限**65KiB（66,560B）**；保留完整六槽费用来源/摘录及绝对Started/Ended、业务Outcome、HTTP状态、原始文件SHA、failed与peer-close时刻、PassiveEnd/TransportEnd等；不含key、响应头或错误body。
 - `slot-N/candidate.json` 或 `candidate-unavailable.txt`：完整候选通过独立脚本复核、WSContractDigest、ValidateWSSession、ReadWSFixture后才存在。
 
 目录0700、文件0600、exclusive-create，逐级拒绝链接并复核打开的目录/文件身份；Go os.Root限制路径逃逸。
 同一用户主动删除整个私有批次账本仍能破坏本地约束：这不是外部不可篡改的账单系统，控制器不得这样重置批次。
 只操作S3根，原S1/S2工具、八槽ledger与计量账本均独立保留。
+
+摘要预算证明：manifest清空SamplePath/Endpoint只会缩小，其他路径均不序列化；路径/摘录的HTML转义已计入64KiB准入额度。
+摘要19字段的键/标点共223B；9个固定ASCII/hex字符串（Outcome/Scenario/Model/Voice/SampleSHA256/TransportEnd/PassiveEnd/Failure/RawSHA256）
+各≤64B，加引号共≤594B；两个RFC3339Nano时间含引号≤74B，四个整数含符号≤80B，Records/Sample两个null共8B，bool≤5B。
+因此额外≤`223+594+74+80+8+5=984B`，总长≤`65,536+984=66,520B < 66,560B`。固定预留1KiB，禁止再用缩进扩张；
+此界同时覆盖正常和握手失败摘要。来源摘录完整保留，raw独立预算不受此变更影响。
 
 消息≤1MiB、记录≤1024、响应binary≤8MiB/连接、原始payload及编码JSONL均≤16MiB/连接。
 输入/发送/复制/编码前检查相应预算；网络reader从握手起限制单消息大小，原始内存只保留有界记录和一个在途reader消息。
