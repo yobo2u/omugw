@@ -16,6 +16,7 @@ import (
 	"github.com/yobo2u/omugw/internal/protocol/dashscopewire"
 	"github.com/yobo2u/omugw/internal/provider"
 	"github.com/yobo2u/omugw/internal/provider/dashscopecompat"
+	dsiws "github.com/yobo2u/omugw/internal/provider/dashscopeinference"
 	dsnativeprovider "github.com/yobo2u/omugw/internal/provider/dashscopenative"
 	dsws "github.com/yobo2u/omugw/internal/provider/dashscoperealtime"
 	oaws "github.com/yobo2u/omugw/internal/provider/openairealtime"
@@ -54,6 +55,16 @@ func Build(cfg config.Config, m *degrade.Matrix, metrics *obs.Metrics, log *slog
 }
 
 func buildWithWS(cfg config.Config, m *degrade.Matrix, metrics *obs.Metrics, log *slog.Logger, wsEndpoints ...degrade.Endpoint) (*Built, error) {
+	// Build 也可能被直接调用；健康检查早退之前仍须拒绝歧义连接身份。
+	inference, err := config.InferenceProvider(cfg.Providers)
+	if err != nil {
+		return nil, err
+	}
+	var inferenceTarget *router.Target
+	if inference != nil {
+		inferenceTarget = &router.Target{Kind: degrade.ProviderDashScopeWSInference, Endpoint: inference.Endpoint,
+			BaseURL: inference.BaseURL, CredentialPool: inference.CredentialPool}
+	}
 	availability := degrade.DefaultAvailability()
 	availability[degrade.FeatureConversationStore] = cfg.ConvStore.Enabled
 	m.WithAvailability(availability)
@@ -69,7 +80,12 @@ func buildWithWS(cfg config.Config, m *degrade.Matrix, metrics *obs.Metrics, log
 	if cfg.WebSocket == (config.WebSocket{}) {
 		cfg.WebSocket = config.DefaultWebSocket()
 	}
-	if err := built.initWebSockets(cfg.WebSocket); err != nil {
+	wsTimeouts := cfg.Timeouts
+	// 旧的直接 Build 健康检查/HTTP 配置没有 WS 会话；只为其空 registry 补默认值。
+	if len(wsEndpoints) == 0 && wsCloseBudget(wsTimeouts) <= 0 {
+		wsTimeouts = config.Default().Timeouts
+	}
+	if err := built.initWebSockets(cfg.WebSocket, wsTimeouts); err != nil {
 		return nil, err
 	}
 	for _, r := range m.Routes() {
@@ -126,12 +142,14 @@ func buildWithWS(cfg config.Config, m *degrade.Matrix, metrics *obs.Metrics, log
 			streams[p.Endpoint] = dsws.New(cfg.Timeouts, cfg.WebSocket, built.wsBudget)
 		case degrade.ProviderOpenAIRealtime:
 			streams[p.Endpoint] = oaws.New(cfg.Timeouts, cfg.WebSocket, built.wsBudget)
+		case degrade.ProviderDashScopeWSInference:
+			streams[p.Endpoint] = dsiws.New(cfg.Timeouts, cfg.WebSocket, built.wsBudget)
 		default:
 			// 未实现的协议族在这里就拒绝，而不是等请求打进来才发现没有适配器。
 			return nil, fmt.Errorf(
-				"gateway: provider %q 的协议族 %q 尚无出站适配器（已实现 %s、%s、%s、%s 与 %s）",
+				"gateway: provider %q 的协议族 %q 尚无出站适配器（已实现 %s、%s、%s、%s、%s 与 %s）",
 				p.Endpoint, p.Kind, degrade.ProviderOpenAICompat,
-				degrade.ProviderDashScopeCompatible, degrade.ProviderDashScopeNative, degrade.ProviderDashScopeWSRealtime, degrade.ProviderOpenAIRealtime)
+				degrade.ProviderDashScopeCompatible, degrade.ProviderDashScopeNative, degrade.ProviderDashScopeWSRealtime, degrade.ProviderOpenAIRealtime, degrade.ProviderDashScopeWSInference)
 		}
 	}
 
@@ -221,7 +239,7 @@ func buildWithWS(cfg config.Config, m *degrade.Matrix, metrics *obs.Metrics, log
 		registered = append(registered, d.inbound())
 	}
 	wsHandlers, err := buildWSDoors(WSDeps{Matrix: m, Router: rt, Auth: auth, Metrics: metrics, Log: log,
-		Pools: pools, Providers: streams, Timeouts: cfg.Timeouts, Limits: cfg.WebSocket, Budget: built.wsBudget, Registry: built.wsRegistry}, wsEndpoints)
+		Pools: pools, Providers: streams, Timeouts: cfg.Timeouts, Limits: cfg.WebSocket, Budget: built.wsBudget, Registry: built.wsRegistry, InferenceTarget: inferenceTarget}, wsEndpoints)
 	if err != nil {
 		return nil, err
 	}

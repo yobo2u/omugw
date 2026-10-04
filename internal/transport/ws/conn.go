@@ -94,6 +94,9 @@ type Conn struct {
 	closing       atomic.Bool
 	closeClaimed  atomic.Bool
 	closeDeadline atomic.Pointer[time.Time]
+	// 只保护期限装入与守卫创建，不能拿它等 writeMu 或做网络 I/O。
+	closeMu    sync.Mutex
+	closeGuard *transportCloseGuard
 }
 
 // NewConn 包装一条已握手的连接。limit 是单条消息重组后的负载上限，
@@ -157,8 +160,12 @@ func (c *Conn) writeFrame(op Opcode, payload []byte) error {
 	if c.closed.Load() || c.closing.Load() {
 		return ErrClosed
 	}
+	deadline := c.limitCloseDeadline(time.Time{})
 	if c.writeTimeout > 0 {
-		if err := c.conn.SetWriteDeadline(time.Now().Add(c.writeTimeout)); err != nil {
+		deadline = minDeadline(deadline, time.Now().Add(c.writeTimeout))
+	}
+	if !deadline.IsZero() {
+		if err := c.conn.SetWriteDeadline(deadline); err != nil {
 			return err
 		}
 		defer c.conn.SetWriteDeadline(time.Time{})
@@ -191,12 +198,19 @@ func (c *Conn) CloseWithResult(code uint16, reason string) (sent bool, err error
 		return false, nil
 	}
 	start := time.Now()
+	timeout := time.Second
+	if c.idle > 0 && c.idle < timeout {
+		timeout = c.idle
+	}
+	if c.writeTimeout > 0 && c.writeTimeout < timeout {
+		timeout = c.writeTimeout
+	}
+	finish, _ := c.ArmCloseDeadline(start.Add(timeout))
+	defer finish()
 	if code != CloseNoStatus && !validCloseCode(code) || code == CloseNoStatus && reason != "" {
-		_ = abortTransport(c.conn)
 		return false, fmt.Errorf("%w: 主动关闭状态码或原因非法", ErrProtocol)
 	}
 	if !utf8.ValidString(reason) {
-		_ = abortTransport(c.conn)
 		return false, fmt.Errorf("%w: close 原因不是合法 UTF-8", ErrInvalidUTF8)
 	}
 
@@ -205,16 +219,7 @@ func (c *Conn) CloseWithResult(code uint16, reason string) (sent bool, err error
 		return false, abortTransport(c.conn)
 	}
 	defer c.writeMu.Unlock()
-	timeout := time.Second
-	if c.idle > 0 && c.idle < timeout {
-		timeout = c.idle
-	}
-	if c.writeTimeout > 0 && c.writeTimeout < timeout {
-		timeout = c.writeTimeout
-	}
 	deadline := c.limitCloseDeadline(start.Add(timeout))
-	join := watchTransportClose(c.conn, deadline)
-	defer join()
 	defer func() {
 		if cerr := c.conn.Close(); err == nil {
 			err = cerr

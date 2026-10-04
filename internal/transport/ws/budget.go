@@ -3,6 +3,7 @@ package ws
 import (
 	"errors"
 	"sync"
+	"unicode/utf8"
 )
 
 // ErrBufferLimit 是共享容量不足，不是对端违反单条消息上限。
@@ -65,6 +66,34 @@ type messageOwnership struct {
 	once   sync.Once
 	budget *BufferBudget
 	size   int64
+}
+
+// AllocateMessage 先预占精确容量再让编码器直填，避免本地错误先在预算外造一份负载。
+// fill 不得保留切片供交付后修改；成功后的所有权与读入 Message 相同，须 Release。
+func AllocateMessage(b *BufferBudget, op Opcode, size int, fill func([]byte) error) (*Message, error) {
+	// 工厂只构造完整业务消息，不能先分配/填充再把分片、控制或保留 opcode 冒充完整消息。
+	if op != OpText && op != OpBinary {
+		return nil, ErrProtocol
+	}
+	if size < 0 {
+		return nil, ErrBufferLimit
+	}
+	if fill == nil {
+		return nil, ErrProtocol
+	}
+	if err := b.acquire(int64(size)); err != nil {
+		return nil, err
+	}
+	m := &Message{Opcode: op, Payload: make([]byte, size), owned: &messageOwnership{budget: b, size: int64(size)}}
+	if err := fill(m.Payload); err != nil {
+		m.Release()
+		return nil, err
+	}
+	if op == OpText && !utf8.Valid(m.Payload) {
+		m.Release()
+		return nil, ErrInvalidUTF8
+	}
+	return m, nil
 }
 
 func (m *Message) Release() {

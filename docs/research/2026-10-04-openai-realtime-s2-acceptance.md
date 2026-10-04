@@ -10,13 +10,13 @@
 | 正式 GA Provider/profile/Build | 前置任务已实现，测试矩阵能显式开门；生产 Build 仍传空门，Mux 未注册 WS URL 返回 404；矩阵未兑现门仍为 PLANNED/501 |
 | GA 表达性 | 已完成 15 项对账，设计 PASS 不等于兑现；见 GA 契约 §7 |
 | 用量 | 前置任务已完成 response/ASR、tokens/duration、item/part、有界账本、未知与已结分离 |
-| 官方 Node SDK | Task 7 已完成本地 Node 26.8.1 的 WSS/TLS/正式装配离线集成；CI Node 24 尚待远端运行，云端与生产代理未验 |
+| 官方 Node SDK | 本地 Node 26.8.1、远端 Node 24.21.0 的 WSS/TLS/正式装配普通与 race 均通过；云端与生产代理未验 |
 | 传输回归 | `6764aff` 包含 Accept 缓存前缀和接管后 HTTP reader 取消隔离；保留 EOF→1011、主动 shutdown→1001 |
 | 独立录制器 | Task 8 三场景、固定单拨号预算、安全失败落盘、原始轨迹派生候选与完整回放 |
 | 真实证据 / 整门兑现 | 缺凭据、地域/权限/费用确认、逐能力实录和内容审核；仍 PLANNED，未改 Redeem/白名单/生产 routes |
-| 最终独立审查 / 阶段 PR | `5eaf1e2..e7522fe` 已获 Spec PASS（限 S2 离线）/Quality Approved with minor fixes；M1–M5 最终修复后的独立复核及阶段 PR/远端结果待控制器确认 |
+| 最终独立审查 / 阶段 PR | `5eaf1e2..e7522fe` 获 Spec PASS（限 S2 离线）；M1–M5 至 `0a533a5` 全部独立复核通过；阶段 PR 已合并至 `ddb72c1` |
 
-**S1 历史状态校正**：PR #16、#17 均已合并，远端 main=`5eaf1e2`，本分支通过
+**S1 历史状态校正**：PR #16、#17 均已合并，当时 main=`5eaf1e2`，本分支通过
 `8ee9710` 已包含该 main。不能继续用“尚未合并”描述 S1。S1 的 8 个录制槽已耗尽，
 本次未增加、回收或复用。A/B/C 九条路径的整体完成状态不由 S2 离线检查替代。
 
@@ -66,10 +66,37 @@ Task 8 当时结果：普通定向测试 `ok .../tests/smoke 2.274s`，race `ok 
   证据为同工作目录的 `final-check.log`、`final-race.log`、`final-sdk.log`、
   `final-sdk-race.log`、`final-recorder-smoke.log`、`final-smoke-vet.log` 及
   `progress.md` 控制器退出码记录。这些是控制器既有结果，不是本次 fix 的重新运行。
-- 最终修复的定向 RED/GREEN、普通/race 与静态核验另记同目录 `final-fix-report.md`。
-  本补记不预先宣称修复已获独立审查或远端 Node 24 已通过。
+- 最终修复 `0a533a5` 的 Provider/录制器普通与 race、smoke/vet、ignore/文档静态核验
+  通过；`e7522fe..0a533a5` 独立复核确认五项全部 ADDRESSED，无新增 Critical/Important。
+- [阶段 PR](https://github.com/yobo2u/omugw/pull/18) 已合并，merge=`ddb72c1`。
+  [PR CI 37194561346](https://github.com/yobo2u/omugw/actions/runs/37194561346) 的实际 HEAD
+  为 `0a533a5`：全库普通/race、矩阵、许可证及 SDK 普通/race 均通过；SDK 日志明确
+  `node: v24.21.0`，普通 3.974s、race 5.065s。审批与安全检查通过，无新增行内意见。
+  [合并后 main CI 37194901559](https://github.com/yobo2u/omugw/actions/runs/37194901559)
+  对 `ddb72c1` 再次执行普通/race、矩阵、许可证、SDK 普通/race，全部通过。
 - C 包历史 `MarkHomogeneous` 及生成说明仍属 C 接线前债务；A 的同契约证据不授权
   跨协议字节透传。S3 与 A/B/C 九条路径整体交付不在此次离线验收结论内。
+
+本阶段本地计划工作区在合并及复核完成后归档为
+`.superpowers/sdd/2026-10-04-openai-realtime-s2.tar.gz`；上文的报告/日志路径为归档内原路径。
+正式交付依据为本页、代码历史和上述远端 CI，归档不进入版本库。
+
+## 执行裁决留档
+
+以下按发生顺序保留控制器裁决，含若判断错误的返工代价：
+
+1. 复用隔离树、切独立 S2 分支，保留实录并隔离 S1 PR；代价是后续同步合并祖先。
+2. 按完整授权，自审计划后连续执行原生子代理实施/独立复核；代价是可回退的设计或代码返工。
+3. GA 增加 vision/detail/reasoning，C 新格定为 REJECT/DEGRADE/REJECT，依据当前公开
+   WS 语义差异，未兑现；未来新契约证据出现时需重审矩阵。
+4. 先消除已证实的固定错误 fmt 缓存分配干扰，保留原性能断言及早拷贝变异检出；
+   代价是极小错误对象身份变化及局部回归，不能据此排他解释所有历史分配残差。
+5. 精确 HEAD 检查通过后，以 merge commit 合并 S1 接线阶段；代价是可 revert 的合并提交，
+   不代表 WS 生产投放。
+6. main 新 CI 失败后，将独立复核的两文件补丁原差异移植为热修复；逐文件父 blob 与 diff
+   一致性验证后发布，代价是额外 PR 及 S2 祖先同步。
+7. 八任务与最终复审完成后，按完整授权发布并在远端检查通过后合并 S2；代价是可 revert
+   的阶段提交及后续兼容修订，真实证据缺口和空生产门保持显式。
 
 ## 保留的真实缺口
 

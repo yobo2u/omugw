@@ -1,0 +1,23 @@
+{
+  "name":"synthetic-negative/inference-sambert-out",
+  "note":"独立字面 Sambert out：run 自带文本，无 continue/finish，自发 finished；不是云端支持证据。",
+  "request":{"method":"GET","path":"/api-ws/v1/inference","headers":{"Authorization":"<redacted>"}},
+  "response":{"status":101,"ws":{
+    "version":1,"client_protocol":"dashscope.inference","client_version":"synthetic-s3-audio",
+    "upstream":{"method":"GET","path":"/api-ws/v1/inference","headers":{"Authorization":"<redacted>","User-Agent":"omugw"}},
+    "upstream_expected_status":101,"provenance":{"kind":"synthetic-negative"},
+    "nodes":[
+      {"id":"run.c","point":"client.send","source":"synthetic","kind":"message","match":"bytes","message":{"opcode":1,"payload":"eyJoZWFkZXIiOnsiYWN0aW9uIjoicnVuLXRhc2siLCJ0YXNrX2lkIjoiYSIsInN0cmVhbWluZyI6Im91dCJ9LCJwYXlsb2FkIjp7Im1vZGVsIjoic2FtYmVydC16aGljaHUtdjEiLCJ0YXNrX2dyb3VwIjoiYXVkaW8iLCJ0YXNrIjoidHRzIiwiZnVuY3Rpb24iOiJTcGVlY2hTeW50aGVzaXplciIsImlucHV0Ijp7InRleHQiOiLmtYvor5UifX19"}},
+      {"id":"run.u","point":"upstream.receive","source":"synthetic","after":["run.c"],"kind":"message","match":"bytes","forwarded_from":"run.c","message":{"opcode":1,"payload":"eyJoZWFkZXIiOnsiYWN0aW9uIjoicnVuLXRhc2siLCJ0YXNrX2lkIjoiYSIsInN0cmVhbWluZyI6Im91dCJ9LCJwYXlsb2FkIjp7Im1vZGVsIjoic2FtYmVydC16aGljaHUtdjEiLCJ0YXNrX2dyb3VwIjoiYXVkaW8iLCJ0YXNrIjoidHRzIiwiZnVuY3Rpb24iOiJTcGVlY2hTeW50aGVzaXplciIsImlucHV0Ijp7InRleHQiOiLmtYvor5UifX19"}},
+      {"id":"started.u","point":"upstream.send","source":"synthetic","after":["run.u"],"kind":"message","match":"bytes","message":{"opcode":1,"payload":"eyJoZWFkZXIiOnsiZXZlbnQiOiJ0YXNrLXN0YXJ0ZWQiLCJ0YXNrX2lkIjoiYSJ9LCJwYXlsb2FkIjp7fX0="}},
+      {"id":"started.c","point":"client.receive","source":"synthetic","after":["started.u"],"kind":"message","match":"bytes","forwarded_from":"started.u","message":{"opcode":1,"payload":"eyJoZWFkZXIiOnsiZXZlbnQiOiJ0YXNrLXN0YXJ0ZWQiLCJ0YXNrX2lkIjoiYSJ9LCJwYXlsb2FkIjp7fX0="}},
+      {"id":"audio.u","point":"upstream.send","source":"synthetic","after":["started.c"],"kind":"message","match":"bytes","message":{"opcode":2,"payload":"AP+AEA=="}},
+      {"id":"audio.c","point":"client.receive","source":"synthetic","after":["audio.u"],"kind":"message","match":"bytes","forwarded_from":"audio.u","message":{"opcode":2,"payload":"AP+AEA=="}},
+      {"id":"done.u","point":"upstream.send","source":"synthetic","after":["audio.c"],"kind":"message","match":"bytes","message":{"opcode":1,"payload":"eyJoZWFkZXIiOnsiZXZlbnQiOiJ0YXNrLWZpbmlzaGVkIiwidGFza19pZCI6ImEifSwicGF5bG9hZCI6e319"}},
+      {"id":"done.c","point":"client.receive","source":"synthetic","after":["done.u"],"kind":"message","match":"bytes","forwarded_from":"done.u","message":{"opcode":1,"payload":"eyJoZWFkZXIiOnsiZXZlbnQiOiJ0YXNrLWZpbmlzaGVkIiwidGFza19pZCI6ImEifSwicGF5bG9hZCI6e319"}},
+      {"id":"close.c","point":"client.send","source":"synthetic","after":["done.c"],"kind":"close","close_code":1000},
+      {"id":"close.u","point":"upstream.receive","source":"synthetic","after":["close.c"],"kind":"close","close_code":1000}
+    ],
+    "outcome":{"kind":"completed","terminal":[{"node":"done.c","namespace":"task","symbol":"a","id_pointer":"/header/task_id","state_pointer":"/header/event","state":"task-finished"}]}
+  }}
+}

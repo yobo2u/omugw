@@ -12,7 +12,7 @@ import (
 )
 
 func TestWSRegistryPendingAndDrain(t *testing.T) {
-	r := newWSRegistry(1)
+	r := newWSRegistry(1, time.Second)
 	s, err := r.Register(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -42,7 +42,7 @@ func TestWSRegistryPendingAndDrain(t *testing.T) {
 }
 
 func TestWSRegistryDoneReleasesSlotAndParentCancellation(t *testing.T) {
-	r := newWSRegistry(1)
+	r := newWSRegistry(1, time.Second)
 	ctx, cancel := context.WithCancel(context.Background())
 	s, err := r.Register(ctx)
 	if err != nil {
@@ -69,7 +69,7 @@ func TestWSRegistryDoneReleasesSlotAndParentCancellation(t *testing.T) {
 }
 
 func TestWSRegistryCloseOutsideLockAndWaitForDone(t *testing.T) {
-	r := newWSRegistry(2)
+	r := newWSRegistry(2, time.Second)
 	s, _ := r.Register(context.Background())
 	pending, _ := r.Register(context.Background())
 	b := wsTestBudget(t, 1<<20)
@@ -112,7 +112,7 @@ func TestWSRegistryCloseOutsideLockAndWaitForDone(t *testing.T) {
 
 func TestWSRegistryRegisterAttachShutdownRace(t *testing.T) {
 	for i := 0; i < 12; i++ {
-		r := newWSRegistry(1)
+		r := newWSRegistry(1, time.Second)
 		start := make(chan struct{})
 		registered := make(chan *wsSession, 1)
 		registerErr := make(chan error, 1)
@@ -133,7 +133,7 @@ func TestWSRegistryRegisterAttachShutdownRace(t *testing.T) {
 		}
 	}
 	for i := 0; i < 12; i++ {
-		r := newWSRegistry(1)
+		r := newWSRegistry(1, time.Second)
 		s, _ := r.Register(context.Background())
 		b := wsTestBudget(t, 1024)
 		c, peer := wsTestLink(t, false, b, 1024, time.Second, nil)
@@ -157,7 +157,7 @@ func TestWSRegistryRegisterAttachShutdownRace(t *testing.T) {
 }
 
 func TestWSRegistryRepeatedShutdownAndLateAttach(t *testing.T) {
-	r := newWSRegistry(1)
+	r := newWSRegistry(1, time.Second)
 	s, _ := r.Register(context.Background())
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -188,7 +188,7 @@ func TestWSRegistryRepeatedShutdownAndLateAttach(t *testing.T) {
 }
 
 func TestWSRegistryShutdownWaitsForSelectedClose(t *testing.T) {
-	r := newWSRegistry(1)
+	r := newWSRegistry(1, time.Second)
 	s, _ := r.Register(context.Background())
 	b := wsTestBudget(t, 1<<20)
 	var gate *wsTestGate
@@ -209,7 +209,7 @@ func TestWSRegistryShutdownWaitsForSelectedClose(t *testing.T) {
 	done := make(chan error, 1)
 	profile := dashScopeRealtimeProfile()
 	go func() {
-		done <- relayWS(s.Context(), down, up, initial, &dashScopeWSObserver{}, profile.classifyClose, 0)
+		done <- relayWS(s.Context(), down, up, initial, wsLegacyTestOptions(&dashScopeWSObserver{}, profile.classifyClose, 0))
 	}()
 	_ = client.read(t)
 	gate.armed.Store(true)

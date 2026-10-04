@@ -10,15 +10,18 @@ import (
 )
 
 // 每个 Built 共用一个预算/registry，不能按 provider 分摊后绕过进程总量。
-func (b *Built) initWebSockets(limits config.WebSocket) error {
+func (b *Built) initWebSockets(limits config.WebSocket, timeouts config.Timeouts) error {
 	if err := limits.Validate(); err != nil {
 		return err
+	}
+	if wsCloseBudget(timeouts) <= 0 {
+		return fmt.Errorf("gateway: WebSocket 关闭预算必须为正数")
 	}
 	budget, err := ws.NewBufferBudget(limits.MaxBufferedBytes)
 	if err != nil {
 		return err
 	}
-	b.wsBudget, b.wsRegistry = budget, newWSRegistry(limits.MaxSessions)
+	b.wsBudget, b.wsRegistry = budget, newWSRegistry(limits.MaxSessions, wsCloseBudget(timeouts))
 	return nil
 }
 
@@ -34,7 +37,7 @@ func (b *Built) ShutdownWebSockets(ctx context.Context) error {
 func checkWSDoor(m *degrade.Matrix, h *WSHandler) error {
 	in := h.inbound()
 	if _, err := m.Check(in, h.profile.outbound, degrade.ExpressibleSet(in.Protocol)); err != nil {
-		return fmt.Errorf("gateway: Realtime 整门未批准: %w", err)
+		return fmt.Errorf("gateway: WebSocket 整门未批准: %w", err)
 	}
 	return nil
 }
@@ -54,6 +57,8 @@ func buildWSDoors(d WSDeps, endpoints []degrade.Endpoint) ([]*WSHandler, error) 
 			h = NewDashScopeRealtimeHandler(d)
 		case degrade.EndpointOpenAIRealtime:
 			h = NewOpenAIRealtimeHandler(d)
+		case degrade.EndpointDashScopeInference:
+			h = NewDashScopeInferenceHandler(d)
 		default:
 			return nil, fmt.Errorf("gateway: 未知 WebSocket 端点 %q", ep)
 		}

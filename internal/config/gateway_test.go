@@ -31,6 +31,68 @@ func TestFullGatewayConfigIsValid(t *testing.T) {
 	}
 }
 
+// 配置唯一性不能从 models 反推，否则暂未引用的第二个连接会绕过启动校验。
+func TestInferenceProviderUniqueConfig(t *testing.T) {
+	inference := ProviderSpec{
+		Endpoint: "inference", Kind: "dashscope.ws.inference",
+		BaseURL: "wss://upstream.test/prefix", CredentialPool: "openai",
+	}
+	t.Run("零个", func(t *testing.T) {
+		for _, providers := range [][]ProviderSpec{nil, fullGateway().Providers} {
+			got, err := InferenceProvider(providers)
+			if err != nil || got != nil {
+				t.Fatalf("零个应返回 nil: %+v %v", got, err)
+			}
+		}
+		if err := fullGateway().Validate(); err != nil {
+			t.Fatal(err)
+		}
+	})
+	t.Run("一个独立副本且与Realtime和HTTP共存", func(t *testing.T) {
+		c := fullGateway()
+		c.Providers = append(c.Providers, inference,
+			ProviderSpec{Endpoint: "ds-realtime", Kind: "dashscope.ws.realtime", BaseURL: "https://upstream.test", CredentialPool: "openai"},
+			ProviderSpec{Endpoint: "oa-realtime", Kind: "openai.realtime", BaseURL: "https://upstream.test", CredentialPool: "openai"})
+		got, err := InferenceProvider(c.Providers)
+		if err != nil || got == nil || *got != inference {
+			t.Fatalf("未选中唯一配置: %+v %v", got, err)
+		}
+		got.BaseURL = "https://changed.test"
+		got.Endpoint = "changed"
+		if c.Providers[1] != inference {
+			t.Fatal("返回值与输入配置共享存储")
+		}
+		if err := c.Validate(); err != nil {
+			t.Fatalf("唯一 Inference 不要求被模型引用: %v", err)
+		}
+	})
+	for _, same := range []bool{false, true} {
+		name := "不同URL及pool"
+		if same {
+			name = "相同URL及pool"
+		}
+		t.Run("两个_"+name, func(t *testing.T) {
+			c := fullGateway()
+			second := inference
+			second.Endpoint = "inference-unused"
+			if !same {
+				second.BaseURL = "wss://other.test"
+				second.CredentialPool = "other"
+				c.Credentials["other"] = []CredentialSpec{{ID: "test", Secret: "fake-key"}}
+			}
+			c.Providers = append(c.Providers, inference, second)
+			c.Models = append(c.Models, ModelSpec{Match: "paraformer-realtime-v2", Targets: []TargetSpec{{Endpoint: "inference", UpstreamModel: "paraformer-realtime-v2"}}})
+			got, err := InferenceProvider(c.Providers)
+			if err == nil || got != nil {
+				t.Fatalf("多配置不得选择其一: %+v %v", got, err)
+			}
+			if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "dashscope.ws.inference") {
+				t.Fatalf("未引用的第二个配置必须被拒绝: %v", err)
+			}
+		})
+	}
+}
+
 // TestInfraOnlyConfigIsValid 覆盖「只提供健康检查」的合法形态。
 // 这正是 M0 的现状：声明层建好了，上游还没配。
 func TestInfraOnlyConfigIsValid(t *testing.T) {

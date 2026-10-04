@@ -48,6 +48,22 @@ type ProviderSpec struct {
 	CredentialPool string `yaml:"credential_pool"`
 }
 
+// InferenceProvider 按配置数而非模型引用数限定连接，防止握手时从多个目标中猜选。
+// 返回副本，避免装配层补全连接字段时改写原配置。
+func InferenceProvider(providers []ProviderSpec) (*ProviderSpec, error) {
+	var selected *ProviderSpec
+	for _, p := range providers {
+		if p.Kind != "dashscope.ws.inference" {
+			continue
+		}
+		if selected != nil {
+			return nil, fmt.Errorf("config: dashscope.ws.inference 最多只能配置一个 provider")
+		}
+		selected = &p
+	}
+	return selected, nil
+}
+
 // ModelSpec 是一条模型路由规则。
 type ModelSpec struct {
 	// Match 支持三种显式形态：精确、"前缀*"、"*" 兜底。
@@ -203,6 +219,9 @@ func validateBaseURL(p ProviderSpec) error {
 // endpoint 的模型规则，在启动时是一行配置错误，在运行时是一个语焉不详的 500。
 func (c Config) validateGateway() error {
 	if err := c.validateAuth(); err != nil {
+		return err
+	}
+	if _, err := InferenceProvider(c.Providers); err != nil {
 		return err
 	}
 

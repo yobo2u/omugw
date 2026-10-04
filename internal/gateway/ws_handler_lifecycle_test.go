@@ -198,7 +198,7 @@ func TestWSHandlerLeaseAndShutdownSettlement(t *testing.T) {
 }
 
 func TestWSHandlerHandshakeStopsWhenShutdownSelected(t *testing.T) {
-	r := newWSRegistry(1)
+	r := newWSRegistry(1, time.Second)
 	s, err := r.Register(context.Background())
 	if err != nil {
 		t.Fatal(err)
