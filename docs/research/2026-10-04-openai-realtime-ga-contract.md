@@ -323,7 +323,8 @@ S1 DashScope 实录离线回放继续作为共享账本与中继的回归依据�
 
 **当前状态（2026-10-04）**：Task 6 已完成正式装配的离线接线验证；Task 7 官方
 Node SDK + 网关 WSS/TLS 集成已在本地 **Node 26.8.1** 验证，包含普通/race 与
-未信任 CA 必败反例。CI 配置的 **Node 24** 尚待远端实际运行，不能由本地结果代替。
+未信任 CA 必败反例。[PR CI](https://github.com/yobo2u/omugw/actions/runs/37194561346)
+已实际使用 **Node 24.21.0**，SDK 普通/race 均通过；此结果仍是离线本地上游验收。
 全分支审查及控制器 `e7522fe` 验证见 [S2 条件验收](2026-10-04-openai-realtime-s2-acceptance.md)。
 
 尚未做 OpenAI 云端调用、真实模型权限/地域核验、完整有效配置实录、逐能力实录或
