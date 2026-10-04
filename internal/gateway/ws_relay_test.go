@@ -542,7 +542,7 @@ func TestWSRelayFirstCloseSurvivesLaterShutdown(t *testing.T) {
 	awaitWSTest(t, gate.entered)
 	shutdown := make(chan error, 1)
 	go func() { shutdown <- r.Shutdown(context.Background()) }()
-	awaitWSTest(t, s.Context().Done())
+	awaitWSTest(t, s.shutdown.started)
 	gate.unblock()
 	assertWSTestClose(t, client, 1011, "To many requests. private reason")
 	err = receiveWSTest(t, done)
@@ -597,6 +597,118 @@ func TestWSRelayRealSlowTCPReader(t *testing.T) {
 	}
 	x.cancel()
 	if err := x.joined(t); !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+}
+
+type wsTestClassificationGate struct {
+	entered, released chan struct{}
+	enter, release    sync.Once
+}
+
+func (e *wsTestClassificationGate) Error() string { return "test downstream write failure" }
+func (e *wsTestClassificationGate) unblock()      { e.release.Do(func() { close(e.released) }) }
+func (e *wsTestClassificationGate) As(target any) bool {
+	if _, ok := target.(**ws.CloseError); ok {
+		e.enter.Do(func() { close(e.entered) })
+		<-e.released
+	}
+	return false
+}
+
+type wsTestFailOnce struct {
+	net.Conn
+	armed atomic.Bool
+	err   error
+}
+
+func (c *wsTestFailOnce) Write(p []byte) (int, error) {
+	if c.armed.Swap(false) {
+		return 0, c.err
+	}
+	return c.Conn.Write(p)
+}
+
+func TestWSRelayShutdownCannotOverrideSelectedWireReason(t *testing.T) {
+	wsTestSelectedClose(t, false)
+}
+
+func wsTestSelectedClose(t *testing.T, duplicateAttach bool) {
+	t.Helper()
+	r := newWSRegistry(1)
+	s, err := r.Register(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := wsTestBudget(t, 1<<20)
+	gate := &wsTestClassificationGate{entered: make(chan struct{}), released: make(chan struct{})}
+	var writer *wsTestFailOnce
+	down, client := wsTestLink(t, false, b, 1<<18, 0, func(c net.Conn) net.Conn {
+		writer = &wsTestFailOnce{Conn: c, err: gate}
+		return writer
+	})
+	up, server := wsTestLink(t, true, b, 1<<18, 0, nil)
+	t.Cleanup(gate.unblock)
+	if !s.Attach(up) || !s.Attach(down) {
+		t.Fatal("Attach 失败")
+	}
+	server.send(t, ws.OpText, []byte(wsTestInitial))
+	initial, err := up.ReadOwnedMessage(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	u := newWSUsage(nil, "dashscope.realtime", "dashscope.realtime")
+	done := make(chan error, 1)
+	go func() { done <- relayWS(s.Context(), down, up, initial, u, 0) }()
+	_ = client.read(t)
+	writer.armed.Store(true)
+	server.send(t, ws.OpText, []byte(`{"type":"future.event"}`))
+	// errors.As 固定“已经选中原因、尚未取得物理 close 权”的窗口，不靠帧写屏障。
+	awaitWSTest(t, gate.entered)
+	shutdown := make(chan error, 1)
+	if duplicateAttach {
+		attaching := make(chan struct{})
+		go func() {
+			close(attaching)
+			if s.Attach(up) {
+				shutdown <- errors.New("终止后仍接受重复 Attach")
+				return
+			}
+			shutdown <- nil
+		}()
+		awaitWSTest(t, attaching)
+	} else {
+		go func() { shutdown <- r.Shutdown(context.Background()) }()
+		awaitWSTest(t, s.shutdown.started)
+	}
+	// 正确实现必须等待获胜者完成分类；旧实现在屏障仍闭合时已经发出 1001。
+	_ = server.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+	premature, readErr := ws.ReadFrame(server.reader, 1024)
+	gate.unblock()
+	if readErr == nil {
+		t.Errorf("分类屏障尚未释放就被 registry 关闭: opcode=%v payload=%q", premature.Opcode, premature.Payload)
+	} else {
+		var ne net.Error
+		if !errors.As(readErr, &ne) || !ne.Timeout() {
+			t.Errorf("不是等待获胜关闭者: %v", readErr)
+		}
+		assertWSTestClose(t, server, 1011, "downstream connection failed")
+	}
+	f := client.read(t)
+	if f.Opcode != ws.OpClose || !bytes.Equal(f.Payload, ws.EncodeClosePayload(1011, "downstream connection failed")) {
+		t.Errorf("获胜关闭在线路上被改写: opcode=%v payload=%q", f.Opcode, f.Payload)
+	}
+	if err := receiveWSTest(t, done); !errors.Is(err, errWSRelayDownstream) {
+		t.Fatal(err)
+	}
+	if b.Used() != 0 || !u.finished {
+		t.Fatal("共享关闭未回收预算或未 join")
+	}
+	s.Done()
+	if err := receiveWSTest(t, shutdown); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Shutdown(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 }

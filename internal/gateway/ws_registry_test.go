@@ -7,6 +7,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/yobo2u/omugw/internal/transport/ws"
 )
 
 func TestWSRegistryPendingAndDrain(t *testing.T) {
@@ -183,4 +185,61 @@ func TestWSRegistryRepeatedShutdownAndLateAttach(t *testing.T) {
 	if b.Used() != 0 {
 		t.Fatal("迟到连接未释放")
 	}
+}
+
+func TestWSRegistryShutdownWaitsForSelectedClose(t *testing.T) {
+	r := newWSRegistry(1)
+	s, _ := r.Register(context.Background())
+	b := wsTestBudget(t, 1<<20)
+	var gate *wsTestGate
+	down, client := wsTestLink(t, false, b, 1<<18, 0, func(c net.Conn) net.Conn {
+		gate = newWSTestGate(c, false)
+		return gate
+	})
+	up, server := wsTestLink(t, true, b, 1<<18, 0, nil)
+	t.Cleanup(gate.unblock)
+	if !s.Attach(up) || !s.Attach(down) {
+		t.Fatal("Attach 失败")
+	}
+	server.send(t, ws.OpText, []byte(wsTestInitial))
+	initial, err := up.ReadOwnedMessage(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- relayWS(s.Context(), down, up, initial, nil, 0) }()
+	_ = client.read(t)
+	gate.armed.Store(true)
+	server.send(t, ws.OpClose, ws.EncodeClosePayload(1000, "retained close reason"))
+	awaitWSTest(t, gate.entered)
+	shutdown := make(chan error, 1)
+	go func() { shutdown <- r.Shutdown(context.Background()) }()
+	awaitWSTest(t, s.shutdown.started)
+	select {
+	case <-s.Context().Done():
+		t.Error("实际 close 尚未完成，registry 已把幂等返回当作关闭完成并取消 context")
+	case <-time.After(40 * time.Millisecond):
+	}
+	gate.unblock()
+	assertWSTestClose(t, client, 1000, "retained close reason")
+	if err := receiveWSTest(t, done); err != nil {
+		t.Fatal(err)
+	}
+	awaitWSTest(t, s.Context().Done())
+	if b.Used() != 0 {
+		t.Fatal("共享关闭仍持有 reason 预算")
+	}
+	select {
+	case <-shutdown:
+		t.Fatal("handler 未 Done 就完成关停")
+	default:
+	}
+	s.Done()
+	if err := receiveWSTest(t, shutdown); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestWSRegistryDuplicateAttachJoinsSelectedClose(t *testing.T) {
+	wsTestSelectedClose(t, true)
 }

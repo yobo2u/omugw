@@ -36,8 +36,9 @@ type wsRegistry struct {
 type wsShutdownKey struct{}
 
 type wsShutdownNotice struct {
-	started  chan struct{}
-	finished chan struct{}
+	started     chan struct{}
+	finished    chan struct{}
+	termination *wsTermination
 }
 
 type wsSession struct {
@@ -68,7 +69,13 @@ func (r *wsRegistry) Register(parent context.Context) (*wsSession, error) {
 		return nil, errWSRegistryFull
 	}
 	ctx, cancel := context.WithCancelCause(parent)
-	s := &wsSession{registry: r, cancel: cancel, shutdown: wsShutdownNotice{make(chan struct{}), make(chan struct{})}, conns: make(map[*ws.Conn]struct{})}
+	s := &wsSession{registry: r, cancel: cancel, shutdown: wsShutdownNotice{started: make(chan struct{}), finished: make(chan struct{})}, conns: make(map[*ws.Conn]struct{})}
+	s.shutdown.termination = newWSTermination(func(code uint16, reason string) {
+		r.mu.Lock()
+		conns := s.connectionsLocked()
+		r.mu.Unlock()
+		closeWSConnections(conns, code, reason)
+	})
 	// 先通知 relay 关停原因，再有限关闭，最后取消 pending 读；直接先 cancel 会让
 	// transport 的读取消回调抢先断 TCP，使本应发出的 1001 退化成 1006。
 	s.ctx = context.WithValue(ctx, wsShutdownKey{}, &s.shutdown)
@@ -84,13 +91,25 @@ func (s *wsSession) Attach(c *ws.Conn) bool {
 	}
 	r := s.registry
 	r.mu.Lock()
+	_, owned := s.conns[c]
 	accepted := !r.sealed && !s.finished && s.ctx.Err() == nil
+	select {
+	case <-s.shutdown.termination.selected:
+		accepted = false
+	default:
+	}
 	if accepted {
 		s.conns[c] = struct{}{}
 	}
 	r.mu.Unlock()
 	if !accepted {
-		_, _ = c.CloseWithResult(ws.CloseGoingAway, "")
+		if owned {
+			// 迟到的重复 Attach 也不能绕过已登记连接的关闭 owner，抢发 1001。
+			s.shutdown.termination.report(wsRelayResult{err: context.Canceled})
+			_ = s.shutdown.termination.close()
+		} else {
+			_, _ = c.CloseWithResult(ws.CloseGoingAway, "")
+		}
 	}
 	return accepted
 }
@@ -101,12 +120,12 @@ func (s *wsSession) Done() {
 		r := s.registry
 		r.mu.Lock()
 		s.finished = true
-		conns := s.connectionsLocked()
-		s.conns = nil
 		r.mu.Unlock()
-		closeWSConnections(conns, ws.CloseGoingAway, "")
+		s.shutdown.termination.report(wsRelayResult{err: context.Canceled})
+		_ = s.shutdown.termination.close()
 		s.cancel(context.Canceled)
 		r.mu.Lock()
+		s.conns = nil
 		delete(r.sessions, s)
 		if r.sealed && len(r.sessions) == 0 {
 			close(r.drained)
@@ -131,12 +150,14 @@ func (r *wsRegistry) Shutdown(ctx context.Context) error {
 		var closing sync.WaitGroup
 		for s := range r.sessions {
 			close(s.shutdown.started)
-			conns := s.connectionsLocked()
+			// 与 active relay 共用第一次原因和物理 close 权；不能另发 1001
+			// 抢在已胜出的故障关闭前。report 不做分类/网络操作，锁内只封口。
+			s.shutdown.termination.report(wsRelayResult{err: errWSShutdown})
 			closing.Add(1)
 			// 数量受会话准入上限约束；慢 active 不能串行拖延其余 pending 的取消。
 			go func() {
 				defer closing.Done()
-				closeWSConnections(conns, ws.CloseGoingAway, "")
+				_ = s.shutdown.termination.close()
 				s.cancel(errWSShutdown)
 				close(s.shutdown.finished)
 			}()

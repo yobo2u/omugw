@@ -21,38 +21,64 @@ type wsRelayResult struct {
 	upstream bool
 }
 
+// 原因选择与实际关闭必须属于同一个仲裁器。仅共享返回错误而各自 Close，
+// 会让 registry 的 1001 在故障已胜出、尚未完成分类时抢先写到线上。
+type wsTermination struct {
+	firstReason sync.Once
+	selected    chan struct{}
+	winner      wsRelayResult
+	closeOnce   sync.Once
+	closeConns  func(uint16, string)
+	result      error
+}
+
+func newWSTermination(closeConns func(uint16, string)) *wsTermination {
+	return &wsTermination{selected: make(chan struct{}), closeConns: closeConns}
+}
+
+func (t *wsTermination) report(r wsRelayResult) {
+	won := false
+	t.firstReason.Do(func() {
+		won = true
+		t.winner = r
+		close(t.selected)
+	})
+	if !won {
+		releaseWSRelayError(r.err)
+	}
+}
+
+func (t *wsTermination) close() error {
+	t.closeOnce.Do(func() {
+		<-t.selected
+		code, reason, result := classifyWSRelay(t.winner)
+		t.closeConns(code, reason)
+		// 原因所有权只由实际关闭者归还；其余调用者通过 Once 等待关闭和释放，
+		// 不借 transport 幂等返回冒充 join，也不在释放后再借用 reason。
+		releaseWSRelayError(t.winner.err)
+		t.winner = wsRelayResult{}
+		t.result = result
+	})
+	return t.result
+}
+
 // relayWS 接管 initial；唯一上游 reader 先观测后转发，调用者只在返回后结算 Lease。
 func relayWS(ctx context.Context, downstream, upstream *ws.Conn, initial *ws.Message, usage *wsUsage, idle time.Duration) error {
 	// 请求/registry 的取消先交给协调者发 close，不让 ReadOwnedMessage 的取消
 	// 回调越过礼貌关闭。读 ctx 的取消权只在下方 close 完成之后使用。
 	readCtx, cancelRead := context.WithCancel(context.WithoutCancel(ctx))
 	stop := make(chan struct{})
-	// 只转交胜出的一次终止结果；失败竞争者在 worker 内归还关闭原因，不能
-	// 让它们排队占住预算，也不能在协调者已选中原因后被取消/shutdown 改写。
-	results := make(chan wsRelayResult, 1)
-	var firstReason sync.Once
+	termination := newWSTermination(func(code uint16, reason string) {
+		closeWSConnections([]*ws.Conn{downstream, upstream}, code, reason)
+	})
 	notice, _ := ctx.Value(wsShutdownKey{}).(*wsShutdownNotice)
 	var shutdown <-chan struct{}
 	if notice != nil {
 		shutdown = notice.started
+		termination = notice.termination
 	}
 	report := func(err error, isUpstream bool) {
-		// 关停已发起后的 socket 错误是关闭的结果，不能误报上游故障；已经
-		// 交付给协调者的原因则不再改写，防后来 shutdown 覆盖先前业务关闭。
-		select {
-		case <-shutdown:
-			releaseWSRelayError(err)
-			err = errWSShutdown
-		default:
-		}
-		won := false
-		firstReason.Do(func() {
-			won = true
-			results <- wsRelayResult{err, isUpstream}
-		})
-		if !won {
-			releaseWSRelayError(err)
-		}
+		termination.report(wsRelayResult{err, isUpstream})
 	}
 	var workers sync.WaitGroup
 	forward := func(src, dst *ws.Conn, fromUpstream bool, first *ws.Message) {
@@ -120,32 +146,25 @@ func relayWS(ctx context.Context, downstream, upstream *ws.Conn, initial *ws.Mes
 	go forward(downstream, upstream, false, nil)
 	go heartbeat(upstream, true)
 	go heartbeat(downstream, false)
-	var winner wsRelayResult
 	select {
-	case winner = <-results:
+	case <-termination.selected:
 	case <-ctx.Done():
 		err := ctx.Err()
 		if errors.Is(context.Cause(ctx), errWSShutdown) {
 			err = errWSShutdown
 		}
 		report(err, false)
-		winner = <-results
 	case <-shutdown:
 		report(errWSShutdown, false)
-		winner = <-results
 	}
 	close(stop)
-	code, reason, result := classifyWSRelay(winner)
-	closeWSConnections([]*ws.Conn{downstream, upstream}, code, reason)
-	// 幂等 close 不 join 先前的关闭者；registry 先持有写锁时，必须等其真实
-	// close 完成再取消读，否则取消回调仍会打断正在发送的 1001。
+	result := termination.close()
+	// 等待 registry 完成 context cause/退出交接，不能遗留它的关停工作者。
 	select {
 	case <-shutdown:
 		<-notice.finished
 	default:
 	}
-	// reason 仍由 winning CloseError 所有；两段有限 close 都结束后才可释放。
-	releaseWSRelayError(winner.err)
 	cancelRead()
 	workers.Wait()
 	if usage != nil {
