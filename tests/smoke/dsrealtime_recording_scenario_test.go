@@ -63,6 +63,7 @@ type dsDriver struct {
 	cancelTarget       string
 	inputItem          string
 	asrItems           map[string]bool
+	itemAcks           dsItemAcks
 }
 
 // 唯一拨号点；所有失败直接保存分类并退出，绝不切模型、切地域或重试。
@@ -198,6 +199,9 @@ func (d *dsDriver) send(kind string, body map[string]any) error {
 		body = map[string]any{}
 	}
 	body["type"], body["event_id"] = kind, fmt.Sprintf("record_%03d", d.serial)
+	if d.cfg.Scenario == "text-tools" && !d.itemAcks.observe("send", body, len(d.r.Records)) {
+		return errors.New("ambiguous_pending_item")
+	}
 	b, err := json.Marshal(body)
 	if err != nil || len(b) > dsMaxMessage || !dsSafePayload(b, d.cfg.Key) {
 		return errors.New("unsafe_request")
@@ -249,6 +253,9 @@ func (d *dsDriver) observe(m dsIncoming) (map[string]any, error) {
 	var e map[string]any
 	_ = json.Unmarshal(m.payload, &e)
 	typ := dsString(e, "type")
+	if d.cfg.Scenario == "text-tools" && !d.itemAcks.observe("receive", e, len(d.r.Records)-1) {
+		return nil, errors.New("item_ack_mismatch_or_reused_id")
+	}
 	if typ == "error" {
 		return nil, errors.New("upstream_error")
 	}
@@ -449,11 +456,17 @@ func (d *dsDriver) tts() error {
 			return err
 		}
 	}
-	if _, err := d.wait("response.done"); err != nil {
+	waitFor := "response.done"
+	if d.cfg.Scenario == "tts-server-commit" {
+		waitFor = "response.audio.delta"
+	}
+	if _, err := d.wait(waitFor); err != nil {
 		return err
 	}
-	if d.cfg.Scenario == "tts-server-commit" && len(dsAutomaticCommitResponse(d.r.Records)) == 0 {
-		return errors.New("automatic_commit_not_observed")
+	if d.cfg.Scenario == "tts-server-commit" {
+		if s := dsAutomaticCommitProgress(d.r.Records); s == nil || s.audioBytes == 0 || s.finishSent {
+			return errors.New("automatic_commit_not_observed")
+		}
 	}
 	if err := d.send("session.finish", nil); err != nil {
 		return err
@@ -461,29 +474,31 @@ func (d *dsDriver) tts() error {
 	if _, err := d.wait("session.finished"); err != nil {
 		return err
 	}
+	if d.cfg.Scenario == "tts-server-commit" {
+		if s := dsAutomaticCommitProgress(d.r.Records); s == nil || !s.sessionFinished {
+			return errors.New("automatic_commit_not_completed")
+		}
+	}
 	if len(d.responseDone) != 1 || len(d.r.Audio) == 0 {
 		return errors.New("missing_tts_audio_or_terminal")
 	}
 	return nil
 }
 
-func (d *dsDriver) textItem(id, text string) error {
-	if err := d.send("conversation.item.create", map[string]any{"item": map[string]any{"id": id, "type": "message", "role": "user", "content": []any{map[string]any{"type": "input_text", "text": text}}}}); err != nil {
+func (d *dsDriver) createItem(item map[string]any) error {
+	if err := d.send("conversation.item.create", map[string]any{"item": item}); err != nil {
 		return err
 	}
-	for {
-		e, err := d.wait("conversation.item.created")
-		if err != nil {
-			return err
-		}
-		if dsString(e, "item", "id") == id {
-			return nil
-		}
-	}
+	_, err := d.wait("conversation.item.created")
+	return err
+}
+
+func (d *dsDriver) textItem(text string) error {
+	return d.createItem(map[string]any{"type": "message", "role": "user", "content": []any{map[string]any{"type": "input_text", "text": text}}})
 }
 
 func (d *dsDriver) textTools() error {
-	if err := d.textItem("record_user_1", "记住测试口令：蓝色方块。只回复已记住，不调用工具。"); err != nil {
+	if err := d.textItem("记住测试口令：蓝色方块。只回复已记住，不调用工具。"); err != nil {
 		return err
 	}
 	if err := d.send("response.create", nil); err != nil {
@@ -492,7 +507,7 @@ func (d *dsDriver) textTools() error {
 	if _, err := d.wait("response.done"); err != nil {
 		return err
 	}
-	if err := d.textItem("record_user_2", "先复述刚才口令，再在同一轮调用 test_color 和 test_shape，不要猜测结果。"); err != nil {
+	if err := d.textItem("先复述刚才口令，再在同一轮调用 test_color 和 test_shape，不要猜测结果。"); err != nil {
 		return err
 	}
 	if err := d.send("response.create", nil); err != nil {
@@ -518,17 +533,8 @@ func (d *dsDriver) textTools() error {
 		if name == "test_shape" {
 			result = "方块"
 		}
-		if err := d.send("conversation.item.create", map[string]any{"item": map[string]any{"id": "record_result_" + name, "type": "function_call_output", "call_id": id, "output": result}}); err != nil {
+		if err := d.createItem(map[string]any{"type": "function_call_output", "call_id": id, "output": result}); err != nil {
 			return err
-		}
-		for {
-			ack, err := d.wait("conversation.item.created")
-			if err != nil {
-				return err
-			}
-			if dsString(ack, "item", "call_id") == id {
-				break
-			}
 		}
 	}
 	if len(seen) != 2 {

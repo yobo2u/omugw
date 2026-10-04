@@ -6,17 +6,45 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"maps"
 )
 
-// 自动提交必须在任何 finish/commit 之前完成同一响应，不能把结束排空当自动触发。
-func dsAutomaticCommitResponse(records []dsRecord) []int {
-	configured, appended, created, terminal := false, false, false, false
+type dsAutomaticCommitState struct {
+	nodes                   []int
+	audioBytes              int
+	terminal, finishSent    bool
+	sessionFinished, closed bool
+}
+
+// finish 前必须已自动启动同实体音频；终态可在 finish 后到达，不能把结束排空当自动触发。
+// 驱动只用未完成前缀准许 finish，见证/Coverage 则必须等完整链及真实正常 close。
+func dsAutomaticCommitProgress(records []dsRecord) *dsAutomaticCommitState {
+	s := &dsAutomaticCommitState{}
+	configured, appended, created, closeSent := false, false, false, false
 	id := ""
-	audioBytes := 0
-	var nodes []int
 	for i, rec := range records {
+		if s.closed {
+			return nil
+		}
+		if rec.Kind == "close" {
+			if !s.sessionFinished || rec.CloseCode != 1000 {
+				return nil
+			}
+			if rec.Direction == "send" {
+				if closeSent {
+					return nil
+				}
+				closeSent = true
+			} else if rec.Direction == "receive" {
+				s.closed = true
+			}
+			continue
+		}
 		if rec.Kind != "message" {
 			continue
+		}
+		if s.sessionFinished {
+			return nil
 		}
 		var e map[string]any
 		if json.Unmarshal(rec.Payload, &e) != nil {
@@ -25,79 +53,162 @@ func dsAutomaticCommitResponse(records []dsRecord) []int {
 		typ := dsString(e, "type")
 		if rec.Direction == "send" {
 			switch typ {
-			case "session.finish", "input_text_buffer.commit", "response.create", "response.cancel":
+			case "input_text_buffer.commit", "response.create", "response.cancel":
 				return nil
+			case "session.finish":
+				if s.audioBytes == 0 || s.finishSent {
+					return nil
+				}
+				s.finishSent = true
+				s.nodes = append(s.nodes, i)
 			case "input_text_buffer.append":
 				if !configured || appended || dsString(e, "text") != dsPublicText {
 					return nil
 				}
 				appended = true
-				nodes = append(nodes, i)
+				s.nodes = append(s.nodes, i)
 			}
 			continue
 		}
 		switch typ {
 		case "session.updated":
-			if appended || dsString(e, "session", "mode") != "server_commit" {
+			if configured || appended || dsString(e, "session", "mode") != "server_commit" {
 				return nil
 			}
 			configured = true
-			nodes = append(nodes, i)
+			s.nodes = append(s.nodes, i)
 		case "response.created":
 			if !appended || created || dsString(e, "response", "id") == "" {
 				return nil
 			}
 			created = true
 			id = dsString(e, "response", "id")
-			nodes = append(nodes, i)
+			s.nodes = append(s.nodes, i)
 		case "response.audio.delta":
 			b, err := base64.StdEncoding.DecodeString(dsString(e, "delta"))
-			if !created || terminal || dsString(e, "response_id") != id || err != nil || len(b) == 0 || len(b) > dsMaxAudio-audioBytes {
+			if !created || s.terminal || dsString(e, "response_id") != id || err != nil || len(b) == 0 || len(b) > dsMaxAudio-s.audioBytes {
 				return nil
 			}
-			audioBytes += len(b)
-			nodes = append(nodes, i)
+			s.audioBytes += len(b)
+			s.nodes = append(s.nodes, i)
 		case "response.done":
-			if !created || terminal || audioBytes == 0 || dsString(e, "response", "id") != id || dsString(e, "response", "status") != "completed" {
+			if !created || s.terminal || s.audioBytes == 0 || dsString(e, "response", "id") != id || dsString(e, "response", "status") != "completed" {
 				return nil
 			}
-			terminal = true
-			nodes = append(nodes, i)
+			s.terminal = true
+			s.nodes = append(s.nodes, i)
+		case "session.finished":
+			if !s.finishSent || !s.terminal {
+				return nil
+			}
+			s.sessionFinished = true
+			s.nodes = append(s.nodes, i)
+		case "error":
+			return nil
 		}
 	}
-	if !terminal {
-		return nil
-	}
-	return nodes
+	return s
 }
 
 func dsAutomaticCommitEvidence(records []dsRecord) []int {
-	for i, rec := range records {
-		var e map[string]any
-		if rec.Direction != "send" || rec.Kind != "message" || json.Unmarshal(rec.Payload, &e) != nil || dsString(e, "type") != "session.finish" {
-			continue
-		}
-		nodes := dsAutomaticCommitResponse(records[:i])
-		if len(nodes) == 0 {
-			return nil
-		}
-		for j := i + 1; j < len(records); j++ {
-			if records[j].Direction != "receive" || records[j].Kind != "message" {
-				continue
-			}
-			if json.Unmarshal(records[j].Payload, &e) != nil {
-				return nil
-			}
-			switch dsString(e, "type") {
-			case "response.created", "response.audio.delta", "response.done":
-				return nil
-			case "session.finished":
-				return append(nodes, i, j)
-			}
-		}
-		return nil
+	if s := dsAutomaticCommitProgress(records); s != nil && s.closed {
+		return s.nodes
 	}
 	return nil
+}
+
+// 只在录制作者省略可选 id 时接受服务端分配；显式 id、角色、内容和 call_id 仍逐项核对。
+func dsItemAckMatches(want, got map[string]any) bool {
+	if dsString(got, "id") == "" {
+		return false
+	}
+	switch dsString(want, "type") {
+	case "message":
+		if dsString(want, "role") != "user" {
+			return false
+		}
+		wc, wok := want["content"].([]any)
+		gc, gok := got["content"].([]any)
+		if !wok || !gok || len(wc) == 0 || len(wc) != len(gc) {
+			return false
+		}
+		for i, w := range wc {
+			wm, wok := w.(map[string]any)
+			gm, gok := gc[i].(map[string]any)
+			if !wok || !gok || dsString(wm, "type") != "input_text" || dsString(wm, "text") == "" || !dsEchoMatches(wm, gm) {
+				return false
+			}
+		}
+		want = maps.Clone(want)
+		delete(want, "content")
+	case "function_call_output":
+		if dsString(want, "call_id") == "" || dsString(want, "output") == "" {
+			return false
+		}
+	default:
+		return false
+	}
+	return dsEchoMatches(want, got)
+}
+
+// 单个 pending 的生命周期同时约束驱动和候选：不能跨过错 ack/另一次提交捡后面的同名事件。
+type dsItemAcks struct {
+	pending      map[string]any
+	pendingIndex int
+	seen         map[string]bool
+	accepted     map[int]string
+}
+
+func (s *dsItemAcks) observe(direction string, e map[string]any, index int) bool {
+	typ := dsString(e, "type")
+	if direction == "send" {
+		if s.pending != nil {
+			return false
+		}
+		if typ == "conversation.item.create" {
+			s.pending = dsMap(e, "item")
+			s.pendingIndex = index
+			return s.pending != nil
+		}
+		return true
+	}
+	if typ != "conversation.item.created" {
+		return true
+	}
+	item := dsMap(e, "item")
+	id := dsString(item, "id")
+	if id == "" || s.seen[id] {
+		return false
+	}
+	if s.pending != nil {
+		if !dsItemAckMatches(s.pending, item) {
+			return false
+		}
+		if s.accepted == nil {
+			s.accepted = map[int]string{}
+		}
+		s.accepted[s.pendingIndex] = id
+		s.pending = nil
+	}
+	if s.seen == nil {
+		s.seen = map[string]bool{}
+	}
+	s.seen[id] = true
+	return true
+}
+
+func dsItemRequestWitness(records []dsRecord, index int) bool {
+	var acks dsItemAcks
+	for i, rec := range records {
+		if rec.Kind != "message" {
+			continue
+		}
+		var e map[string]any
+		if json.Unmarshal(rec.Payload, &e) != nil || !acks.observe(rec.Direction, e, i) {
+			return false
+		}
+	}
+	return acks.pending == nil && acks.accepted[index] != ""
 }
 
 // 节点索引来自原始证据链；发送选 authored，接收选 golden，不另找同名事件拼接。

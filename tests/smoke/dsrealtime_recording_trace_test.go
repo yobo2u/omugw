@@ -136,6 +136,17 @@ func dsCandidate(r dsRecording) (testkit.Fixture, error) {
 // 只给存在真实后继见证的发送建立请求预期；发送成功本身不是业务 ack。
 func dsRequestWitness(scenario string, records []dsRecord, index int, request map[string]any) bool {
 	typ := dsString(request, "type")
+	if scenario == "tts-server-commit" && (typ == "input_text_buffer.append" || typ == "session.finish") {
+		for _, i := range dsAutomaticCommitEvidence(records) {
+			if i == index {
+				return true
+			}
+		}
+		return false
+	}
+	if typ == "conversation.item.create" {
+		return dsItemRequestWitness(records, index)
+	}
 	if typ == "response.cancel" {
 		nodes, cancelIndex := dsInterruptEvidence(records)
 		return len(nodes) > 0 && cancelIndex == index
@@ -152,10 +163,6 @@ func dsRequestWitness(scenario string, records []dsRecord, index int, request ma
 		switch typ {
 		case "session.update":
 			if t == "session.updated" && dsSessionEchoMatches(scenario, dsMap(request, "session"), dsMap(e, "session")) {
-				return true
-			}
-		case "conversation.item.create":
-			if t == "conversation.item.created" && dsEchoMatches(dsMap(request, "item"), dsMap(e, "item")) {
 				return true
 			}
 		case "response.create":
@@ -320,7 +327,7 @@ func dsCoverage(r dsRecording, events []dsEvidenceEvent) []testkit.WSCoverage {
 		if r.Scenario == "tts-commit" {
 			add("realtime_commit_modes", "commit 模式真实 committed、音频和 done；不单独证明另一模式", byType["input_text_buffer.committed"], audio, done)
 		} else {
-			add("realtime_commit_modes", "server_commit 在finish前自动创建响应、返回同实体非空音频及completed终态，再finish收尾", dsEvidenceNodes(r.Records, dsAutomaticCommitEvidence(r.Records)))
+			add("realtime_commit_modes", "server_commit 在finish前自动创建响应并返回同实体非空音频，再取得同ID completed终态、finished及正常close；done可在finish后", dsEvidenceNodes(r.Records, dsAutomaticCommitEvidence(r.Records)))
 		}
 	}
 	if r.Input != nil {

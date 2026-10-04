@@ -3,6 +3,8 @@
 日期：2026-10-04。Task 5 实现工具及离线验证；控制器随后实际调用三次。前两次在业务
 输入前因配置确认失败停止；第三次完成 TTS 业务但未取得关闭回应，仍是失败录制。
 Task 6 据此离线修正配置确认、收尾及双单位用量，**尚无完整真实能力结论**。
+以上为前三次的历史诊断快照；当前控制器通知本批已用 **6/8**。本次仅根据后续两份
+失败实录修正自动流收尾与 item 身份，不新增真实调用；完整能力状态由控制器管理。
 
 ## 工具边界
 
@@ -94,16 +96,22 @@ URL、原始头、secret、消息正文或 close reason。原始消息是私有�
   model 必须明确等于请求模型；音频格式及采样率必须在新式 `audio` 结构回显一致，
   输出上限等请求字段仍逐项核对。只有下述 TTS 语言字段接受已观察到的一对大小写值。
 - TTS `commit` 显式 commit；`server_commit` 不显式 commit，先等待服务端自动创建响应、
-  同一 response_id 的非空音频及 completed 终态，再发送 `session.finish` 收尾。
-  若只有 finish 后排空的音频，或 finish 前没有完整同实体证据链，不加提交模式 Coverage；
-  录制器不会靠提前 finish 促成这份证据，缺少自动响应时按原有期限失败并保留实际轨迹。
+  同一 response_id 的合法非空音频，才发送一次 `session.finish` 收尾。completed done
+  可在 finish 前或后，但必须属于同一 ID，且先于 session.finished；随后必须取得真实
+  正常 close。只有 finish 后才出现音频、显式 commit、提前终结、跨 ID 或缺尾部均不算。
+  驱动与后继见证/Coverage 共用这条证据链，缺少自动启动时按原期限失败并保留实际轨迹。
+- text-tools 的作者请求省略可选 `item.id`，串行等待唯一 pending 的 type/role/content
+  或 function_call_output 的 type/call_id/output 回显。ack 必须带非空、未复用的服务端 ID；
+  显式提供的 ID 仍须严格相等。新增服务器字段只按 subset 核对，内容数组长度与顺序不放宽。
+  错 ack、重叠 pending 或重复 ack 立即失败，不能跳过它们等待后面的同名事件；候选使用相同
+  校验和真实 ID 的 bind/reference。官方客户端原文的 item.id 为可选，call_id/output 必选。
 - 模型别名可能漂移，原始 `session.created` 的实际模型必须审阅；来源版本字符串是文档
   日期标签，不声称云端固定快照。本批固定北京端点，模型如下命令。
 
 ## 已执行批次与 Task 6 契约修正
 
-批次固定为 `.local/recordings/dsrealtime/batch-20261004`，已占用 `.attempt-1` 至
-`.attempt-3`，即 **3/8 次已使用、最多剩余 5 次**。前两份 `recording.json` 的 payload
+批次固定为 `.local/recordings/dsrealtime/batch-20261004`。下列历史快照截至 `.attempt-3`，
+当时为 3/8；当前已用 6/8，剩余额度仅由控制器调度。前两份 `recording.json` 的 payload
 均已 base64 解码核验：各只有接收 created、发送 update、接收 updated 和本地 close，
 101 成功后都以 `unconfirmed_config` 停止，`configuration_confirmed=false`。没有业务
 输入、response、usage、成功候选或音频样本；usage 缺失不等于零费用。
@@ -154,13 +162,29 @@ Task 6 的离线处理边界：
    同时保留 peer-first/竞争、raw EOF、无回应超时、额外消息、异常码负例。原实录未改写，
    合成关闭与本地回放成功不能升级其来源或证明真实服务已成功关闭。
 
+### 后续两份失败实录：自动流与服务端 item ID
+
+- `tts-server-commit/recording.json`：配置确认后 append，自动创建
+  `resp_QioPULXAcyZPaOHfCkJqk`，两条同 ID audio.delta 分别严格 base64 解码为 **9788、9786 字节**。
+  随后没有 done，也没有发送 finish，15 秒 idle 后失败；音频已经证明自动启动，旧驱动却
+  在 finish 前等待完整终态。新驱动先核实自动启动，再 finish，并等待同 ID completed done、
+  session.finished 和物理 close。原文件仍为失败，不补写尾部。
+  SHA-256：`bae6fb047a6957689519c09eb577c264d73bacdaac902d89bce69e7860698ac4`。
+- `text-tools-v2/recording.json`：请求 `record_user_1`，服务端 ack 为
+  `item_Ji44D7s85jVY5djzY5naZ`，message/user/input_text 与固定文本完全一致，并新增
+  object/status。旧驱动未发 response.create，等待指定 ID 至 idle 失败。新作者请求省略 ID，
+  从唯一匹配 ack 绑定真实 ID；工具结果同样省略可选 ID，保留必需 call_id/output。
+  SHA-256：`da1b0c6477c4f62202ecce03aeae623f9f7aac70e49aa9a4b85d8e5adea15951`。
+- 回归使用上述形状与 ack 字面副本；TTS PCM 缩为合成数据，done/finished、工具后续轮次及
+  正常 close 都来自独立本地 TCP 脚本。完整 candidate 回放只验证录制器，不冒充实录成功。
+
 ## 控制器显式命令
 
 以下是控制器后续显式执行的模板，Task 6 未执行任何真实调用。已失败的 `tts-commit`
 与 `text-tools` 目录不可覆盖；若控制器继续，使用下面同批次的新 run 目录，并核对总尝试数。
 请从仓库根执行。`DASHSCOPE_API_KEY` 由安全环境预先提供，禁止把值写进命令或日志。
-五条命令每条各消耗一个会话，先审阅上一份结果再执行下一条；本批最多八次，已使用三次，
-命令不循环、不自动重跑、不换 batch。
+以下五种场景只是命令模板，并非当前待执行队列；本批最多八次，当前已用六次，
+仅控制器选择剩余最多两次，先审阅上一份结果再执行下一条，不循环、不自动重跑、不换 batch。
 
 ```bash
 export OMUGW_SMOKE_WS_URL=wss://dashscope.aliyuncs.com/api-ws/v1/realtime
@@ -182,13 +206,14 @@ go test -tags=smoke ./tests/smoke -run '^TestRecordDSRealtime$' -count=1 -timeou
 
 ### 2. TTS server_commit
 
-验收顺序必须为 append → 自动 response.created → 同实体非空 audio.delta → completed
-response.done → 客户端 finish → session.finished。只有结束排空不算自动提交行为证据。
+验收顺序为 append → 自动 response.created → 同实体合法非空 audio.delta → 客户端 finish
+→ 同 ID completed response.done → session.finished → 真实正常 close。done 先于 finish 也接受；
+音频必须先于 finish，只有结束排空不算自动启动证据。
 
 ```bash
 OMUGW_RECORD_DSREALTIME=1 OMUGW_RECORD_SCENARIO=tts-server-commit \
 OMUGW_SMOKE_MODEL_REALTIME=qwen3-tts-flash-realtime \
-OMUGW_RECORD_OUTPUT="$DS_RECORD_BATCH/tts-server-commit" \
+OMUGW_RECORD_OUTPUT="$DS_RECORD_BATCH/tts-server-commit-retry1" \
 go test -tags=smoke ./tests/smoke -run '^TestRecordDSRealtime$' -count=1 -timeout=75s -v
 ```
 
@@ -262,7 +287,7 @@ response.cancel 并绑定取消目标。官方 cancel 不带 response_id，录�
 | realtime_server_vad | speech_started、speech_stopped、committed | item_id、时间字段、原消息因果顺序；未录制 |
 | realtime_interrupt_turns | response.created → 活跃时同实体非空 audio.delta → cancel → 同目标 cancelled done | 拒绝错ID、空音频、提前终结及终态ID复用；见证/Coverage绑定同链；未录制 |
 | realtime_image_input | 音频 append → image append → commit → 真实视觉回答 | 图像 SHA 和字节；理解证据人工审阅，**不自动加 Coverage**；未录制 |
-| realtime_commit_modes | 两份 TTS：commit 的 committed；server_commit 在finish前自动created→同实体非空audio→completed done | 两模式分别核对回显与收尾；仅finish排空或跨ID事件不计自动提交；未录制 |
+| realtime_commit_modes | 两份 TTS：commit 的 committed；server_commit 在finish前自动created→同实体非空audio，之后取得同ID completed done（可在finish后）、finished与正常close | 两模式分别核对回显与收尾；仅finish排空或跨ID事件不计自动提交；未录制 |
 
 自动 Coverage 只给事件支持的条目；语义判读的三项保留人工缺口。Coverage 不等于投放。
 失败轨迹可用于诊断，不能改成成功 fixture；来源或摘要篡改不能靠重算 hash 洗白。

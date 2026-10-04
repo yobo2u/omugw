@@ -192,24 +192,34 @@ func dsReplayCandidate(t *testing.T, f testkit.Fixture) {
 }
 
 func dsOfflineTools(p *dsOfflinePeer) {
+	dsOfflineToolsAck(p, func(_ int, raw string) string { return raw })
+}
+
+func dsOfflineToolsAck(p *dsOfflinePeer, ack func(int, string) string) {
 	e := p.read("conversation.item.create")
-	if dsString(e, "item", "id") != "record_user_1" {
-		p.t.Error("缺少第一轮记忆输入")
+	if _, present := dsMap(e, "item")["id"]; present {
+		p.t.Error("作者仍指定可选item.id，无法接受实录的服务端生成ID")
 	}
-	p.write(`{"type":"conversation.item.created","item":{"id":"record_user_1","type":"message","role":"user","content":[{"type":"input_text","text":"记住测试口令：蓝色方块。只回复已记住，不调用工具。"}]}}`)
+	p.write(ack(0, dsObservedServerItem))
 	p.read("response.create")
 	p.write(`{"type":"response.done","response":{"id":"r1","status":"completed","output":[],"usage":{"output_tokens":3}}}`)
 	p.read("conversation.item.create")
-	p.write(`{"type":"conversation.item.created","item":{"id":"record_user_2","type":"message","role":"user","content":[{"type":"input_text","text":"先复述刚才口令，再在同一轮调用 test_color 和 test_shape，不要猜测结果。"}]}}`)
+	p.write(ack(1, `{"type":"conversation.item.created","item":{"id":"server_user_2","type":"message","role":"user","content":[{"type":"input_text","text":"先复述刚才口令，再在同一轮调用 test_color 和 test_shape，不要猜测结果。"}]}}`))
 	p.read("response.create")
 	p.write(`{"type":"response.text.delta","response_id":"r2","delta":"蓝色方块"}`)
 	p.write(`{"type":"response.done","response":{"id":"r2","status":"completed","output":[{"type":"function_call","name":"test_color","call_id":"call_a","arguments":"{}"},{"type":"function_call","name":"test_shape","call_id":"call_b","arguments":"{}"}],"usage":{"output_tokens":30}}}`)
-	for _, v := range []struct{ name, id, result string }{{"test_color", "call_a", "蓝色"}, {"test_shape", "call_b", "方块"}} {
+	for i, v := range []struct{ name, id, result string }{{"test_color", "call_a", "蓝色"}, {"test_shape", "call_b", "方块"}} {
 		e = p.read("conversation.item.create")
+		if p.err != nil {
+			return
+		}
 		if dsString(e, "item", "call_id") != v.id || dsString(e, "item", "output") != v.result {
 			p.t.Error("工具结果关联错误")
 		}
-		p.write(`{"type":"conversation.item.created","item":{"id":"record_result_` + v.name + `","type":"function_call_output","call_id":"` + v.id + `","output":"` + v.result + `"}}`)
+		if _, present := dsMap(e, "item")["id"]; present {
+			p.t.Error("工具结果仍指定可选item.id")
+		}
+		p.write(ack(2+i, `{"type":"conversation.item.created","item":{"id":"server_result_`+v.name+`","type":"function_call_output","call_id":"`+v.id+`","output":"`+v.result+`"}}`))
 	}
 	p.read("response.create")
 	p.write(`{"type":"response.done","response":{"id":"r3","status":"completed","usage":{"output_tokens":5}}}`)

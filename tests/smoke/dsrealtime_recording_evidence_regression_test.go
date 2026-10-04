@@ -161,7 +161,7 @@ func TestDSRealtimeRecorderOfflineAudioAfterTerminalRejected(t *testing.T) {
 }
 
 func TestDSRealtimeRecorderOfflineServerCommitEvidence(t *testing.T) {
-	for _, name := range []string{"automatic", "finish_only", "finish_before_done", "wrong_audio_id", "wrong_done_id", "empty_audio", "no_created", "done_before_audio"} {
+	for _, name := range []string{"automatic", "finish_before_done", "audio_after_finish", "finish_only", "finish_before_audio", "wrong_audio_id", "wrong_done_id", "empty_audio", "bad_base64", "no_created", "done_before_audio", "explicit_commit", "duplicate_finish", "finished_before_done", "missing_done", "missing_finished", "missing_close", "abnormal_close", "audio_after_done"} {
 		t.Run(name, func(t *testing.T) {
 			r := dsAutomaticCommitTrace()
 			switch name {
@@ -169,29 +169,63 @@ func TestDSRealtimeRecorderOfflineServerCommitEvidence(t *testing.T) {
 				r.Records = dsRecordOrder(r.Records, 0, 1, 2, 3, 7, 4, 5, 6, 8, 9)
 			case "finish_before_done":
 				r.Records = dsRecordOrder(r.Records, 0, 1, 2, 3, 4, 5, 7, 6, 8, 9)
+			case "audio_after_finish":
+				r.Records = dsRecordOrder(r.Records, 0, 1, 2, 3, 4, 5, 7, 5, 6, 8, 9)
+			case "finish_before_audio":
+				r.Records = dsRecordOrder(r.Records, 0, 1, 2, 3, 4, 7, 5, 6, 8, 9)
 			case "wrong_audio_id":
 				r.Records[5].Payload = bytes.ReplaceAll(r.Records[5].Payload, []byte(`"r1"`), []byte(`"wrong"`))
 			case "wrong_done_id":
 				r.Records[6].Payload = bytes.ReplaceAll(r.Records[6].Payload, []byte(`"r1"`), []byte(`"wrong"`))
 			case "empty_audio":
 				r.Records[5].Payload = []byte(`{"type":"response.audio.delta","response_id":"r1","delta":""}`)
+			case "bad_base64":
+				r.Records[5].Payload = []byte(`{"type":"response.audio.delta","response_id":"r1","delta":"!"}`)
 			case "no_created":
 				r.Records = dsRecordOrder(r.Records, 0, 1, 2, 3, 5, 6, 7, 8, 9)
 			case "done_before_audio":
 				r.Records = dsRecordOrder(r.Records, 0, 1, 2, 3, 4, 6, 5, 7, 8, 9)
+			case "explicit_commit":
+				r.Records = dsRecordOrder(r.Records, 0, 1, 2, 3, 3, 4, 5, 6, 7, 8, 9)
+				r.Records[4].Payload = []byte(`{"type":"input_text_buffer.commit"}`)
+			case "duplicate_finish":
+				r.Records = dsRecordOrder(r.Records, 0, 1, 2, 3, 4, 5, 7, 7, 6, 8, 9)
+			case "finished_before_done":
+				r.Records = dsRecordOrder(r.Records, 0, 1, 2, 3, 4, 5, 7, 8, 6, 9)
+			case "missing_done":
+				r.Records = dsRecordOrder(r.Records, 0, 1, 2, 3, 4, 5, 7, 8, 9)
+			case "missing_finished":
+				r.Records = dsRecordOrder(r.Records, 0, 1, 2, 3, 4, 5, 6, 7, 9)
+			case "missing_close":
+				r.Records = r.Records[:9]
+			case "abnormal_close":
+				r.Records[9].CloseCode = 1001
+			case "audio_after_done":
+				r.Records = dsRecordOrder(r.Records, 0, 1, 2, 3, 4, 5, 6, 5, 7, 8, 9)
 			}
-			f, err := dsCandidate(r)
-			if err != nil {
-				t.Fatal(err)
-			}
+			want := name == "automatic" || name == "finish_before_done" || name == "audio_after_finish"
 			found := false
-			for _, c := range f.Response.WS.Coverage {
+			for _, c := range dsCoverage(r, nil) {
 				if c.Capability == "realtime_commit_modes" {
 					found = true
 				}
 			}
-			if found != (name == "automatic") {
-				t.Fatal("自动提交Coverage没有要求finish前同响应的非空音频和终态")
+			if found != want {
+				t.Error("自动提交Coverage必须先有同响应音频，再finish，并取得同ID终态/finished/正常close")
+			}
+			for i, rec := range r.Records {
+				var e map[string]any
+				_ = json.Unmarshal(rec.Payload, &e)
+				if rec.Direction == "send" && (dsString(e, "type") == "input_text_buffer.append" || dsString(e, "type") == "session.finish") && dsRequestWitness(r.Scenario, r.Records, i, e) != want {
+					t.Error("发送后继见证与完整自动提交证据链不一致")
+				}
+			}
+			f, err := dsCandidate(r)
+			if (err == nil) != want {
+				t.Fatalf("candidate err=%v; want valid=%v", err, want)
+			}
+			if want {
+				dsReplayCandidate(t, f)
 			}
 		})
 	}
