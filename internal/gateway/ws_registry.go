@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/yobo2u/omugw/internal/transport/ws"
 )
@@ -25,12 +26,13 @@ func (e *wsRegistryError) Error() string   { return e.message }
 func (e *wsRegistryError) HTTPStatus() int { return e.status }
 
 type wsRegistry struct {
-	mu       sync.Mutex
-	max      int
-	sealed   bool
-	sessions map[*wsSession]struct{}
-	drained  chan struct{}
-	stopped  chan struct{}
+	mu          sync.Mutex
+	max         int
+	closeBudget time.Duration
+	sealed      bool
+	sessions    map[*wsSession]struct{}
+	drained     chan struct{}
+	stopped     chan struct{}
 }
 
 type wsShutdownKey struct{}
@@ -52,8 +54,8 @@ type wsSession struct {
 	done     sync.Once
 }
 
-func newWSRegistry(maxSessions int) *wsRegistry {
-	return &wsRegistry{max: maxSessions, sessions: make(map[*wsSession]struct{}), drained: make(chan struct{}), stopped: make(chan struct{})}
+func newWSRegistry(maxSessions int, closeBudget time.Duration) *wsRegistry {
+	return &wsRegistry{max: maxSessions, closeBudget: closeBudget, sessions: make(map[*wsSession]struct{}), drained: make(chan struct{}), stopped: make(chan struct{})}
 }
 
 func (r *wsRegistry) Register(parent context.Context) (*wsSession, error) {
@@ -70,12 +72,12 @@ func (r *wsRegistry) Register(parent context.Context) (*wsSession, error) {
 	}
 	ctx, cancel := context.WithCancelCause(parent)
 	s := &wsSession{registry: r, cancel: cancel, shutdown: wsShutdownNotice{started: make(chan struct{}), finished: make(chan struct{})}, conns: make(map[*ws.Conn]struct{})}
-	s.shutdown.termination = newWSTermination(func(code uint16, reason string) {
+	s.shutdown.termination = newWSTermination(func(code uint16, reason string, deadline time.Time) {
 		r.mu.Lock()
 		conns := s.connectionsLocked()
 		r.mu.Unlock()
-		closeWSConnections(conns, code, reason)
-	})
+		closeWSConnections(conns, code, reason, deadline)
+	}, r.closeBudget)
 	// 先通知 relay 关停原因，再有限关闭，最后取消 pending 读；直接先 cancel 会让
 	// transport 的读取消回调抢先断 TCP，使本应发出的 1001 退化成 1006。
 	s.ctx = context.WithValue(ctx, wsShutdownKey{}, &s.shutdown)
@@ -108,7 +110,13 @@ func (s *wsSession) Attach(c *ws.Conn) bool {
 			s.shutdown.termination.report(wsRelayResult{err: context.Canceled})
 			_ = s.shutdown.termination.close()
 		} else {
-			_, _ = c.CloseWithResult(ws.CloseGoingAway, "")
+			// 迟到的新段也继承 session 首次选择的绝对 B，不能从 Attach 再续一段预算。
+			termination := s.shutdown.termination
+			termination.report(wsRelayResult{err: context.Canceled})
+			termination.mu.Lock()
+			deadline := termination.deadline
+			termination.mu.Unlock()
+			closeWSConnections([]*ws.Conn{c}, ws.CloseGoingAway, "", deadline)
 		}
 	}
 	return accepted
@@ -180,8 +188,15 @@ func (r *wsRegistry) Shutdown(ctx context.Context) error {
 	}
 }
 
-// 两个固定关闭工作者使两段连接并行收尾；不因慢 close 把单会话期限累加成两秒。
-func closeWSConnections(conns []*ws.Conn, code uint16, reason string) {
+// 两个固定关闭工作者共用同一绝对期限，防止每段 Close 再起一轮预算。
+func closeWSConnections(conns []*ws.Conn, code uint16, reason string, deadline time.Time) {
+	var finishes []func()
+	for _, c := range conns {
+		finish, _ := c.ArmCloseDeadline(deadline)
+		if finish != nil {
+			finishes = append(finishes, finish)
+		}
+	}
 	var wg sync.WaitGroup
 	for worker := 0; worker < min(2, len(conns)); worker++ {
 		wg.Add(1)
@@ -193,4 +208,7 @@ func closeWSConnections(conns []*ws.Conn, code uint16, reason string) {
 		}()
 	}
 	wg.Wait()
+	for _, finish := range finishes {
+		finish()
+	}
 }

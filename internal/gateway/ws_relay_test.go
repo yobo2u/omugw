@@ -24,6 +24,14 @@ import (
 
 const wsTestInitial = `{"type":"session.created","session":{"id":"s"},"unknown":"保留"}`
 
+// 旧测试在 transport 关闭 idle；relay 仍显式获得有限 B，长 idle 避免干扰其帧断言。
+func wsLegacyTestOptions(observer wsEventObserver, classify func(uint16, string) *canonical.Error, idle time.Duration) wsRelayOptions {
+	if idle <= 0 {
+		idle = time.Hour
+	}
+	return wsRelayOptions{Observer: observer, ClassifyClose: classify, Timeouts: config.Timeouts{Connect: time.Second, Idle: idle}}
+}
+
 func receiveWSTest[T any](t *testing.T, ch <-chan T) T {
 	t.Helper()
 	select {
@@ -188,7 +196,7 @@ func startWSTestRelay(t *testing.T, budget, limit int64, idle time.Duration, wra
 	x.cancel = cancel
 	t.Cleanup(cancel)
 	go func() {
-		x.done <- relayWS(ctx, x.down, x.up, initial, &dashScopeWSObserver{usage: x.usage}, dashscoperealtime.ClassifyClose, idle)
+		x.done <- relayWS(ctx, x.down, x.up, initial, wsLegacyTestOptions(&dashScopeWSObserver{usage: x.usage}, dashscoperealtime.ClassifyClose, idle))
 	}()
 	f := x.client.read(t)
 	if f.Opcode != ws.OpText || string(f.Payload) != wsTestInitial {
@@ -576,7 +584,7 @@ func TestWSRelayUsageCapacityPolicy(t *testing.T) {
 	}
 	done := make(chan error, 1)
 	go func() {
-		done <- relayWS(context.Background(), down, up, initial, &dashScopeWSObserver{usage: u}, dashscoperealtime.ClassifyClose, 0)
+		done <- relayWS(context.Background(), down, up, initial, wsLegacyTestOptions(&dashScopeWSObserver{usage: u}, dashscoperealtime.ClassifyClose, 0))
 	}()
 	assertWSTestClose(t, client, 1008, "usage record capacity exhausted")
 	if err := receiveWSTest(t, done); !errors.Is(err, errWSUsageLimit) {
@@ -588,7 +596,7 @@ func TestWSRelayUsageCapacityPolicy(t *testing.T) {
 }
 
 func TestWSRelayRegistryShutdownJoinsExistingClose(t *testing.T) {
-	r := newWSRegistry(1)
+	r := newWSRegistry(1, time.Second)
 	s, _ := r.Register(context.Background())
 	b := wsTestBudget(t, 1<<20)
 	var gate *wsTestGate
@@ -613,7 +621,7 @@ func TestWSRelayRegistryShutdownJoinsExistingClose(t *testing.T) {
 	u := newWSUsage(nil, "dashscope.realtime", "dashscope.realtime")
 	done := make(chan error, 1)
 	go func() {
-		done <- relayWS(s.Context(), down, up, initial, &dashScopeWSObserver{usage: u}, dashscoperealtime.ClassifyClose, 0)
+		done <- relayWS(s.Context(), down, up, initial, wsLegacyTestOptions(&dashScopeWSObserver{usage: u}, dashscoperealtime.ClassifyClose, 0))
 	}()
 	select {
 	case err := <-done:
@@ -659,7 +667,7 @@ func TestWSRelaySimultaneousCloseReleasesBothReasons(t *testing.T) {
 }
 
 func TestWSRelayFirstCloseSurvivesLaterShutdown(t *testing.T) {
-	r := newWSRegistry(1)
+	r := newWSRegistry(1, time.Second)
 	s, _ := r.Register(context.Background())
 	b := wsTestBudget(t, 1<<20)
 	var gate *wsTestGate
@@ -679,7 +687,7 @@ func TestWSRelayFirstCloseSurvivesLaterShutdown(t *testing.T) {
 	u := newWSUsage(nil, "dashscope.realtime", "dashscope.realtime")
 	done := make(chan error, 1)
 	go func() {
-		done <- relayWS(s.Context(), down, up, initial, &dashScopeWSObserver{usage: u}, dashscoperealtime.ClassifyClose, 0)
+		done <- relayWS(s.Context(), down, up, initial, wsLegacyTestOptions(&dashScopeWSObserver{usage: u}, dashscoperealtime.ClassifyClose, 0))
 	}()
 	_ = client.read(t)
 	gate.armed.Store(true)
@@ -780,7 +788,7 @@ func TestWSRelayShutdownCannotOverrideSelectedWireReason(t *testing.T) {
 
 func wsTestSelectedClose(t *testing.T, duplicateAttach bool) {
 	t.Helper()
-	r := newWSRegistry(1)
+	r := newWSRegistry(1, time.Second)
 	s, err := r.Register(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -805,7 +813,7 @@ func wsTestSelectedClose(t *testing.T, duplicateAttach bool) {
 	u := newWSUsage(nil, "dashscope.realtime", "dashscope.realtime")
 	done := make(chan error, 1)
 	go func() {
-		done <- relayWS(s.Context(), down, up, initial, &dashScopeWSObserver{usage: u}, dashscoperealtime.ClassifyClose, 0)
+		done <- relayWS(s.Context(), down, up, initial, wsLegacyTestOptions(&dashScopeWSObserver{usage: u}, dashscoperealtime.ClassifyClose, 0))
 	}()
 	_ = client.read(t)
 	writer.armed.Store(true)

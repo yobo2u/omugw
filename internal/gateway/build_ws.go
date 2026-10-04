@@ -10,15 +10,18 @@ import (
 )
 
 // 每个 Built 共用一个预算/registry，不能按 provider 分摊后绕过进程总量。
-func (b *Built) initWebSockets(limits config.WebSocket) error {
+func (b *Built) initWebSockets(limits config.WebSocket, timeouts config.Timeouts) error {
 	if err := limits.Validate(); err != nil {
 		return err
+	}
+	if wsCloseBudget(timeouts) <= 0 {
+		return fmt.Errorf("gateway: WebSocket 关闭预算必须为正数")
 	}
 	budget, err := ws.NewBufferBudget(limits.MaxBufferedBytes)
 	if err != nil {
 		return err
 	}
-	b.wsBudget, b.wsRegistry = budget, newWSRegistry(limits.MaxSessions)
+	b.wsBudget, b.wsRegistry = budget, newWSRegistry(limits.MaxSessions, wsCloseBudget(timeouts))
 	return nil
 }
 

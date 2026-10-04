@@ -49,7 +49,7 @@ func TestWSProfilesDoNotShareCloseClassification(t *testing.T) {
 					return profile.p.classifyClose(code, raw)
 				}
 				b := wsTestBudget(t, 1<<20)
-				r := newWSRegistry(1)
+				r := newWSRegistry(1, time.Second)
 				s, err := r.Register(context.Background())
 				if err != nil {
 					t.Fatal(err)
@@ -95,7 +95,7 @@ func TestWSProfilesDoNotShareCloseClassification(t *testing.T) {
 					u := newWSUsage(nil, "test", "test")
 					done := make(chan error, 1)
 					go func() {
-						done <- relayWS(s.Context(), down, up, initial, &dashScopeWSObserver{usage: u}, classify, 0)
+						done <- relayWS(s.Context(), down, up, initial, wsLegacyTestOptions(&dashScopeWSObserver{usage: u}, classify, 0))
 					}()
 					_ = client.read(t)
 					if phase == "registry-race" {
@@ -432,7 +432,7 @@ func TestWSProfileCloseDirectionAndIncompleteMessage(t *testing.T) {
 			var calls atomic.Int32
 			classify := func(uint16, string) *canonical.Error { calls.Add(1); return nil }
 			done := make(chan error, 1)
-			go func() { done <- relayWS(context.Background(), down, up, nil, nil, classify, 0) }()
+			go func() { done <- relayWS(context.Background(), down, up, nil, wsLegacyTestOptions(nil, classify, 0)) }()
 			source, other := client, server
 			if fromUpstream {
 				source, other = server, client

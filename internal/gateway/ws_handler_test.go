@@ -71,7 +71,7 @@ func wsHandlerDeps(t *testing.T, baseURL string) WSDeps {
 		Metrics: obs.NewMetrics(prometheus.NewRegistry()), Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Pools:     map[string]*credential.Pool{"pool": pool},
 		Providers: map[string]provider.StreamProvider{"ep": dsws.New(timeouts, limits, budget)},
-		Timeouts:  timeouts, Limits: limits, Budget: budget, Registry: newWSRegistry(limits.MaxSessions)}
+		Timeouts:  timeouts, Limits: limits, Budget: budget, Registry: newWSRegistry(limits.MaxSessions, wsCloseBudget(timeouts))}
 }
 
 func wsHandlerRequest() *http.Request {
@@ -152,7 +152,7 @@ func TestWSHandlerPreflight(t *testing.T) {
 func TestWSHandlerLeaseAndShutdownAdmission(t *testing.T) {
 	for _, sealed := range []bool{false, true} {
 		d := wsHandlerDeps(t, "http://127.0.0.1:0")
-		d.Registry = newWSRegistry(1)
+		d.Registry = newWSRegistry(1, wsCloseBudget(d.Timeouts))
 		s, err := d.Registry.Register(context.Background())
 		if err != nil {
 			t.Fatal(err)

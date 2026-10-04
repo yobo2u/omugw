@@ -116,7 +116,8 @@ func (h *WSHandler) serve(w http.ResponseWriter, r *http.Request, start time.Tim
 	// 握手 ctx 不得套住业务会话；使用保留 registry 私有 Value 的 session.Context。
 	cancel()
 	result = relayWS(session.Context(), downstream, ready.conn, ready.initial,
-		h.profile.newObserver(h.d.Metrics, string(h.inbound().Protocol), outbound), h.profile.classifyClose, h.d.Timeouts.Idle)
+		wsRelayOptions{Observer: h.profile.newObserver(h.d.Metrics, string(h.inbound().Protocol), outbound), ClassifyClose: h.profile.classifyClose,
+			Timeouts: h.d.Timeouts, Budget: h.d.Budget, MaxMessageBytes: h.d.Limits.MaxMessageBytes})
 	return outbound, committed, result
 }
 

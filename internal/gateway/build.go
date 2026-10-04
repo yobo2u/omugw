@@ -69,7 +69,12 @@ func buildWithWS(cfg config.Config, m *degrade.Matrix, metrics *obs.Metrics, log
 	if cfg.WebSocket == (config.WebSocket{}) {
 		cfg.WebSocket = config.DefaultWebSocket()
 	}
-	if err := built.initWebSockets(cfg.WebSocket); err != nil {
+	wsTimeouts := cfg.Timeouts
+	// 旧的直接 Build 健康检查/HTTP 配置没有 WS 会话；只为其空 registry 补默认值。
+	if len(wsEndpoints) == 0 && wsCloseBudget(wsTimeouts) <= 0 {
+		wsTimeouts = config.Default().Timeouts
+	}
+	if err := built.initWebSockets(cfg.WebSocket, wsTimeouts); err != nil {
 		return nil, err
 	}
 	for _, r := range m.Routes() {

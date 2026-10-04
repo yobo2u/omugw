@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/yobo2u/omugw/internal/canonical"
 	"github.com/yobo2u/omugw/internal/credential"
@@ -137,10 +138,12 @@ func retireWSAttempt(s *wsSession, conn *ws.Conn, failure wsRelayResult) {
 	case <-termination.selected:
 	default:
 		delete(s.conns, conn)
-		termination = newWSTermination(func(code uint16, reason string) { closeWSConnections([]*ws.Conn{conn}, code, reason) })
+		termination = newWSTermination(func(code uint16, reason string, deadline time.Time) {
+			closeWSConnections([]*ws.Conn{conn}, code, reason, deadline)
+		}, r.closeBudget)
 	}
-	termination.report(failure)
 	r.mu.Unlock()
+	termination.report(failure)
 	_ = termination.close()
 }
 

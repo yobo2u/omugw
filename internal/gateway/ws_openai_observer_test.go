@@ -272,7 +272,7 @@ func TestOpenAIRealtimeObserveBeforeFailedWrite(t *testing.T) {
 	o, reg := newOpenAIObserverTest(t)
 	done := make(chan error, 1)
 	go func() {
-		done <- relayWS(context.Background(), down, up, nil, o, NewOpenAIRealtimeHandler(WSDeps{}).profile.classifyClose, 0)
+		done <- relayWS(context.Background(), down, up, nil, wsLegacyTestOptions(o, NewOpenAIRealtimeHandler(WSDeps{}).profile.classifyClose, 0))
 	}()
 	server.send(t, ws.OpText, []byte(openAIReady))
 	if f := client.read(t); string(f.Payload) != openAIReady {
