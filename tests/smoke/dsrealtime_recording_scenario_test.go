@@ -517,28 +517,14 @@ func (d *dsDriver) textTools() error {
 	if err != nil {
 		return err
 	}
-	output, _ := dsMap(e, "response")["output"].([]any)
-	seen := map[string]bool{}
-	for _, v := range output {
-		item, _ := v.(map[string]any)
-		if dsString(item, "type") != "function_call" {
-			continue
-		}
-		name, id := dsString(item, "name"), dsString(item, "call_id")
-		if id == "" || seen[name] || (name != "test_color" && name != "test_shape") {
-			return errors.New("unexpected_tool_call")
-		}
-		seen[name] = true
-		result := "蓝色"
-		if name == "test_shape" {
-			result = "方块"
-		}
-		if err := d.createItem(map[string]any{"type": "function_call_output", "call_id": id, "output": result}); err != nil {
+	results, ok := dsValidatedToolResults(e)
+	if !ok {
+		return errors.New("invalid_tool_set")
+	}
+	for _, result := range results {
+		if err := d.createItem(map[string]any{"type": "function_call_output", "call_id": result.callID, "output": result.output}); err != nil {
 			return err
 		}
-	}
-	if len(seen) != 2 {
-		return errors.New("missing_parallel_tools")
 	}
 	if err := d.send("response.create", nil); err != nil {
 		return err

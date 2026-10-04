@@ -145,6 +145,9 @@ func dsRequestWitness(scenario string, records []dsRecord, index int, request ma
 		return false
 	}
 	if typ == "conversation.item.create" {
+		if dsString(request, "item", "type") == "function_call_output" && !dsToolResultWitness(records, index) {
+			return false
+		}
 		return dsItemRequestWitness(records, index)
 	}
 	if typ == "response.cancel" {
@@ -271,20 +274,8 @@ func dsCoverage(r dsRecording, events []dsEvidenceEvent) []testkit.WSCoverage {
 			if dsString(e.Value, "response", "status") == "completed" {
 				done = append(done, e.Node)
 			}
-			items, _ := dsMap(e.Value, "response")["output"].([]any)
-			ids := map[string]bool{}
-			for _, v := range items {
-				item, _ := v.(map[string]any)
-				if dsString(item, "type") == "function_call" {
-					if id := dsString(item, "call_id"); id != "" {
-						ids[id] = true
-					}
-				}
-			}
-			if len(ids) > 0 {
+			if _, ok := dsValidatedToolResults(e.Value); ok {
 				tools = append(tools, e.Node)
-			}
-			if len(ids) >= 2 {
 				parallel = append(parallel, e.Node)
 			}
 		case "response.audio.delta":
@@ -335,8 +326,8 @@ func dsCoverage(r dsRecording, events []dsEvidenceEvent) []testkit.WSCoverage {
 		add("speech_recognition", "真实非空 transcription.completed，不拿音频波形充当识别证明", asr)
 	}
 	if r.Scenario == "text-tools" {
-		add("tool_calling", "真实调用项与工具结果回传后的终态，参数和 call_id 另审", tools, done)
-		add("parallel_tool_calls", "同一 response.done 中两个不同 call_id，非两个串行响应", parallel)
+		add("tool_calling", "完整预期工具集合通过形状/名称/唯一call_id校验，结果回传另由请求见证核对", tools, done)
+		add("parallel_tool_calls", "同一completed response.done内两个预期名称各一且call_id非空唯一，非两个串行响应", parallel)
 	}
 	if r.Scenario == "vad-interrupt" {
 		add("realtime_server_vad", "实际 speech_started/stopped 与 committed", byType["input_audio_buffer.speech_started"], byType["input_audio_buffer.speech_stopped"], byType["input_audio_buffer.committed"])

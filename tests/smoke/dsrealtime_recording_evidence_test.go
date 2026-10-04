@@ -211,6 +211,85 @@ func dsItemRequestWitness(records []dsRecord, index int) bool {
 	return acks.pending == nil && acks.accepted[index] != ""
 }
 
+type dsToolResult struct {
+	callID, output string
+}
+
+// 先验证整组再交付任何结果，防止尾部坏项或跨名称复用call_id造成部分提交。
+// 文本消息可与工具同轮出现；工具参数必须是JSON对象字符串，未知输出形状不能跳过。
+func dsValidatedToolResults(e map[string]any) ([]dsToolResult, bool) {
+	if dsString(e, "type") != "response.done" || dsString(e, "response", "id") == "" || dsString(e, "response", "status") != "completed" {
+		return nil, false
+	}
+	items, ok := dsMap(e, "response")["output"].([]any)
+	if !ok {
+		return nil, false
+	}
+	names, ids := map[string]bool{}, map[string]bool{}
+	var results []dsToolResult
+	for _, v := range items {
+		item, ok := v.(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		if dsString(item, "type") == "message" {
+			continue
+		}
+		name, id := dsString(item, "name"), dsString(item, "call_id")
+		var args map[string]any
+		if dsString(item, "type") != "function_call" || (name != "test_color" && name != "test_shape") || names[name] || id == "" || ids[id] || json.Unmarshal([]byte(dsString(item, "arguments")), &args) != nil || args == nil {
+			return nil, false
+		}
+		names[name], ids[id] = true, true
+		result := "蓝色"
+		if name == "test_shape" {
+			result = "方块"
+		}
+		results = append(results, dsToolResult{callID: id, output: result})
+	}
+	if len(results) != 2 {
+		return nil, false
+	}
+	return results, true
+}
+
+// ack只证明item被创建；必须另外核对最近同轮完整工具集合及结果映射，不能给历史错误提交补证。
+func dsToolResultWitness(records []dsRecord, index int) bool {
+	var results []dsToolResult
+	seen := map[string]bool{}
+	for i, rec := range records[:index+1] {
+		if rec.Kind != "message" {
+			continue
+		}
+		var e map[string]any
+		if json.Unmarshal(rec.Payload, &e) != nil {
+			return false
+		}
+		if rec.Direction == "receive" && dsString(e, "type") == "response.done" {
+			results, _ = dsValidatedToolResults(e)
+			seen = map[string]bool{}
+		}
+		if rec.Direction != "send" || dsString(e, "type") != "conversation.item.create" || dsString(e, "item", "type") != "function_call_output" {
+			continue
+		}
+		id := dsString(e, "item", "call_id")
+		matched := false
+		for _, result := range results {
+			if id == result.callID && dsString(e, "item", "output") == result.output {
+				matched = true
+			}
+		}
+		if !matched || seen[id] {
+			return false
+		}
+		seen[id] = true
+		if i == index {
+			return true
+		}
+	}
+	return false
+}
+
 // 节点索引来自原始证据链；发送选 authored，接收选 golden，不另找同名事件拼接。
 func dsEvidenceNodes(records []dsRecord, indices []int) []string {
 	var nodes []string

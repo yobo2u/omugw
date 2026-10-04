@@ -109,3 +109,62 @@ ok github.com/yobo2u/omugw/tests/smoke 0.904s
   真实能力证据。当前两份失败实录继续原样保留。
 - 控制器若继续，只能使用本批剩余至多两次额度和新的 run 目录；这里没有发起任何重试。
   后续先检查完整尾部与原始 ack，再更新控制器自己的 ledger/能力状态。
+
+## Review Important 追加修正：工具集合必须完整预检
+
+FixBASE：`1eb1f4c`。开工重新完成 fetch / worktree list / status -sb，HEAD 符合基线；
+原有 plan 修改仍由控制器持有。本次仅改录制器相关 smoke 文件并追加本报告，未 live、
+未读取凭据、未派代理、未修改录制/ledger/plan/矩阵；6/8 额度继续由控制器管理。
+
+### 根因与修正
+
+旧循环只有 `seen[name]`，且边校验边发送。`test_color` 与 `test_shape` 共用 `call_a`
+时会发送 `call_a=蓝色` 和 `call_a=方块`，继而发起第三轮；第二项或尾部非法也可能已发送
+第一份甚至两份结果。
+
+- 驱动先调用 `dsValidatedToolResults` 校验整个 completed response.done.output，成功后
+  才进入发送循环：两个预期名称各一次、call_id 非空且唯一、工具为 function_call 对象、
+  arguments 为可解析的 JSON 对象字符串。缺项、重复、未知工具、错误类型/参数均返回
+  `invalid_tool_set`，保证第一次 function_call_output 前失败。允许同轮合法文本消息。
+- candidate 结果见证和工具 Coverage 共用同一集合校验；见证另外验证结果属于最近一轮
+  有效集合、内容映射正确且不重复，再核对真实 item ack。自洽 ack 不能洗白历史错误集合。
+- 永久反例覆盖同 call_id 不同名称，以及第二项/尾部多种损坏，逐一断言 **零结果发送**、
+  response.create 仍只有前两次。合法双工具及伴随文本输出保持完整 candidate 回放通过。
+  另测历史错误集合的见证/Coverage/candidate 拒绝，及外来 call_id、错结果、重复结果。
+
+### RED（实现前，退出码 1）
+
+```bash
+OMUGW_RECORD_DSREALTIME=0 OMUGW_SMOKE=0 go test -tags=smoke ./tests/smoke -run '^TestDSRealtimeRecorderOfflineToolSet' -count=1
+```
+
+实际输出节选：
+
+```text
+--- FAIL: TestDSRealtimeRecorderOfflineToolSetPreflight/same_call_id_different_names
+    非法工具集合已部分发送: results=[call_a=蓝色 call_a=方块] response.create=3
+    failure=""; want invalid_tool_set
+--- FAIL: TestDSRealtimeRecorderOfflineToolSetPreflight/duplicate_name
+    非法工具集合已部分发送: results=[call_a=蓝色] response.create=2
+    failure="unexpected_tool_call"; want invalid_tool_set
+--- FAIL: TestDSRealtimeRecorderOfflineToolSetEvidence/same_call_id_different_names
+    工具结果见证未验证完整工具集合
+    工具Coverage与完整集合校验不一致: map[realtime_session:true tool_calling:true]
+    candidate err=<nil>; want valid=false
+FAIL github.com/yobo2u/omugw/tests/smoke 0.941s
+```
+
+### GREEN / 检查（均退出码 0）
+
+以下命令均显式设置 `OMUGW_RECORD_DSREALTIME=0 OMUGW_SMOKE=0`：
+
+| 命令 | 实际输出 |
+|---|---|
+| `go test -tags=smoke ./tests/smoke -run '^TestDSRealtimeRecorderOfflineTool(Set\|Result)' -count=1` | `ok github.com/yobo2u/omugw/tests/smoke 0.901s` |
+| `go test -tags=smoke ./tests/smoke -run '^TestDSRealtimeRecorderOffline' -count=1` | `ok github.com/yobo2u/omugw/tests/smoke 1.720s` |
+| `go test -race -tags=smoke ./tests/smoke -run '^TestDSRealtimeRecorderOffline' -count=1` | `ok github.com/yobo2u/omugw/tests/smoke 3.342s`，无竞态报告 |
+| `go vet -tags=smoke ./tests/smoke` | 无输出 |
+| `make check` | fmt-check / vet / 全仓测试 / matrix 均通过，全仓 Go 测试为 cached |
+
+`GIT_MASTER=1 git diff --check` 无输出。自审确认第一次结果发送位于完整校验之后，驱动、
+候选见证和 Coverage 没有独立的宽松工具集合规则。无已知离线阻断；真实闭环仍交控制器验证。
