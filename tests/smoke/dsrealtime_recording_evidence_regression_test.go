@@ -72,7 +72,7 @@ func TestDSRealtimeRecorderOfflineInterruptEvidenceSameResponse(t *testing.T) {
 					cancelRequest = e
 				}
 			}
-			if dsRequestWitness(r.Records, cancelIndex, cancelRequest) != want {
+			if dsRequestWitness(r.Scenario, r.Records, cancelIndex, cancelRequest) != want {
 				t.Error("取消后继见证未绑定同响应的活跃音频链")
 			}
 			found := false
@@ -228,8 +228,9 @@ func TestDSRealtimeRecorderOfflineServerCommitNoAutomaticResponse(t *testing.T) 
 		}
 		defer c.Close(1000, "")
 		p := dsOfflinePeer{t: t, c: c}
-		p.write(`{"type":"session.created","session":{"id":"s1"}}`)
+		p.write(`{"type":"session.created","session":{"id":"s1","model":"qwen3-tts-flash-realtime"}}`)
 		e := p.read("session.update")
+		dsMap(e, "session")["model"] = "qwen3-tts-flash-realtime"
 		b, _ := json.Marshal(map[string]any{"type": "session.updated", "session": e["session"]})
 		p.write(string(b))
 		p.read("input_text_buffer.append")

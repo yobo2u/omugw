@@ -1,6 +1,7 @@
 # DashScope Realtime 独立录制与证据表
 
-日期：2026-10-04。Task 5 只实现工具及离线验证，**尚未执行真实调用，本表没有真实能力结论**。
+日期：2026-10-04。Task 5 实现工具及离线验证；控制器随后实际调用两次，均在业务输入前
+因配置确认失败停止，未出现 usage。Task 6 据此离线修正录制器，**尚无完整真实能力结论**。
 
 ## 工具边界
 
@@ -76,8 +77,9 @@ URL、原始头、secret、消息正文或 close reason。原始消息是私有�
 - Omni 客户端事件页写 `conversation.item.create` 仅支持 `function_call_output`，但官方
   使用指南写可用 `message + input_text`。`text-tools` 将实测这一差异；失败就保留失败，
   不回退到另一个输入方式。工具定义使用嵌套 `function` 对象。
-- `session.updated` 名称不是配置采纳证明：音频格式及采样率必须在新式 `audio` 结构
-  回显一致；同时检查请求的输出上限等配置。任何规范化导致的严格回显差异先留记录再审。
+- `session.updated` 名称不是配置采纳证明：`session.created` 与 `session.updated` 的
+  model 必须明确等于请求模型；音频格式及采样率必须在新式 `audio` 结构回显一致，
+  输出上限等请求字段仍逐项核对。只有下述 TTS 语言字段接受已观察到的一对大小写值。
 - TTS `commit` 显式 commit；`server_commit` 不显式 commit，先等待服务端自动创建响应、
   同一 response_id 的非空音频及 completed 终态，再发送 `session.finish` 收尾。
   若只有 finish 后排空的音频，或 finish 前没有完整同实体证据链，不加提交模式 Coverage；
@@ -85,11 +87,49 @@ URL、原始头、secret、消息正文或 close reason。原始消息是私有�
 - 模型别名可能漂移，原始 `session.created` 的实际模型必须审阅；来源版本字符串是文档
   日期标签，不声称云端固定快照。本批固定北京端点，模型如下命令。
 
+## 已执行批次与 Task 6 契约修正
+
+批次固定为 `.local/recordings/dsrealtime/batch-20261004`，已占用 `.attempt-1` 与
+`.attempt-2`，即 **2/8 次已使用、最多剩余 6 次**。两份 `recording.json` 的 payload
+均已 base64 解码核验：各只有接收 created、发送 update、接收 updated 和本地 close，
+101 成功后都以 `unconfirmed_config` 停止，`configuration_confirmed=false`。没有业务
+输入、response、usage、成功候选或音频样本；usage 缺失不等于零费用。
+
+| 真实调用（北京时间） | 请求及回显模型 | 业务输入前失败原因 |
+|---|---|---|
+| 12:38:52，`tts-commit/recording.json` | `qwen3-tts-flash-realtime` | 请求 `language_type=Chinese`，回显 `chinese`；mode=commit、voice=Cherry、response_format=pcm、sample_rate=16000 一致 |
+| 12:39:57，`text-tools/recording.json` | `qwen3.5-omni-flash-realtime` | created 包含 server_vad；请求 `turn_detection:null` 后 updated 省略此字段；max_tokens/modalities/instructions/tools 一致 |
+
+原文件 SHA-256（不改历史失败轨迹，不重新标记其配置已确认）：
+
+- `tts-commit/recording.json`：`c739b82a7e14bd6734a016c9489d3924dbf89b1db64e63b53ca936b0cf504b3e`
+- `text-tools/recording.json`：`422733c7d27dd5a94cc22dffa234d004d7ee4bea7c346b1e6d3db618ed775aa4`
+
+Task 6 的离线处理边界：
+
+1. TTS 会话配置比较与请求后继见证共用窄规则，仅接受顶层 `Chinese → chinese`；
+   请求仍发送 `Chinese`，原始消息、候选四点负载均不改写。其他语言大小写、voice、mode、
+   model、格式仍严格匹配，通用字段比较与 item 见证不采用此特例。
+2. text-tools 不再请求与文本输入无关的 `turn_detection`。回显省略或保留默认 server_vad
+   都不影响文本配置确认；这不证明音频 manual 模式。
+3. **audio-image 的 manual 确认证据仍有缺口**：继续发送 `turn_detection:null`，只接受
+   显式 null 回显。若 updated 省略它，仍在业务输入前失败、Confirmed=false，不生成成功
+   candidate；本次没有新增行为证据确认路径。不能以无输入时未发生 VAD、一次 committed
+   或本文本轨迹推断 manual 已生效。
+4. 官方 Omni `client-events.md:178` 规定请求 null 禁用 VAD、请求缺字段默认开启；
+   `server-events.md:175` 起只称 updated 包含会话配置，未明确回显缺字段等于禁用。
+   因此 missing/null/value 不做全局等同。缺少 max_tokens、model 或新式音频采样率，
+   或仅有 legacy 音频格式仍拒绝。
+5. 离线 TCP 回归使用两份实际回显的字面副本验证配置门禁，并保留失败负例、消息原字节、
+   同 response 自动提交/取消证据链。后续合成业务事件仅验证工具，不填入真实能力账本。
+
 ## 控制器显式命令
 
-以下是待控制器执行的命令，本任务未执行。请从仓库根执行。`DASHSCOPE_API_KEY` 由安全
-环境预先提供，禁止把值写进命令或日志。五条命令每条各消耗一个会话，先审阅上一份结果
-再执行下一条；本批最多八次，命令不循环、不自动重跑。
+以下是控制器后续显式执行的模板，Task 6 未执行任何真实调用。已失败的 `tts-commit`
+与 `text-tools` 目录不可覆盖；若控制器继续，使用下面同批次的新 run 目录，并核对总尝试数。
+请从仓库根执行。`DASHSCOPE_API_KEY` 由安全环境预先提供，禁止把值写进命令或日志。
+五条命令每条各消耗一个会话，先审阅上一份结果再执行下一条；本批最多八次，已使用两次，
+命令不循环、不自动重跑、不换 batch。
 
 ```bash
 export OMUGW_SMOKE_WS_URL=wss://dashscope.aliyuncs.com/api-ws/v1/realtime
@@ -101,7 +141,7 @@ export DS_RECORD_BATCH="$PWD/.local/recordings/dsrealtime/batch-20261004"
 ```bash
 OMUGW_RECORD_DSREALTIME=1 OMUGW_RECORD_SCENARIO=tts-commit \
 OMUGW_SMOKE_MODEL_REALTIME=qwen3-tts-flash-realtime \
-OMUGW_RECORD_OUTPUT="$DS_RECORD_BATCH/tts-commit" \
+OMUGW_RECORD_OUTPUT="$DS_RECORD_BATCH/tts-commit-retry1" \
 go test -tags=smoke ./tests/smoke -run '^TestRecordDSRealtime$' -count=1 -timeout=75s -v
 ```
 
@@ -126,7 +166,7 @@ go test -tags=smoke ./tests/smoke -run '^TestRecordDSRealtime$' -count=1 -timeou
 ```bash
 OMUGW_RECORD_DSREALTIME=1 OMUGW_RECORD_SCENARIO=text-tools \
 OMUGW_SMOKE_MODEL_REALTIME=qwen3.5-omni-flash-realtime \
-OMUGW_RECORD_OUTPUT="$DS_RECORD_BATCH/text-tools" \
+OMUGW_RECORD_OUTPUT="$DS_RECORD_BATCH/text-tools-retry1" \
 go test -tags=smoke ./tests/smoke -run '^TestRecordDSRealtime$' -count=1 -timeout=75s -v
 ```
 
@@ -139,7 +179,7 @@ go test -tags=smoke ./tests/smoke -run '^TestRecordDSRealtime$' -count=1 -timeou
 ```bash
 OMUGW_RECORD_DSREALTIME=1 OMUGW_RECORD_SCENARIO=audio-image \
 OMUGW_SMOKE_MODEL_REALTIME=qwen3.5-omni-flash-realtime \
-OMUGW_RECORD_AUDIO_SAMPLE="$DS_RECORD_BATCH/tts-commit/audio-sample.json" \
+OMUGW_RECORD_AUDIO_SAMPLE="$DS_RECORD_BATCH/tts-commit-retry1/audio-sample.json" \
 OMUGW_RECORD_OUTPUT="$DS_RECORD_BATCH/audio-image" \
 go test -tags=smoke ./tests/smoke -run '^TestRecordDSRealtime$' -count=1 -timeout=75s -v
 ```
@@ -147,13 +187,15 @@ go test -tags=smoke ./tests/smoke -run '^TestRecordDSRealtime$' -count=1 -timeou
 音频 append 后才发送 JPEG，以音频 commit 一并提交，再 response.create。按 committed
 的 item_id 等待 ASR，即使转写晚于 response.done 也不漏录。人工核对转写与短句、回答
 与红圆/蓝方块；单有 committed 不代表模型理解了图片。
+若配置回显仍省略 `turn_detection`，当前录制器将提前失败；不得为继续录制而省略请求 null
+或把缺字段解释为 manual。尚无成功 TTS 样本时也不能执行本场景。
 
 ### 5. server_vad + 音频输出期间取消
 
 ```bash
 OMUGW_RECORD_DSREALTIME=1 OMUGW_RECORD_SCENARIO=vad-interrupt \
 OMUGW_SMOKE_MODEL_REALTIME=qwen3.5-omni-flash-realtime \
-OMUGW_RECORD_AUDIO_SAMPLE="$DS_RECORD_BATCH/tts-commit/audio-sample.json" \
+OMUGW_RECORD_AUDIO_SAMPLE="$DS_RECORD_BATCH/tts-commit-retry1/audio-sample.json" \
 OMUGW_RECORD_OUTPUT="$DS_RECORD_BATCH/vad-interrupt" \
 go test -tags=smoke ./tests/smoke -run '^TestRecordDSRealtime$' -count=1 -timeout=75s -v
 ```
@@ -168,8 +210,8 @@ response.cancel 并绑定取消目标。官方 cancel 不带 response_id，录�
 
 ## 15 项能力的真实证据账本
 
-真实调用后填写：候选相对路径、SHA-256、`nodes[].id`、回显模型、usage、人工结论。
-每行当前均为“未录制”；下列是审核标准，不是已取得的事实。
+取得完整真实调用后填写：候选相对路径、SHA-256、`nodes[].id`、回显模型、usage、人工结论。
+15 项当前均未取得完整证据；只有上述两份失败配置轨迹。下列是审核标准，不是能力完成声明。
 
 | 能力 | 场景 / 必须定位的轨迹与字段 | 保全断言 / 当前缺口 |
 |---|---|---|
@@ -183,7 +225,7 @@ response.cancel 并绑定取消目标。官方 cancel 不带 response_id，录�
 | speech_synthesis | TTS 固定短句、Cherry 回显、非空 PCM、done | 输入文本/音色/格式/输出字节，人工试听；未录制 |
 | speech_recognition | transcription.completed.item_id + 非空 transcript | 与真实落盘短句对应，不能以 chirp 或 commit 充当 ASR；未录制 |
 | stateful_conversation | 第二轮复述第一轮口令，发生在工具结果回传之前 | 人工核对轮次和正文，**不自动加 Coverage**；未录制 |
-| realtime_session | session.created/updated 的实际结构和配置 | 逐字段核对，不凭 updated 名称；未录制 |
+| realtime_session | session.created/updated 的实际结构和配置 | 已录两份失败配置轨迹；未取得配置确认后的完整会话证据 |
 | realtime_server_vad | speech_started、speech_stopped、committed | item_id、时间字段、原消息因果顺序；未录制 |
 | realtime_interrupt_turns | response.created → 活跃时同实体非空 audio.delta → cancel → 同目标 cancelled done | 拒绝错ID、空音频、提前终结及终态ID复用；见证/Coverage绑定同链；未录制 |
 | realtime_image_input | 音频 append → image append → commit → 真实视觉回答 | 图像 SHA 和字节；理解证据人工审阅，**不自动加 Coverage**；未录制 |
@@ -200,6 +242,9 @@ go test -tags=smoke ./tests/smoke -run '^TestDSRealtimeRecorderOffline' -count=1
 
 OMUGW_RECORD_DSREALTIME=0 OMUGW_SMOKE=0 \
 go test -race -tags=smoke ./tests/smoke -run '^TestDSRealtimeRecorderOffline' -count=1
+
+OMUGW_RECORD_DSREALTIME=0 OMUGW_SMOKE=0 \
+go vet -tags=smoke ./tests/smoke
 
 OMUGW_RECORD_DSREALTIME=0 OMUGW_SMOKE=0 \
 go test -tags=smoke ./tests/smoke -run '^TestRecordDSRealtime$' -count=1 -v

@@ -69,7 +69,7 @@ func dsCandidate(r dsRecording) (testkit.Fixture, error) {
 				return empty, errors.New("轨迹消息不是 JSON")
 			}
 		}
-		if rec.Direction == "send" && rec.Kind == "message" && !dsRequestWitness(r.Records, i, payload) {
+		if rec.Direction == "send" && rec.Kind == "message" && !dsRequestWitness(r.Scenario, r.Records, i, payload) {
 			return empty, errors.New("缺少请求的后继协议证据")
 		}
 		points := []testkit.WSPoint{testkit.WSClientSend, testkit.WSUpstreamReceive}
@@ -134,7 +134,7 @@ func dsCandidate(r dsRecording) (testkit.Fixture, error) {
 }
 
 // 只给存在真实后继见证的发送建立请求预期；发送成功本身不是业务 ack。
-func dsRequestWitness(records []dsRecord, index int, request map[string]any) bool {
+func dsRequestWitness(scenario string, records []dsRecord, index int, request map[string]any) bool {
 	typ := dsString(request, "type")
 	if typ == "response.cancel" {
 		nodes, cancelIndex := dsInterruptEvidence(records)
@@ -151,7 +151,7 @@ func dsRequestWitness(records []dsRecord, index int, request map[string]any) boo
 		t := dsString(e, "type")
 		switch typ {
 		case "session.update":
-			if t == "session.updated" && dsEchoMatches(dsMap(request, "session"), dsMap(e, "session")) {
+			if t == "session.updated" && dsSessionEchoMatches(scenario, dsMap(request, "session"), dsMap(e, "session")) {
 				return true
 			}
 		case "conversation.item.create":

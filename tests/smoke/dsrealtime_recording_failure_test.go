@@ -33,7 +33,7 @@ func TestDSRealtimeRecorderOfflineFailureAndSecretSuppression(t *testing.T) {
 					return
 				}
 				defer c.Close(1000, "")
-				_ = c.WriteMessage(ws.OpText, []byte(`{"type":"session.created","session":{"id":"s1"}}`))
+				_ = c.WriteMessage(ws.OpText, []byte(`{"type":"session.created","session":{"id":"s1","model":"qwen3-tts-flash-realtime"}}`))
 				_, _, _ = c.ReadMessage()
 				switch mode {
 				case "error":

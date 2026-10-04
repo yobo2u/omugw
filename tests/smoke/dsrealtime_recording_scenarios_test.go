@@ -71,6 +71,7 @@ func (p *dsOfflinePeer) update(scenario string) {
 		}
 	}
 	// 这里回显配置只驱动录制器的状态机；上述字面断言负责守请求合同。
+	s["model"] = "qwen3.5-omni-flash-realtime"
 	b, _ := json.Marshal(map[string]any{"type": "session.updated", "session": s})
 	p.write(string(b))
 }

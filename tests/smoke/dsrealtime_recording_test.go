@@ -339,7 +339,7 @@ func TestDSRealtimeRecorderOfflineTTSConversation(t *testing.T) {
 					}
 					return v
 				}
-				write(`{"type":"session.created","session":{"id":"s1","model":"qwen3-tts-flash-realtime"}}`)
+				write(dsObservedTTSCreated)
 				v := read("session.update")
 				mode := "commit"
 				if scenario == "tts-server-commit" {
@@ -348,7 +348,8 @@ func TestDSRealtimeRecorderOfflineTTSConversation(t *testing.T) {
 				if dsString(v, "session", "mode") != mode || dsString(v, "session", "voice") != "Cherry" {
 					t.Error("TTS 配置错误")
 				}
-				write(`{"type":"session.updated","session":{"id":"s1","mode":"` + mode + `","voice":"Cherry","language_type":"Chinese","response_format":"pcm","sample_rate":16000}}`)
+				// commit 保留实录原字节；server_commit 只改变模式，后续业务轨迹仍是本地合成。
+				write(strings.Replace(dsObservedTTSUpdated, `"mode":"commit"`, `"mode":"`+mode+`"`, 1))
 				v = read("input_text_buffer.append")
 				if dsString(v, "text") != "请描述图片中的颜色和形状。" {
 					t.Error("上传非固定公开短句")
@@ -389,6 +390,22 @@ func TestDSRealtimeRecorderOfflineTTSConversation(t *testing.T) {
 			f, err := dsCandidate(r)
 			if err != nil {
 				t.Fatal(err)
+			}
+			for _, n := range f.Response.WS.Nodes {
+				if n.Message == nil {
+					continue
+				}
+				var e map[string]any
+				_ = json.Unmarshal(n.Message.Payload, &e)
+				if dsString(e, "type") == "session.update" && dsString(e, "session", "language_type") != "Chinese" {
+					t.Error("候选请求语言原字节被规范化")
+				}
+				if dsString(e, "type") == "session.updated" && dsString(e, "session", "language_type") != "chinese" {
+					t.Error("候选回显语言原字节被规范化")
+				}
+				if scenario == "tts-commit" && dsString(e, "type") == "session.updated" && !bytes.Equal(n.Message.Payload, []byte(dsObservedTTSUpdated)) {
+					t.Error("候选未逐字节保留实录回显")
+				}
 			}
 			if f.Response.WS.Outcome.Kind != "completed" {
 				t.Fatal("漏掉真实上游 close")

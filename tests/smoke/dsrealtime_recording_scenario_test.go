@@ -12,6 +12,7 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
+	"maps"
 	"net/http"
 	"net/url"
 	"strings"
@@ -337,8 +338,12 @@ func (d *dsDriver) wait(kind string) (map[string]any, error) {
 }
 
 func (d *dsDriver) run() error {
-	if _, err := d.wait("session.created"); err != nil {
+	created, err := d.wait("session.created")
+	if err != nil {
 		return err
+	}
+	if d.cfg.Model == "" || dsString(created, "session", "model") != d.cfg.Model {
+		return errors.New("unconfirmed_config")
 	}
 	session := d.session()
 	if err := d.send("session.update", map[string]any{"session": session}); err != nil {
@@ -348,7 +353,7 @@ func (d *dsDriver) run() error {
 	if err != nil {
 		return err
 	}
-	if !dsEchoMatches(session, dsMap(e, "session")) {
+	if dsString(e, "session", "model") != d.cfg.Model || !dsSessionEchoMatches(d.cfg.Scenario, session, dsMap(e, "session")) {
 		return errors.New("unconfirmed_config")
 	}
 	d.r.Confirmed = true
@@ -372,13 +377,15 @@ func (d *dsDriver) session() map[string]any {
 		}
 		return map[string]any{"mode": mode, "voice": "Cherry", "response_format": "pcm", "sample_rate": 16000, "language_type": "Chinese"}
 	}
-	s := map[string]any{"modalities": []string{"text"}, "turn_detection": nil, "max_tokens": 128, "instructions": "这是公开的无隐私测试。简短作答，不超过二十个字。"}
+	s := map[string]any{"modalities": []string{"text"}, "max_tokens": 128, "instructions": "这是公开的无隐私测试。简短作答，不超过二十个字。"}
 	if d.cfg.Scenario == "text-tools" {
 		s["tools"] = []any{
 			map[string]any{"type": "function", "function": map[string]any{"name": "test_color", "description": "返回测试图形颜色；与 test_shape 同轮调用。", "parameters": map[string]any{"type": "object", "properties": map[string]any{}}}},
 			map[string]any{"type": "function", "function": map[string]any{"name": "test_shape", "description": "返回测试图形形状；与 test_color 同轮调用。", "parameters": map[string]any{"type": "object", "properties": map[string]any{}}}},
 		}
 	} else {
+		// 文本场景不声明音频轮次；manual 音频仍须显式 null 回显，缺字段不能冒充禁用。
+		s["turn_detection"] = nil
 		s["audio"] = map[string]any{"input": map[string]any{"format": map[string]any{"type": "pcm", "sample_rate": 16000}}, "output": map[string]any{"format": map[string]any{"type": "pcm", "sample_rate": 16000}}}
 		if d.cfg.Scenario == "vad-interrupt" {
 			s["modalities"] = []string{"text", "audio"}
@@ -387,6 +394,15 @@ func (d *dsDriver) session() map[string]any {
 		}
 	}
 	return s
+}
+
+// 只接受 TTS 实录中 Chinese→chinese 这一对值；比较副本不能改写请求、回显或扩散到 item。
+func dsSessionEchoMatches(scenario string, want, got map[string]any) bool {
+	if (scenario == "tts-commit" || scenario == "tts-server-commit") && dsString(want, "language_type") == "Chinese" && dsString(got, "language_type") == "chinese" {
+		want = maps.Clone(want)
+		want["language_type"] = "chinese"
+	}
+	return dsEchoMatches(want, got)
 }
 
 // 要求回显包含每一项请求配置，尤其格式/采样率/输出上限；只看 updated 名称不算采纳。
