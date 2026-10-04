@@ -326,19 +326,14 @@ func TestInferenceProviderBounds(t *testing.T) {
 		})
 	}
 	t.Run("超限失败流必须关闭而非排空", func(t *testing.T) {
-		closed := make(chan struct{})
-		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			defer close(closed)
-			w.WriteHeader(503)
-			_, _ = io.WriteString(w, strings.Repeat("x", (64<<10)+1))
-			w.(http.Flusher).Flush()
-			<-r.Context().Done()
-		}))
-		defer s.Close()
+		s := newFailureUpstream(t, true)
 		p, _ := newProvider(t)
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		const budget = 2 * time.Second
+		start := time.Now()
+		ctx, cancel := context.WithDeadline(context.Background(), start.Add(budget))
 		defer cancel()
-		c, resp, err := p.Dial(ctx, request(s.URL))
+		c, resp, err := dialForCleanupProbe(t, p, ctx, request(s.URL), s.entered, true)
+		assertNetworkDeadline(t, start, budget)
 		if c != nil {
 			c.Close(ws.CloseNormal, "")
 			t.Fatal("失败返回连接")
@@ -346,11 +341,7 @@ func TestInferenceProviderBounds(t *testing.T) {
 		if err == nil || resp == nil || resp.Body != http.NoBody || ctx.Err() != nil {
 			t.Fatalf("等待排空或泄漏失败体: %+v %v ctx=%v", resp, err, ctx.Err())
 		}
-		select {
-		case <-closed:
-		case <-ctx.Done():
-			t.Fatal("失败 socket 未关闭")
-		}
+		s.assertReleasedBy(t, start.Add(budget+networkSchedulingTolerance))
 	})
 	t.Run("握手头64KiB上限", func(t *testing.T) {
 		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -395,12 +386,14 @@ func TestInferenceProviderBounds(t *testing.T) {
 		}
 	})
 	t.Run("共同握手期限", func(t *testing.T) {
-		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { <-r.Context().Done() }))
-		defer s.Close()
+		s := newFailureUpstream(t, false)
 		p, _ := newProvider(t)
-		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+		const budget = 50 * time.Millisecond
+		start := time.Now()
+		ctx, cancel := context.WithDeadline(context.Background(), start.Add(budget))
 		defer cancel()
-		c, resp, err := p.Dial(ctx, request(s.URL))
+		c, resp, err := dialForCleanupProbe(t, p, ctx, request(s.URL), s.entered, false)
+		assertNetworkDeadline(t, start, budget)
 		if c != nil {
 			c.Close(ws.CloseNormal, "")
 			t.Fatal("超时返回连接")
@@ -410,6 +403,8 @@ func TestInferenceProviderBounds(t *testing.T) {
 			t.Fatalf("明确超时分类丢失: %v", err)
 		}
 		assertSafe(t, fmt.Sprintf("%+v", ce))
+		// Dial 返回与 socket 释放共用绝对截止，不能在阶段切换时续一次容差。
+		s.assertReleasedBy(t, start.Add(budget+networkSchedulingTolerance))
 	})
 	t.Run("取消不可重试", func(t *testing.T) {
 		p, _ := newProvider(t)
@@ -442,10 +437,8 @@ func TestInferenceProviderBounds(t *testing.T) {
 		defer cancel()
 		start := time.Now()
 		c, resp, err := p.Dial(ctx, request("https://"+ln.Addr().String()))
+		assertNetworkDeadline(t, start, timeouts.Connect)
 		assertRejected(t, c, resp, err)
-		if time.Since(start) > time.Second {
-			t.Fatal("TLS 未受 connect 限制")
-		}
 	})
 	t.Run("idle读取期限", func(t *testing.T) {
 		base := silentUpstream(t)
@@ -462,10 +455,14 @@ func TestInferenceProviderBounds(t *testing.T) {
 		defer c.Close(ws.CloseNormal, "")
 		start := time.Now()
 		msg, err := c.ReadOwnedMessage(ctx)
+		elapsed := time.Since(start)
 		if msg != nil {
 			msg.Release()
 		}
-		if !errors.Is(err, ws.ErrIdleTimeout) || time.Since(start) > time.Second {
+		if elapsed > timeouts.Idle+networkSchedulingTolerance {
+			t.Fatalf("期限验收失败: elapsed=%v budget=%v tolerance=%v", elapsed, timeouts.Idle, networkSchedulingTolerance)
+		}
+		if !errors.Is(err, ws.ErrIdleTimeout) {
 			t.Fatalf("idle 未接线: %v", err)
 		}
 	})
@@ -489,13 +486,15 @@ func TestInferenceProviderBounds(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer c.Close(ws.CloseNormal, "")
+			payload := make([]byte, 32<<20)
 			// 测试收尾期限不能冒充有限写期限生效。
 			timer := time.AfterFunc(2*time.Second, func() { c.Close(ws.CloseNormal, "") })
 			defer timer.Stop()
 			start := time.Now()
-			err = c.WriteMessage(ws.OpBinary, make([]byte, 32<<20))
+			err = c.WriteMessage(ws.OpBinary, payload)
+			assertNetworkDeadline(t, start, min(timeouts.Connect, timeouts.Idle))
 			var netErr net.Error
-			if !errors.As(err, &netErr) || !netErr.Timeout() || time.Since(start) > 750*time.Millisecond {
+			if !errors.As(err, &netErr) || !netErr.Timeout() {
 				t.Fatalf("W 未取 min(connect,idle): %v", err)
 			}
 			if budget.Used() != 0 {
