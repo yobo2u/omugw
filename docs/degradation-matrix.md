@@ -48,8 +48,8 @@
 | `openai.chat` | `dashscope.compatible` | 已实现 |  | 9 | 0 | 2 | 2 | 16 | 0.769 | 0.769 |
 | `openai.chat` | `dashscope.native` | 已实现 |  | 6 | 0 | 5 | 2 | 16 | 0.654 | 0.577（11 项中 10 项已投放） |
 | `openai.chat` | `anthropic.messages` | 规划中 |  | 6 | 0 | 3 | 4 | 16 | 0.577 | — |
-| `openai.realtime` | `openai.realtime` | 规划中 | ✅ | 12 | 0 | 0 | 0 | 17 | 1.000 | — |
-| `openai.realtime` | `dashscope.ws.realtime` | 规划中 | ✅ | 10 | 0 | 2 | 0 | 17 | 0.917 | — |
+| `openai.realtime` | `openai.realtime` | 规划中 | ✅ | 15 | 0 | 0 | 0 | 14 | 1.000 | — |
+| `openai.realtime` | `dashscope.ws.realtime` | 规划中 | ✅ | 10 | 0 | 3 | 2 | 14 | 0.767 | — |
 | `openai.responses` | `openai.compat` | 已实现 | ✅ | 14 | 1（1 未开启） | 0 | 0 | 14 | 1.000 | 0.933（开启 convstore 后 1.000） |
 | `openai.responses` | `dashscope.compatible` | 规划中 |  | 8 | 1（1 未开启） | 2 | 4 | 14 | 0.667 | — |
 | `openai.responses` | `dashscope.native` | 规划中 |  | 6 | 1（1 未开启） | 4 | 4 | 14 | 0.600 | — |
@@ -183,11 +183,11 @@
 | `text_generation` | `PASSTHROUGH` | — |
 | `streaming` | `PASSTHROUGH` | — |
 | `tool_calling` | `PASSTHROUGH` | — |
-| `parallel_tool_calls` | `DEGRADE` | OpenAI Realtime 未提供并行工具调用开关，行为由上游模型决定 |
+| `parallel_tool_calls` | `DEGRADE` | 两端没有通用的并行调用策略等价保证：DashScope 当前公开 Realtime 契约未定义显式并行开关，OpenAI 的 parallel_tool_calls 仅适用于 reasoning Realtime 模型；并行行为采用目标模型语义，不能保证保留来源模型的调用调度 |
 | `structured_output` | `N/A` | dashscope.realtime 表达不了该能力，请改用入站协议 dashscope.native |
 | `reasoning` | `N/A` | dashscope.realtime 表达不了该能力，请改用入站协议 dashscope.native |
 | `reasoning_signature` | `N/A` | 该协议的线格式没有承载推理签名的字段，客户端无从表达；这项能力要到 Anthropic Messages 入站接入后（Phase 2）才可达 |
-| `vision_input` | `REJECT` | OpenAI Realtime 没有 input_image_buffer 事件，图像输入无处安放 |
+| `vision_input` | `REJECT` | OpenAI Realtime 支持 input_image 消息，但没有 DashScope 的 input_image_buffer 入口及随音频共同提交的缓冲契约；本路径拒绝将音画缓冲轮次拆成独立图像消息，以免改变提交边界和对话项关联 |
 | `image_detail` | `N/A` | dashscope.realtime 表达不了该能力，请改用入站协议 openai.responses |
 | `audio_input` | `DEGRADE` | 输入音频需从 DashScope 的 16 kHz 重采样到 OpenAI 的 24 kHz；上采样补不回原本就没采到的高频信息，只是满足格式要求 |
 | `video_input` | `N/A` | dashscope.realtime 表达不了该能力，请改用入站协议 dashscope.native |
@@ -202,7 +202,7 @@
 | `prompt_cache` | `N/A` | 该协议的缓存由上游自动管理，客户端没有可控的缓存断点字段；显式缓存断点是 Anthropic 特有机制，Phase 2 随 Anthropic 入站一并接入 |
 | `stateful_conversation` | `PASSTHROUGH` | — |
 | `realtime_session` | `PASSTHROUGH` | — |
-| `realtime_image_input` | `REJECT` | OpenAI Realtime 没有 input_image_buffer 事件，图像输入无处安放 |
+| `realtime_image_input` | `REJECT` | OpenAI Realtime 支持 input_image 消息，但没有 DashScope 的 input_image_buffer 入口及随音频共同提交的缓冲契约；本路径拒绝将音画缓冲轮次拆成独立图像消息，以免改变提交边界和对话项关联 |
 | `realtime_commit_modes` | `REJECT` | server_commit / commit 是 Qwen-TTS-Realtime 特有的提交模式，OpenAI Realtime 协议中没有对应字段 |
 | `realtime_server_vad` | `PASSTHROUGH` | — |
 | `realtime_interrupt_turns` | `PASSTHROUGH` | — |
@@ -359,10 +359,10 @@
 | `tool_calling` | `PASSTHROUGH` | — |
 | `parallel_tool_calls` | `DEGRADE` | DashScope Realtime 未提供并行工具调用开关，行为由上游模型决定 |
 | `structured_output` | `N/A` | openai.realtime 表达不了该能力，请改用入站协议 openai.responses |
-| `reasoning` | `N/A` | openai.realtime 表达不了该能力，请改用入站协议 openai.responses |
+| `reasoning` | `REJECT` | DashScope Omni Realtime 当前公开的 WebSocket 会话与响应参数没有已文档化的 reasoning.effort 或思考开关落点，无法承载调用方显式推理控制 |
 | `reasoning_signature` | `N/A` | 该协议的线格式没有承载推理签名的字段，客户端无从表达；这项能力要到 Anthropic Messages 入站接入后（Phase 2）才可达 |
-| `vision_input` | `N/A` | openai.realtime 表达不了该能力，请改用入站协议 openai.responses |
-| `image_detail` | `N/A` | openai.realtime 表达不了该能力，请改用入站协议 openai.responses |
+| `vision_input` | `REJECT` | DashScope Realtime 已文档化的图像入口须先追加音频并随音频缓冲共同提交，不能保留 OpenAI 独立图像消息的无音频输入及提交边界；本路径拒绝将独立图像消息隐式并入音频轮次 |
+| `image_detail` | `DEGRADE` | 逐图 detail 的 auto/low/high 档位被丢弃，视觉处理与费用采用 DashScope 的目标策略；会话级视频聚合不等价于逐图档位 |
 | `audio_input` | `DEGRADE` | 上游不接受 24 kHz 时，输入音频需重采样到 16 kHz；必须先低通再抽取，直接抽点会产生混叠失真。输出侧两者同为 24 kHz，无需转换 |
 | `video_input` | `N/A` | OpenAI 的线格式不接受视频输入 |
 | `file_input` | `N/A` | openai.realtime 表达不了该能力，请改用入站协议 openai.responses |
@@ -395,10 +395,10 @@
 | `tool_calling` | `PASSTHROUGH` | — |
 | `parallel_tool_calls` | `PASSTHROUGH` | — |
 | `structured_output` | `N/A` | openai.realtime 表达不了该能力，请改用入站协议 openai.responses |
-| `reasoning` | `N/A` | openai.realtime 表达不了该能力，请改用入站协议 openai.responses |
+| `reasoning` | `PASSTHROUGH` | — |
 | `reasoning_signature` | `N/A` | 该协议的线格式没有承载推理签名的字段，客户端无从表达；这项能力要到 Anthropic Messages 入站接入后（Phase 2）才可达 |
-| `vision_input` | `N/A` | openai.realtime 表达不了该能力，请改用入站协议 openai.responses |
-| `image_detail` | `N/A` | openai.realtime 表达不了该能力，请改用入站协议 openai.responses |
+| `vision_input` | `PASSTHROUGH` | — |
+| `image_detail` | `PASSTHROUGH` | — |
 | `audio_input` | `PASSTHROUGH` | — |
 | `video_input` | `N/A` | OpenAI 的线格式不接受视频输入 |
 | `file_input` | `N/A` | openai.realtime 表达不了该能力，请改用入站协议 openai.responses |

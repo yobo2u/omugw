@@ -1,7 +1,7 @@
 # OpenAI Realtime GA：S2 握手与观测契约
 
 核验日期：2026-10-04。适用坐标：`openai.realtime → openai.realtime`，
-`GET /v1/realtime`。本页固定官方证据、Task 1 Provider、Task 2 只读事实与 Task 4 账本观测的边界，防止将
+`GET /v1/realtime`。本页固定官方证据、Task 1 Provider、Task 2 只读事实、Task 4 账本观测与 Task 5 表达性/跨路径设计处置的边界，防止将
 DashScope、Beta 或 GPT-Live 的同名字段当作 GA 契约。
 
 ## 1. 官方证据
@@ -319,3 +319,120 @@ S1 DashScope 实录离线回放继续作为共享账本与中继的回归依据�
 尚未做 OpenAI 云端调用、真实模型权限/地域核验、完整有效配置实录、逐能力实录、
 官方 Node SDK + 网关 TLS 集成或生产代理验收。测试中的假凭据和合成消息不是
 官方成功 fixture；本任务不构成生产注册或整门 Redeem 证据。
+
+## 7. Task 5：GA 表达性与跨路径设计处置
+
+本节将 2026-10-04 矩阵前置预研逐条核读的官方证据归入受版本控制的契约。
+日期为检索日期，不冒充页面发布日期；Task 5 未另做云端调用或真实拒绝验证。
+
+### 7.1 官方来源与表达性
+
+| 编号 | 官方来源 | 采用的字段或章节 |
+|---|---|---|
+| O1 | [OpenAI 客户端事件参考](https://developers.openai.com/api/reference/resources/realtime/client-events.md) | `RealtimeConversationItemUserMessage`；session/response 的 reasoning 与 parallel_tool_calls |
+| O2 | [OpenAI Realtime conversations](https://developers.openai.com/api/docs/guides/realtime-conversations.md) | “Image inputs”：独立图像用户 item 示例，明确可用于 WebSocket |
+| D1 | [DashScope 客户端事件](https://help.aliyun.com/zh/model-studio/client-events) | `session.update`、`response.create`、`input_audio_buffer.commit`、`input_image_buffer.append`、`conversation.item.create` |
+| D2 | [DashScope 服务端事件](https://help.aliyun.com/zh/model-studio/server-events) | session 配置回显、`input_audio_buffer.committed`、`conversation.item.created`、`response.done` |
+| D3 | [DashScope Realtime 指南](https://help.aliyun.com/zh/model-studio/realtime) | “输入音频与图片 / WebSocket”、“Manual 模式”、“多通道音频、视频聚合与 MCP”、“Token 计算” |
+| D4 | [DashScope WebSocket 接入指南](https://help.aliyun.com/zh/model-studio/omni-realtime-interaction-process) | VAD / Manual / Function Calling 流程 |
+
+OpenAI Realtime 的可表达集合由 12 项增至以下 **15 项**，只调整已有 Capability
+的三桶归属，不新增 Capability，不代表每个模型都支持或任何门已兑现：
+
+```text
+text_generation, streaming, tool_calling, parallel_tool_calls,
+reasoning, vision_input, image_detail, audio_input, audio_output,
+speech_synthesis, speech_recognition, stateful_conversation,
+realtime_session, realtime_server_vad, realtime_interrupt_turns
+```
+
+新增 `vision_input` / `image_detail` / `reasoning` 从 Elsewhere 移入 Capabilities，
+Impossible 不变。`realtime_image_input` 仍转介 DashScope：它表示专用图像 buffer
+入口及其音画共同提交语义，不是所有实时图像输入的统称，更不是独立图像 commit。
+
+### 7.2 OpenAI → DashScope 三格
+
+| 能力 | 设计处置 | 来源与可明确命名的损失 |
+|---|---|---|
+| `vision_input` | **REJECT** | O1/O2 的独立无音频图像 item 无法按 D1/D3 的音画 buffer 契约保留；拒绝隐式增加音频、合并轮次或改提交边界 |
+| `image_detail` | **DEGRADE** | O1 的逐图 `auto/low/high` 被丢弃，视觉处理与费用采用目标策略；D1/D3 的会话级视频聚合不等价 |
+| `reasoning` | **REJECT** | O1 的显式 effort 在 D1/D2/D3 当前公开 WS 请求/确认契约中无已文档化落点，也无可确认的思考开关 |
+
+**独立图像 item 与 buffer（O1/O2、D1/D2/D3/D4）**：
+
+- OpenAI 使用 `conversation.item.create`，`item.type="message"`、`role="user"`，
+  `content[].type="input_image"`，`image_url` 为 PNG/JPEG data URI；可选 `detail`
+  为 `auto/low/high`，其中 auto 默认 high。O2 示例只有一个图像 part，不要求先
+  append 音频；图像加文本示例后另发 `response.create`。
+- 以上只取 O1 的 user-message 分支。不能把同页复用的
+  `ResponsePrompt.variables/ResponseInputImage` 中 URL、file_id、`original`
+  等值移植到该分支。
+- D1 的图像入口为 `input_image_buffer.append.image`（裸 Base64），明确要求：
+  “发送 input_image_buffer.append 事件前，至少已发送过一次
+  input_audio_buffer.append 事件”；“图像缓冲区与音频缓冲区通过
+  input_audio_buffer.commit 事件一起提交”；“若音频缓冲区为空，服务端将返回
+  错误事件”。最后一句是官方说明，不是本项目实测拒绝证据。
+- D1 只列 JPG/JPEG，Base64 后单图 ≤256KB；建议原图 ≤190KB、480p/720p、
+  1 张/秒，最高不超过 1080p。建议值不改写成协议硬禁令。
+- commit 创建用户消息项，本身不触发响应；Manual 另发 `response.create`，
+  VAD 自动提交/响应（D1/D3/D4）。D2 有 `input_audio_buffer.committed.item_id`
+  及 `conversation.item.created`；已读事件目录未给独立图像 commit/committed/
+  clear/cleared。不能从音频 clear 推断图像清空，更不能伪造图像 ack。
+
+**保留文档覆盖冲突**：D1 的 `conversation.item.create.item.type` 当前列
+`function_call_output` 和 Qwen3.8 的 `mcp_approval_response`，没有
+message/input_image；D3 却明确说可通过 `conversation.item.create` 发送纯文本
+`input_text`。D2 可返回 message 也不能证明客户端可创建任意 message。
+官网已含 Qwen3.8、MCP 和视频聚合，早期本地 raw 中“当前仅支持
+function_call_output”不能作为当前全量枚举。可成立的窄结论是：**未找到独立图像
+item 的正面请求/确认契约，明确文档化的图像路线与音频耦合**；不能声称所有
+message item 均被真实上游拒绝。
+
+**逐图 detail 与会话级聚合（O1、D1/D2/D3）**：
+
+- D1 `session.video.input.representation_compact` 仅 Qwen3.8 可用；`none`
+  为初始默认、保留细粒度表征，`normal` 聚合表征，官方称同视频输入 token 为
+  none 的 1/4。它必须在首段音频前设置，音频开始后不可修改。
+- D1 图像 append 无逐图 detail，D2 无该档位回显。不能说目标完全没有视觉
+  精度/成本控制，但其作用域、时点、值域与 token 策略不等价于逐图 detail。
+  本设计丢弃逐图档位，不生造 low→normal/high→none 映射，也不擅改会话设置。
+- detail 的 DEGRADE 只记录一项独立损失，**不能抵消 vision 的 REJECT**，不意味
+  图像请求可交付或应 Redeem detail。未来接受受限图像转换时仍需另审该损失。
+
+**显式推理控制（O1、D1/D2/D3）**：
+
+- O1 有 `session.update.session.reasoning.effort` 与
+  `response.create.response.reasoning.effort`，值为
+  `minimal/low/medium/high/xhigh`，限定 reasoning-capable Realtime 模型，
+  如 `gpt-realtime-2`。
+- 前置预研对 D1/D2 可见正文检索 reasoning、reasoning_effort、enable_thinking、
+  thinking_budget 均 0 命中，D3 也未找到 reasoning/thinking 控制。D1 的
+  `response.create` 仅文档化事件类型及 event_id 示例，未给承载此控制的 response
+  配置对象；D2 会话/响应 schema 亦未确认该落点。
+- 此结论仅限公开 WS 契约；不证明服务端一定报 unknown field，不声称模型没有
+  内部推理。普通 HTTP Omni 的 enable_thinking、控制台家族能力或 SDK 任意 kwargs
+  不替代 WS 契约；直接丢弃 effort 后得到普通回答不构成保留推理控制的证据。
+
+### 7.3 反向路径说明与投放边界
+
+`dashscope.realtime → openai.realtime` 保持既有处置，只订正理由：
+
+- `parallel_tool_calls=DEGRADE`（O1、D1/D2）：两端没有通用并行调用策略的等价
+  保证。DashScope 当前公开 Realtime 契约没有显式并行开关；OpenAI 已有
+  session/response 的 `parallel_tool_calls`，但限定 reasoning Realtime 模型。
+  并行行为采用目标模型语义，不能保证保留来源的调用调度；不能再称 OpenAI 无开关。
+- `realtime_image_input/vision_input=REJECT`（O1/O2、D1/D2/D3）：OpenAI 有
+  input_image 消息，却没有 DashScope 专用图像 buffer 与随音频共同提交的契约。
+  当前拒绝把该音画 buffer 轮次隐式拆成独立图像消息，以免改变提交边界、生命周期
+  与对话项关联；只针对从该 buffer 表达的视觉请求，不泛化为 OpenAI 无视觉输入。
+
+这些设计 REJECT 源于已知契约差异与证据缺口，**不是因为转换器尚未实现**，也不
+证明未来不可能实现受限转换。若官方补齐独立图像 item 或显式转换可保住关联/轮次，
+须重新审阅；并行转换也须另验来源语义、目标有效配置与多 call_id 往返。
+
+当前两条 C 路径无兑现端点，生产 `Matrix.Check` 先检查路径/门，再裁决能力，
+因此仍为 **PLANNED / 501**。未来开门后的设计 REJECT 对应 unsupported/422，
+可交付但未兑现仍为 501；下游 101 后只能用协议错误/关闭表达，不能再写 HTTP 状态。
+同源 OpenAI 路径随表达性扩充为设计 PASS 15 项，但同样没有生产门兑现。
+Task 5 不改变生产 Build、路由、Redeem 或两份兑现名单；历史跨协议
+MarkHomogeneous 标记不构成同契约证据（见原则 2.2）。

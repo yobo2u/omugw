@@ -129,10 +129,17 @@ HTTP 状态码。动态降级也必须有可验证的通知承载方式，不能
 | `realtime_session` | `session.update` / `session.created` / `session.updated`（GA 与 beta 同名） | 同名事件（beta 命名）；模型由握手查询参数指定，`session.model` 字段与查询参数孰先未文档化 | 两条跨协议路径均 PASS；配置遵守 §4 两态纪律 |
 | `realtime_server_vad` | `turn_detection`（阈值、前缀填充、静音时长等子参数） | `server_vad`（另有 `semantic_vad`） | 两条跨协议路径均 PASS；VAD 子参数属建模配置，presence-aware |
 | `realtime_interrupt_turns` | `response.cancel` 与 `conversation.item.truncate` 是两个独立操作 | `response.cancel` 有；`conversation.item.truncate` 无落点（研究快照） | 两条跨协议路径均 PASS，但 PASS 未区分 cancel/truncate，见 §6 |
-| `realtime_image_input` | 无独立图像缓冲 | `input_image_buffer.append`（独有） | 仅 DashScope 可表达；`dashscope.realtime → openai.realtime` 已 REJECT |
+| `realtime_image_input` | 有 `input_image` 消息，归 `vision_input + image_detail`；无 DashScope 专用图像 buffer 入口 | `input_image_buffer.append`：须先 append 音频，并经 `input_audio_buffer.commit` 随音频共同提交 | 仅 DashScope 可表达该 buffer 能力；反向设计 REJECT 防止拆分音画关联与提交边界，不是目标没有视觉输入 |
 | `realtime_commit_modes` | 无 | `server_commit` / `commit`（Qwen-TTS-Realtime 特有） | 仅 DashScope 可表达；`dashscope.realtime → openai.realtime` 已 REJECT |
 
 本表只登记三侧命名与落点现状，不声明任何新能力已支持，不改动任何处置。
+
+此处“独立图像缓冲”仅指专有 buffer/append 入口，**不是独立 commit**。当前公开
+目录未给图像 commit/committed/clear/cleared，不得从音频 clear 推断图像已清空。
+独立无音频图像 item 与音画共同提交不等价；当前指南与客户端参考对文本 message
+的覆盖存在冲突，不能把缺少独立图像契约写成真实上游拒绝所有 message 的结论。
+字段、逐项来源与设计处置/当前 501 的分离见
+[GA 研究契约 §7](../../research/2026-10-04-openai-realtime-ga-contract.md#7-task-5ga-表达性与跨路径设计处置)。
 
 ## 8. 用量记录
 
