@@ -1,0 +1,323 @@
+{
+  "scenario": "text-tools",
+  "requested_model": "qwen3.5-omni-flash-realtime",
+  "started_at": "2026-10-04T05:41:30.186347Z",
+  "handshake_status": 101,
+  "safe_response_headers": {
+    "connection": "Upgrade",
+    "upgrade": "websocket"
+  },
+  "configuration_confirmed": true,
+  "records": [
+    {
+      "direction": "receive",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJldmVudF9pZCI6ImV2ZW50X0xlcHJaMllISUdJY25velIyYjhRcSIsInR5cGUiOiJzZXNzaW9uLmNyZWF0ZWQiLCJzZXNzaW9uIjp7Im9iamVjdCI6InJlYWx0aW1lLnNlc3Npb24iLCJtb2RlbCI6InF3ZW4zLjUtb21uaS1mbGFzaC1yZWFsdGltZSIsIm1vZGFsaXRpZXMiOlsidGV4dCIsImF1ZGlvIl0sInZvaWNlIjoiVGluYSIsImlucHV0X2F1ZGlvX2Zvcm1hdCI6InBjbSIsIm91dHB1dF9hdWRpb19mb3JtYXQiOiJwY20iLCJpbnB1dF9hdWRpb190cmFuc2NyaXB0aW9uIjp7Im1vZGVsIjoicXdlbjMtYXNyLWZsYXNoLXJlYWx0aW1lIn0sInR1cm5fZGV0ZWN0aW9uIjp7InR5cGUiOiJzZXJ2ZXJfdmFkIiwidGhyZXNob2xkIjowLjUsInByZWZpeF9wYWRkaW5nX21zIjozMDAsInNpbGVuY2VfZHVyYXRpb25fbXMiOjgwMCwiY3JlYXRlX3Jlc3BvbnNlIjp0cnVlLCJpbnRlcnJ1cHRfcmVzcG9uc2UiOnRydWV9LCJpZCI6InNlc3NfR2VwWFpZR1g5UGJ1V2pYenFoM283In19"
+    },
+    {
+      "direction": "send",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJldmVudF9pZCI6InJlY29yZF8wMDEiLCJzZXNzaW9uIjp7Imluc3RydWN0aW9ucyI6Iui/meaYr+WFrOW8gOeahOaXoOmakOengea1i+ivleOAgueugOefreS9nOetlO+8jOS4jei2hei/h+S6jOWNgeS4quWtl+OAgiIsIm1heF90b2tlbnMiOjEyOCwibW9kYWxpdGllcyI6WyJ0ZXh0Il0sInRvb2xzIjpbeyJmdW5jdGlvbiI6eyJkZXNjcmlwdGlvbiI6Iui/lOWbnua1i+ivleWbvuW9ouminOiJsu+8m+S4jiB0ZXN0X3NoYXBlIOWQjOi9ruiwg+eUqOOAgiIsIm5hbWUiOiJ0ZXN0X2NvbG9yIiwicGFyYW1ldGVycyI6eyJwcm9wZXJ0aWVzIjp7fSwidHlwZSI6Im9iamVjdCJ9fSwidHlwZSI6ImZ1bmN0aW9uIn0seyJmdW5jdGlvbiI6eyJkZXNjcmlwdGlvbiI6Iui/lOWbnua1i+ivleWbvuW9ouW9oueKtu+8m+S4jiB0ZXN0X2NvbG9yIOWQjOi9ruiwg+eUqOOAgiIsIm5hbWUiOiJ0ZXN0X3NoYXBlIiwicGFyYW1ldGVycyI6eyJwcm9wZXJ0aWVzIjp7fSwidHlwZSI6Im9iamVjdCJ9fSwidHlwZSI6ImZ1bmN0aW9uIn1dfSwidHlwZSI6InNlc3Npb24udXBkYXRlIn0="
+    },
+    {
+      "direction": "receive",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJldmVudF9pZCI6ImV2ZW50X1JwYnp0Y3NRV2lQakVib09SQVlWdCIsInR5cGUiOiJzZXNzaW9uLnVwZGF0ZWQiLCJzZXNzaW9uIjp7ImlkIjoic2Vzc19HZXBYWllHWDlQYnVXalh6cWgzbzciLCJvYmplY3QiOiJyZWFsdGltZS5zZXNzaW9uIiwibW9kZWwiOiJxd2VuMy41LW9tbmktZmxhc2gtcmVhbHRpbWUiLCJtb2RhbGl0aWVzIjpbInRleHQiXSwiaW5zdHJ1Y3Rpb25zIjoi6L+Z5piv5YWs5byA55qE5peg6ZqQ56eB5rWL6K+V44CC566A55+t5L2c562U77yM5LiN6LaF6L+H5LqM5Y2B5Liq5a2X44CCIiwidm9pY2UiOiJUaW5hIiwiaW5wdXRfYXVkaW9fZm9ybWF0IjoicGNtIiwib3V0cHV0X2F1ZGlvX2Zvcm1hdCI6InBjbSIsImlucHV0X2F1ZGlvX3RyYW5zY3JpcHRpb24iOnsibW9kZWwiOiJxd2VuMy1hc3ItZmxhc2gtcmVhbHRpbWUifSwidHVybl9kZXRlY3Rpb24iOnsidHlwZSI6InNlcnZlcl92YWQiLCJ0aHJlc2hvbGQiOjAuNSwicHJlZml4X3BhZGRpbmdfbXMiOjMwMCwic2lsZW5jZV9kdXJhdGlvbl9tcyI6ODAwLCJjcmVhdGVfcmVzcG9uc2UiOnRydWUsImludGVycnVwdF9yZXNwb25zZSI6dHJ1ZX0sInRvb2xzIjpbeyJmdW5jdGlvbiI6eyJuYW1lIjoidGVzdF9jb2xvciIsImRlc2NyaXB0aW9uIjoi6L+U5Zue5rWL6K+V5Zu+5b2i6aKc6Imy77yb5LiOIHRlc3Rfc2hhcGUg5ZCM6L2u6LCD55So44CCIiwicGFyYW1ldGVycyI6eyJwcm9wZXJ0aWVzIjp7fSwidHlwZSI6Im9iamVjdCJ9fSwidHlwZSI6ImZ1bmN0aW9uIn0seyJmdW5jdGlvbiI6eyJuYW1lIjoidGVzdF9zaGFwZSIsImRlc2NyaXB0aW9uIjoi6L+U5Zue5rWL6K+V5Zu+5b2i5b2i54q277yb5LiOIHRlc3RfY29sb3Ig5ZCM6L2u6LCD55So44CCIiwicGFyYW1ldGVycyI6eyJwcm9wZXJ0aWVzIjp7fSwidHlwZSI6Im9iamVjdCJ9fSwidHlwZSI6ImZ1bmN0aW9uIn1dLCJtYXhfdG9rZW5zIjoxMjh9fQ=="
+    },
+    {
+      "direction": "send",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJldmVudF9pZCI6InJlY29yZF8wMDIiLCJpdGVtIjp7ImNvbnRlbnQiOlt7InRleHQiOiLorrDkvY/mtYvor5Xlj6Pku6TvvJrok53oibLmlrnlnZfjgILlj6rlm57lpI3lt7LorrDkvY/vvIzkuI3osIPnlKjlt6XlhbfjgIIiLCJ0eXBlIjoiaW5wdXRfdGV4dCJ9XSwicm9sZSI6InVzZXIiLCJ0eXBlIjoibWVzc2FnZSJ9LCJ0eXBlIjoiY29udmVyc2F0aW9uLml0ZW0uY3JlYXRlIn0="
+    },
+    {
+      "direction": "receive",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJldmVudF9pZCI6ImV2ZW50X1RjUmFza3A1TUNLMkRuODRDczV2OSIsInR5cGUiOiJjb252ZXJzYXRpb24uaXRlbS5jcmVhdGVkIiwiaXRlbSI6eyJpZCI6Iml0ZW1fU3ZGc0hjRzR1c3VFd1hTT1Bvd2FZIiwib2JqZWN0IjoicmVhbHRpbWUuaXRlbSIsInR5cGUiOiJtZXNzYWdlIiwic3RhdHVzIjoiY29tcGxldGVkIiwicm9sZSI6InVzZXIiLCJjb250ZW50IjpbeyJ0eXBlIjoiaW5wdXRfdGV4dCIsInRleHQiOiLorrDkvY/mtYvor5Xlj6Pku6TvvJrok53oibLmlrnlnZfjgILlj6rlm57lpI3lt7LorrDkvY/vvIzkuI3osIPnlKjlt6XlhbfjgIIifV19fQ=="
+    },
+    {
+      "direction": "send",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJldmVudF9pZCI6InJlY29yZF8wMDMiLCJ0eXBlIjoicmVzcG9uc2UuY3JlYXRlIn0="
+    },
+    {
+      "direction": "receive",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJldmVudF9pZCI6ImV2ZW50X1pGc1NGQ3h1Qk4xZGt2eTNoTFN2ZiIsInR5cGUiOiJyZXNwb25zZS5jcmVhdGVkIiwicmVzcG9uc2UiOnsiaWQiOiJyZXNwX0JQZFMzcFp3OXJTNzJKWFhJc0E4UCIsIm9iamVjdCI6InJlYWx0aW1lLnJlc3BvbnNlIiwiY29udmVyc2F0aW9uX2lkIjoiY29udl9ObGprRUtzUW5pdWMyNEwxU0IxZ0ciLCJzdGF0dXMiOiJpbl9wcm9ncmVzcyIsIm1vZGFsaXRpZXMiOlsidGV4dCJdLCJ2b2ljZSI6IlRpbmEiLCJvdXRwdXRfYXVkaW9fZm9ybWF0IjoicGNtIiwib3V0cHV0IjpbXX19"
+    },
+    {
+      "direction": "receive",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJldmVudF9pZCI6ImV2ZW50X0FRVG5FeEdaaE40NWhzeTV5SndXdCIsInR5cGUiOiJyZXNwb25zZS5vdXRwdXRfaXRlbS5hZGRlZCIsInJlc3BvbnNlX2lkIjoicmVzcF9CUGRTM3BadzlyUzcySlhYSXNBOFAiLCJvdXRwdXRfaW5kZXgiOjAsIml0ZW0iOnsiaWQiOiJpdGVtX042QWt6d2N4djVzdWY5NWR2WFFhSSIsIm9iamVjdCI6InJlYWx0aW1lLml0ZW0iLCJ0eXBlIjoibWVzc2FnZSIsInN0YXR1cyI6ImluX3Byb2dyZXNzIiwicm9sZSI6ImFzc2lzdGFudCIsImNvbnRlbnQiOltdfX0="
+    },
+    {
+      "direction": "receive",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJldmVudF9pZCI6ImV2ZW50X0RUaThseWlOWGRHMTVrdWJjcFNyRyIsInR5cGUiOiJjb252ZXJzYXRpb24uaXRlbS5jcmVhdGVkIiwicHJldmlvdXNfaXRlbV9pZCI6Iml0ZW1fU3ZGc0hjRzR1c3VFd1hTT1Bvd2FZIiwiaXRlbSI6eyJpZCI6Iml0ZW1fTjZBa3p3Y3h2NXN1Zjk1ZHZYUWFJIiwib2JqZWN0IjoicmVhbHRpbWUuaXRlbSIsInR5cGUiOiJtZXNzYWdlIiwic3RhdHVzIjoiaW5fcHJvZ3Jlc3MiLCJyb2xlIjoiYXNzaXN0YW50IiwiY29udGVudCI6W119fQ=="
+    },
+    {
+      "direction": "receive",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJldmVudF9pZCI6ImV2ZW50X1BtV21waU1wNGNKZ2JnTlpTT3l4eSIsInR5cGUiOiJyZXNwb25zZS5jb250ZW50X3BhcnQuYWRkZWQiLCJyZXNwb25zZV9pZCI6InJlc3BfQlBkUzNwWnc5clM3MkpYWElzQThQIiwiaXRlbV9pZCI6Iml0ZW1fTjZBa3p3Y3h2NXN1Zjk1ZHZYUWFJIiwib3V0cHV0X2luZGV4IjowLCJjb250ZW50X2luZGV4IjowLCJwYXJ0Ijp7InR5cGUiOiJ0ZXh0IiwidGV4dCI6IiJ9fQ=="
+    },
+    {
+      "direction": "receive",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJkZWx0YSI6IuW3siIsImV2ZW50X2lkIjoiZXZlbnRfSDhYbU9hcWF0T2Q1b3JRaERWQ1piIiwidHlwZSI6InJlc3BvbnNlLnRleHQuZGVsdGEiLCJyZXNwb25zZV9pZCI6InJlc3BfQlBkUzNwWnc5clM3MkpYWElzQThQIiwiaXRlbV9pZCI6Iml0ZW1fTjZBa3p3Y3h2NXN1Zjk1ZHZYUWFJIiwib3V0cHV0X2luZGV4IjowLCJjb250ZW50X2luZGV4IjowfQ=="
+    },
+    {
+      "direction": "receive",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJkZWx0YSI6IuiusOS9j+a1i+ivlSIsImV2ZW50X2lkIjoiZXZlbnRfWFpjdW1TaDhIZHdaNXFNVEs4VVZqIiwidHlwZSI6InJlc3BvbnNlLnRleHQuZGVsdGEiLCJyZXNwb25zZV9pZCI6InJlc3BfQlBkUzNwWnc5clM3MkpYWElzQThQIiwiaXRlbV9pZCI6Iml0ZW1fTjZBa3p3Y3h2NXN1Zjk1ZHZYUWFJIiwib3V0cHV0X2luZGV4IjowLCJjb250ZW50X2luZGV4IjowfQ=="
+    },
+    {
+      "direction": "receive",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJkZWx0YSI6IuWPo+S7pO+8muiTneiJsuaWueWdl+OAgiIsImV2ZW50X2lkIjoiZXZlbnRfU0EyOU1nU0ZYSXFBcjUxaVQxU3hZIiwidHlwZSI6InJlc3BvbnNlLnRleHQuZGVsdGEiLCJyZXNwb25zZV9pZCI6InJlc3BfQlBkUzNwWnc5clM3MkpYWElzQThQIiwiaXRlbV9pZCI6Iml0ZW1fTjZBa3p3Y3h2NXN1Zjk1ZHZYUWFJIiwib3V0cHV0X2luZGV4IjowLCJjb250ZW50X2luZGV4IjowfQ=="
+    },
+    {
+      "direction": "receive",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJ0ZXh0Ijoi5bey6K6w5L2P5rWL6K+V5Y+j5Luk77ya6JOd6Imy5pa55Z2X44CCIiwiZXZlbnRfaWQiOiJldmVudF9WUUwzc0NTTEpESFJLbHVMckZtcWsiLCJ0eXBlIjoicmVzcG9uc2UudGV4dC5kb25lIiwicmVzcG9uc2VfaWQiOiJyZXNwX0JQZFMzcFp3OXJTNzJKWFhJc0E4UCIsIml0ZW1faWQiOiJpdGVtX042QWt6d2N4djVzdWY5NWR2WFFhSSIsIm91dHB1dF9pbmRleCI6MCwiY29udGVudF9pbmRleCI6MH0="
+    },
+    {
+      "direction": "receive",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJldmVudF9pZCI6ImV2ZW50X0Z4RHZyT3QxY0ttS3R3cjdpUDRlWiIsInR5cGUiOiJyZXNwb25zZS5jb250ZW50X3BhcnQuZG9uZSIsInJlc3BvbnNlX2lkIjoicmVzcF9CUGRTM3BadzlyUzcySlhYSXNBOFAiLCJpdGVtX2lkIjoiaXRlbV9ONkFrendjeHY1c3VmOTVkdlhRYUkiLCJvdXRwdXRfaW5kZXgiOjAsImNvbnRlbnRfaW5kZXgiOjAsInBhcnQiOnsidHlwZSI6InRleHQiLCJ0ZXh0Ijoi5bey6K6w5L2P5rWL6K+V5Y+j5Luk77ya6JOd6Imy5pa55Z2X44CCIn19"
+    },
+    {
+      "direction": "receive",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJldmVudF9pZCI6ImV2ZW50X0ZQWXh6NVREZ3l6ZFZzd2lGSWN3YyIsInR5cGUiOiJyZXNwb25zZS5vdXRwdXRfaXRlbS5kb25lIiwicmVzcG9uc2VfaWQiOiJyZXNwX0JQZFMzcFp3OXJTNzJKWFhJc0E4UCIsIm91dHB1dF9pbmRleCI6MCwiaXRlbSI6eyJpZCI6Iml0ZW1fTjZBa3p3Y3h2NXN1Zjk1ZHZYUWFJIiwib2JqZWN0IjoicmVhbHRpbWUuaXRlbSIsInR5cGUiOiJtZXNzYWdlIiwic3RhdHVzIjoiY29tcGxldGVkIiwicm9sZSI6ImFzc2lzdGFudCIsImNvbnRlbnQiOlt7InR5cGUiOiJ0ZXh0In1dfX0="
+    },
+    {
+      "direction": "receive",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJldmVudF9pZCI6ImV2ZW50X0JyQ200ZVl4eXRQWmx1a1FFbVlzaiIsInR5cGUiOiJyZXNwb25zZS5kb25lIiwicmVzcG9uc2UiOnsiaWQiOiJyZXNwX0JQZFMzcFp3OXJTNzJKWFhJc0E4UCIsIm9iamVjdCI6InJlYWx0aW1lLnJlc3BvbnNlIiwiY29udmVyc2F0aW9uX2lkIjoiY29udl9ObGprRUtzUW5pdWMyNEwxU0IxZ0ciLCJzdGF0dXMiOiJjb21wbGV0ZWQiLCJtb2RhbGl0aWVzIjpbInRleHQiXSwidm9pY2UiOiJUaW5hIiwib3V0cHV0X2F1ZGlvX2Zvcm1hdCI6InBjbSIsIm91dHB1dCI6W3siaWQiOiJpdGVtX042QWt6d2N4djVzdWY5NWR2WFFhSSIsIm9iamVjdCI6InJlYWx0aW1lLml0ZW0iLCJ0eXBlIjoibWVzc2FnZSIsInN0YXR1cyI6ImNvbXBsZXRlZCIsInJvbGUiOiJhc3Npc3RhbnQiLCJjb250ZW50IjpbeyJ0eXBlIjoidGV4dCIsInRleHQiOiLlt7LorrDkvY/mtYvor5Xlj6Pku6TvvJrok53oibLmlrnlnZfjgIIifV19XSwidXNhZ2UiOnsidG90YWxfdG9rZW5zIjozNTAsImlucHV0X3Rva2VucyI6MzQxLCJvdXRwdXRfdG9rZW5zIjo5LCJpbnB1dF90b2tlbnNfZGV0YWlscyI6eyJ0ZXh0X3Rva2VucyI6MzQxfSwib3V0cHV0X3Rva2Vuc19kZXRhaWxzIjp7InRleHRfdG9rZW5zIjo5fX19fQ=="
+    },
+    {
+      "direction": "send",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJldmVudF9pZCI6InJlY29yZF8wMDQiLCJpdGVtIjp7ImNvbnRlbnQiOlt7InRleHQiOiLlhYjlpI3ov7DliJrmiY3lj6Pku6TvvIzlho3lnKjlkIzkuIDova7osIPnlKggdGVzdF9jb2xvciDlkowgdGVzdF9zaGFwZe+8jOS4jeimgeeMnOa1i+e7k+aenOOAgiIsInR5cGUiOiJpbnB1dF90ZXh0In1dLCJyb2xlIjoidXNlciIsInR5cGUiOiJtZXNzYWdlIn0sInR5cGUiOiJjb252ZXJzYXRpb24uaXRlbS5jcmVhdGUifQ=="
+    },
+    {
+      "direction": "receive",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJldmVudF9pZCI6ImV2ZW50X01qVHhKOEs3MW5RdjFtRnlRQ2JtMiIsInR5cGUiOiJjb252ZXJzYXRpb24uaXRlbS5jcmVhdGVkIiwicHJldmlvdXNfaXRlbV9pZCI6Iml0ZW1fTjZBa3p3Y3h2NXN1Zjk1ZHZYUWFJIiwiaXRlbSI6eyJpZCI6Iml0ZW1fVGQ3OVVFdDlaUVJ1RDI4cXVSd0ZiIiwib2JqZWN0IjoicmVhbHRpbWUuaXRlbSIsInR5cGUiOiJtZXNzYWdlIiwic3RhdHVzIjoiY29tcGxldGVkIiwicm9sZSI6InVzZXIiLCJjb250ZW50IjpbeyJ0eXBlIjoiaW5wdXRfdGV4dCIsInRleHQiOiLlhYjlpI3ov7DliJrmiY3lj6Pku6TvvIzlho3lnKjlkIzkuIDova7osIPnlKggdGVzdF9jb2xvciDlkowgdGVzdF9zaGFwZe+8jOS4jeimgeeMnOa1i+e7k+aenOOAgiJ9XX19"
+    },
+    {
+      "direction": "send",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJldmVudF9pZCI6InJlY29yZF8wMDUiLCJ0eXBlIjoicmVzcG9uc2UuY3JlYXRlIn0="
+    },
+    {
+      "direction": "receive",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJldmVudF9pZCI6ImV2ZW50X1hSWVF3b3pMSjZKamVySGZ5VFEyTiIsInR5cGUiOiJyZXNwb25zZS5jcmVhdGVkIiwicmVzcG9uc2UiOnsiaWQiOiJyZXNwX1c2b0FlYzhhendXaEVlNVB6Uk5tTiIsIm9iamVjdCI6InJlYWx0aW1lLnJlc3BvbnNlIiwiY29udmVyc2F0aW9uX2lkIjoiY29udl9ObGprRUtzUW5pdWMyNEwxU0IxZ0ciLCJzdGF0dXMiOiJpbl9wcm9ncmVzcyIsIm1vZGFsaXRpZXMiOlsidGV4dCJdLCJ2b2ljZSI6IlRpbmEiLCJvdXRwdXRfYXVkaW9fZm9ybWF0IjoicGNtIiwib3V0cHV0IjpbXX19"
+    },
+    {
+      "direction": "receive",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJldmVudF9pZCI6ImV2ZW50X0djYlZZNjh5OEpVZ0UyaHNRbXZ6WiIsInR5cGUiOiJyZXNwb25zZS5vdXRwdXRfaXRlbS5hZGRlZCIsInJlc3BvbnNlX2lkIjoicmVzcF9XNm9BZWM4YXp3V2hFZTVQelJObU4iLCJvdXRwdXRfaW5kZXgiOjAsIml0ZW0iOnsiaWQiOiJpdGVtX1NPaG5iaTlnZFFFU3U2Q1RsZmlMSiIsIm9iamVjdCI6InJlYWx0aW1lLml0ZW0iLCJ0eXBlIjoiZnVuY3Rpb25fY2FsbCIsInN0YXR1cyI6ImluX3Byb2dyZXNzIiwiY2FsbF9pZCI6ImNhbGxfMGE5ZTAzZWZlNTU2NGQ4ZjhjYTk1NGZjIiwibmFtZSI6InRlc3RfY29sb3IiLCJhcmd1bWVudHMiOiIifX0="
+    },
+    {
+      "direction": "receive",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJldmVudF9pZCI6ImV2ZW50X0ZUT1Fmd1hwOVh5RXhRV256d2RSUSIsInR5cGUiOiJjb252ZXJzYXRpb24uaXRlbS5jcmVhdGVkIiwicHJldmlvdXNfaXRlbV9pZCI6Iml0ZW1fVGQ3OVVFdDlaUVJ1RDI4cXVSd0ZiIiwiaXRlbSI6eyJpZCI6Iml0ZW1fU09obmJpOWdkUUVTdTZDVGxmaUxKIiwib2JqZWN0IjoicmVhbHRpbWUuaXRlbSIsInR5cGUiOiJmdW5jdGlvbl9jYWxsIiwic3RhdHVzIjoiaW5fcHJvZ3Jlc3MiLCJjYWxsX2lkIjoiY2FsbF8wYTllMDNlZmU1NTY0ZDhmOGNhOTU0ZmMiLCJuYW1lIjoidGVzdF9jb2xvciIsImFyZ3VtZW50cyI6IiJ9fQ=="
+    },
+    {
+      "direction": "receive",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJldmVudF9pZCI6ImV2ZW50X0V6a2NJd3dtcmpTdjZIT1E0Q2tFciIsInR5cGUiOiJyZXNwb25zZS5mdW5jdGlvbl9jYWxsX2FyZ3VtZW50cy5kZWx0YSIsInJlc3BvbnNlX2lkIjoicmVzcF9XNm9BZWM4YXp3V2hFZTVQelJObU4iLCJpdGVtX2lkIjoiaXRlbV9TT2huYmk5Z2RRRVN1NkNUbGZpTEoiLCJvdXRwdXRfaW5kZXgiOjAsImNhbGxfaWQiOiJjYWxsXzBhOWUwM2VmZTU1NjRkOGY4Y2E5NTRmYyIsImRlbHRhIjoie30iLCJvYmZ1c2NhdGlvbiI6Ik5mTld0NXZ0a0RyUVJPIn0="
+    },
+    {
+      "direction": "receive",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJldmVudF9pZCI6ImV2ZW50X1hHdXJRakRHOEdNUks3R2RpMkk1eSIsInR5cGUiOiJyZXNwb25zZS5mdW5jdGlvbl9jYWxsX2FyZ3VtZW50cy5kb25lIiwicmVzcG9uc2VfaWQiOiJyZXNwX1c2b0FlYzhhendXaEVlNVB6Uk5tTiIsIml0ZW1faWQiOiJpdGVtX1NPaG5iaTlnZFFFU3U2Q1RsZmlMSiIsIm91dHB1dF9pbmRleCI6MCwibmFtZSI6InRlc3RfY29sb3IiLCJjYWxsX2lkIjoiY2FsbF8wYTllMDNlZmU1NTY0ZDhmOGNhOTU0ZmMiLCJhcmd1bWVudHMiOiJ7fSJ9"
+    },
+    {
+      "direction": "receive",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJldmVudF9pZCI6ImV2ZW50X0lrRWMzQnRHZXNueUNiamtiSkFJcSIsInR5cGUiOiJyZXNwb25zZS5vdXRwdXRfaXRlbS5kb25lIiwicmVzcG9uc2VfaWQiOiJyZXNwX1c2b0FlYzhhendXaEVlNVB6Uk5tTiIsIm91dHB1dF9pbmRleCI6MCwiaXRlbSI6eyJpZCI6Iml0ZW1fU09obmJpOWdkUUVTdTZDVGxmaUxKIiwib2JqZWN0IjoicmVhbHRpbWUuaXRlbSIsInR5cGUiOiJmdW5jdGlvbl9jYWxsIiwic3RhdHVzIjoiY29tcGxldGVkIiwiY2FsbF9pZCI6ImNhbGxfMGE5ZTAzZWZlNTU2NGQ4ZjhjYTk1NGZjIiwibmFtZSI6InRlc3RfY29sb3IiLCJhcmd1bWVudHMiOiJ7fSJ9fQ=="
+    },
+    {
+      "direction": "receive",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJldmVudF9pZCI6ImV2ZW50X1k2cGp1U3U2WGJudFJ1VUZOVnhLYiIsInR5cGUiOiJyZXNwb25zZS5vdXRwdXRfaXRlbS5hZGRlZCIsInJlc3BvbnNlX2lkIjoicmVzcF9XNm9BZWM4YXp3V2hFZTVQelJObU4iLCJvdXRwdXRfaW5kZXgiOjEsIml0ZW0iOnsiaWQiOiJpdGVtX1p0ZGlzeEduSGR1SHZMSWFQN1FmQSIsIm9iamVjdCI6InJlYWx0aW1lLml0ZW0iLCJ0eXBlIjoiZnVuY3Rpb25fY2FsbCIsInN0YXR1cyI6ImluX3Byb2dyZXNzIiwiY2FsbF9pZCI6ImNhbGxfMDU5NGFlNTljM2E0NDIxYWE3ODcxZDY0IiwibmFtZSI6InRlc3Rfc2hhcGUiLCJhcmd1bWVudHMiOiIifX0="
+    },
+    {
+      "direction": "receive",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJldmVudF9pZCI6ImV2ZW50X0J5YXdjakF4eVBNRmJuOG55eXVYQyIsInR5cGUiOiJjb252ZXJzYXRpb24uaXRlbS5jcmVhdGVkIiwicHJldmlvdXNfaXRlbV9pZCI6Iml0ZW1fU09obmJpOWdkUUVTdTZDVGxmaUxKIiwiaXRlbSI6eyJpZCI6Iml0ZW1fWnRkaXN4R25IZHVIdkxJYVA3UWZBIiwib2JqZWN0IjoicmVhbHRpbWUuaXRlbSIsInR5cGUiOiJmdW5jdGlvbl9jYWxsIiwic3RhdHVzIjoiaW5fcHJvZ3Jlc3MiLCJjYWxsX2lkIjoiY2FsbF8wNTk0YWU1OWMzYTQ0MjFhYTc4NzFkNjQiLCJuYW1lIjoidGVzdF9zaGFwZSIsImFyZ3VtZW50cyI6IiJ9fQ=="
+    },
+    {
+      "direction": "receive",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJldmVudF9pZCI6ImV2ZW50X0wxNk4xUFpCcU5QTHV6MmV5NjFjaSIsInR5cGUiOiJyZXNwb25zZS5mdW5jdGlvbl9jYWxsX2FyZ3VtZW50cy5kb25lIiwicmVzcG9uc2VfaWQiOiJyZXNwX1c2b0FlYzhhendXaEVlNVB6Uk5tTiIsIml0ZW1faWQiOiJpdGVtX1p0ZGlzeEduSGR1SHZMSWFQN1FmQSIsIm91dHB1dF9pbmRleCI6MSwibmFtZSI6InRlc3Rfc2hhcGUiLCJjYWxsX2lkIjoiY2FsbF8wNTk0YWU1OWMzYTQ0MjFhYTc4NzFkNjQiLCJhcmd1bWVudHMiOiJ7fSJ9"
+    },
+    {
+      "direction": "receive",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJldmVudF9pZCI6ImV2ZW50X0lkUGdqWENJUFZNVmJrbUJiNjhVMSIsInR5cGUiOiJyZXNwb25zZS5vdXRwdXRfaXRlbS5kb25lIiwicmVzcG9uc2VfaWQiOiJyZXNwX1c2b0FlYzhhendXaEVlNVB6Uk5tTiIsIm91dHB1dF9pbmRleCI6MSwiaXRlbSI6eyJpZCI6Iml0ZW1fWnRkaXN4R25IZHVIdkxJYVA3UWZBIiwib2JqZWN0IjoicmVhbHRpbWUuaXRlbSIsInR5cGUiOiJmdW5jdGlvbl9jYWxsIiwic3RhdHVzIjoiY29tcGxldGVkIiwiY2FsbF9pZCI6ImNhbGxfMDU5NGFlNTljM2E0NDIxYWE3ODcxZDY0IiwibmFtZSI6InRlc3Rfc2hhcGUiLCJhcmd1bWVudHMiOiJ7fSJ9fQ=="
+    },
+    {
+      "direction": "receive",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJldmVudF9pZCI6ImV2ZW50X1F5ZXhGZlJsZVFGeE15dDR3V2ZibyIsInR5cGUiOiJyZXNwb25zZS5kb25lIiwicmVzcG9uc2UiOnsiaWQiOiJyZXNwX1c2b0FlYzhhendXaEVlNVB6Uk5tTiIsIm9iamVjdCI6InJlYWx0aW1lLnJlc3BvbnNlIiwiY29udmVyc2F0aW9uX2lkIjoiY29udl9ObGprRUtzUW5pdWMyNEwxU0IxZ0ciLCJzdGF0dXMiOiJjb21wbGV0ZWQiLCJtb2RhbGl0aWVzIjpbInRleHQiXSwidm9pY2UiOiJUaW5hIiwib3V0cHV0X2F1ZGlvX2Zvcm1hdCI6InBjbSIsIm91dHB1dCI6W3siaWQiOiJpdGVtX1NPaG5iaTlnZFFFU3U2Q1RsZmlMSiIsIm9iamVjdCI6InJlYWx0aW1lLml0ZW0iLCJ0eXBlIjoiZnVuY3Rpb25fY2FsbCIsInN0YXR1cyI6ImNvbXBsZXRlZCIsImNhbGxfaWQiOiJjYWxsXzBhOWUwM2VmZTU1NjRkOGY4Y2E5NTRmYyIsIm5hbWUiOiJ0ZXN0X2NvbG9yIiwiYXJndW1lbnRzIjoie30ifSx7ImlkIjoiaXRlbV9adGRpc3hHbkhkdUh2TElhUDdRZkEiLCJvYmplY3QiOiJyZWFsdGltZS5pdGVtIiwidHlwZSI6ImZ1bmN0aW9uX2NhbGwiLCJzdGF0dXMiOiJjb21wbGV0ZWQiLCJjYWxsX2lkIjoiY2FsbF8wNTk0YWU1OWMzYTQ0MjFhYTc4NzFkNjQiLCJuYW1lIjoidGVzdF9zaGFwZSIsImFyZ3VtZW50cyI6Int9In1dLCJ1c2FnZSI6eyJ0b3RhbF90b2tlbnMiOjQwOCwiaW5wdXRfdG9rZW5zIjozODAsIm91dHB1dF90b2tlbnMiOjI4LCJpbnB1dF90b2tlbnNfZGV0YWlscyI6eyJ0ZXh0X3Rva2VucyI6MzgwfSwib3V0cHV0X3Rva2Vuc19kZXRhaWxzIjp7InRleHRfdG9rZW5zIjoyOH19fX0="
+    },
+    {
+      "direction": "send",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJldmVudF9pZCI6InJlY29yZF8wMDYiLCJpdGVtIjp7ImNhbGxfaWQiOiJjYWxsXzBhOWUwM2VmZTU1NjRkOGY4Y2E5NTRmYyIsIm91dHB1dCI6IuiTneiJsiIsInR5cGUiOiJmdW5jdGlvbl9jYWxsX291dHB1dCJ9LCJ0eXBlIjoiY29udmVyc2F0aW9uLml0ZW0uY3JlYXRlIn0="
+    },
+    {
+      "direction": "receive",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJldmVudF9pZCI6ImV2ZW50X0F1b0dKVGpLNEZUYU5aVGZvTGlGNCIsInR5cGUiOiJjb252ZXJzYXRpb24uaXRlbS5jcmVhdGVkIiwicHJldmlvdXNfaXRlbV9pZCI6Iml0ZW1fWnRkaXN4R25IZHVIdkxJYVA3UWZBIiwiaXRlbSI6eyJpZCI6Iml0ZW1fQ1dETmtSQWNBNHBIZklmMVQ2eUZtIiwib2JqZWN0IjoicmVhbHRpbWUuaXRlbSIsInR5cGUiOiJmdW5jdGlvbl9jYWxsX291dHB1dCIsInN0YXR1cyI6ImNvbXBsZXRlZCIsImNhbGxfaWQiOiJjYWxsXzBhOWUwM2VmZTU1NjRkOGY4Y2E5NTRmYyIsIm91dHB1dCI6IuiTneiJsiJ9fQ=="
+    },
+    {
+      "direction": "send",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJldmVudF9pZCI6InJlY29yZF8wMDciLCJpdGVtIjp7ImNhbGxfaWQiOiJjYWxsXzA1OTRhZTU5YzNhNDQyMWFhNzg3MWQ2NCIsIm91dHB1dCI6IuaWueWdlyIsInR5cGUiOiJmdW5jdGlvbl9jYWxsX291dHB1dCJ9LCJ0eXBlIjoiY29udmVyc2F0aW9uLml0ZW0uY3JlYXRlIn0="
+    },
+    {
+      "direction": "receive",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJldmVudF9pZCI6ImV2ZW50X1FqS1JrM0JGdExwWnEzUHZoWXZhSCIsInR5cGUiOiJjb252ZXJzYXRpb24uaXRlbS5jcmVhdGVkIiwicHJldmlvdXNfaXRlbV9pZCI6Iml0ZW1fQ1dETmtSQWNBNHBIZklmMVQ2eUZtIiwiaXRlbSI6eyJpZCI6Iml0ZW1fUjd4Zk5nR1FJNTlvSWxaR002aFZFIiwib2JqZWN0IjoicmVhbHRpbWUuaXRlbSIsInR5cGUiOiJmdW5jdGlvbl9jYWxsX291dHB1dCIsInN0YXR1cyI6ImNvbXBsZXRlZCIsImNhbGxfaWQiOiJjYWxsXzA1OTRhZTU5YzNhNDQyMWFhNzg3MWQ2NCIsIm91dHB1dCI6IuaWueWdlyJ9fQ=="
+    },
+    {
+      "direction": "send",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJldmVudF9pZCI6InJlY29yZF8wMDgiLCJ0eXBlIjoicmVzcG9uc2UuY3JlYXRlIn0="
+    },
+    {
+      "direction": "receive",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJldmVudF9pZCI6ImV2ZW50X0FIRjlCc1NHaGxWTHBVb0RMbjUzWiIsInR5cGUiOiJyZXNwb25zZS5jcmVhdGVkIiwicmVzcG9uc2UiOnsiaWQiOiJyZXNwX1BkNzRVTGpsZ1c4a3dVSXhBcFhHSCIsIm9iamVjdCI6InJlYWx0aW1lLnJlc3BvbnNlIiwiY29udmVyc2F0aW9uX2lkIjoiY29udl9ObGprRUtzUW5pdWMyNEwxU0IxZ0ciLCJzdGF0dXMiOiJpbl9wcm9ncmVzcyIsIm1vZGFsaXRpZXMiOlsidGV4dCJdLCJ2b2ljZSI6IlRpbmEiLCJvdXRwdXRfYXVkaW9fZm9ybWF0IjoicGNtIiwib3V0cHV0IjpbXX19"
+    },
+    {
+      "direction": "receive",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJldmVudF9pZCI6ImV2ZW50X0JSRTh0RlFheU54eldwM0Q1WjZVVSIsInR5cGUiOiJyZXNwb25zZS5vdXRwdXRfaXRlbS5hZGRlZCIsInJlc3BvbnNlX2lkIjoicmVzcF9QZDc0VUxqbGdXOGt3VUl4QXBYR0giLCJvdXRwdXRfaW5kZXgiOjAsIml0ZW0iOnsiaWQiOiJpdGVtX0l6WWIxaDZobkxXZTNSRFFJVERKTCIsIm9iamVjdCI6InJlYWx0aW1lLml0ZW0iLCJ0eXBlIjoibWVzc2FnZSIsInN0YXR1cyI6ImluX3Byb2dyZXNzIiwicm9sZSI6ImFzc2lzdGFudCIsImNvbnRlbnQiOltdfX0="
+    },
+    {
+      "direction": "receive",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJldmVudF9pZCI6ImV2ZW50X0NlamlSMkFBMjZGNUh6OHVBbjhkcyIsInR5cGUiOiJjb252ZXJzYXRpb24uaXRlbS5jcmVhdGVkIiwicHJldmlvdXNfaXRlbV9pZCI6Iml0ZW1fUjd4Zk5nR1FJNTlvSWxaR002aFZFIiwiaXRlbSI6eyJpZCI6Iml0ZW1fSXpZYjFoNmhuTFdlM1JEUUlUREpMIiwib2JqZWN0IjoicmVhbHRpbWUuaXRlbSIsInR5cGUiOiJtZXNzYWdlIiwic3RhdHVzIjoiaW5fcHJvZ3Jlc3MiLCJyb2xlIjoiYXNzaXN0YW50IiwiY29udGVudCI6W119fQ=="
+    },
+    {
+      "direction": "receive",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJldmVudF9pZCI6ImV2ZW50X1pYWmtHbFljWkI3V2YxS09oaUhqaCIsInR5cGUiOiJyZXNwb25zZS5jb250ZW50X3BhcnQuYWRkZWQiLCJyZXNwb25zZV9pZCI6InJlc3BfUGQ3NFVMamxnVzhrd1VJeEFwWEdIIiwiaXRlbV9pZCI6Iml0ZW1fSXpZYjFoNmhuTFdlM1JEUUlUREpMIiwib3V0cHV0X2luZGV4IjowLCJjb250ZW50X2luZGV4IjowLCJwYXJ0Ijp7InR5cGUiOiJ0ZXh0IiwidGV4dCI6IiJ9fQ=="
+    },
+    {
+      "direction": "receive",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJkZWx0YSI6IuiTneiJsiIsImV2ZW50X2lkIjoiZXZlbnRfTTVZT3Aydk9Sc2lDRXJZM0ZQa25uIiwidHlwZSI6InJlc3BvbnNlLnRleHQuZGVsdGEiLCJyZXNwb25zZV9pZCI6InJlc3BfUGQ3NFVMamxnVzhrd1VJeEFwWEdIIiwiaXRlbV9pZCI6Iml0ZW1fSXpZYjFoNmhuTFdlM1JEUUlUREpMIiwib3V0cHV0X2luZGV4IjowLCJjb250ZW50X2luZGV4IjowfQ=="
+    },
+    {
+      "direction": "receive",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJkZWx0YSI6IuaWueWdl+OAgiIsImV2ZW50X2lkIjoiZXZlbnRfVTc1VFZBTUdCc0VPRHdvTEZqUmp4IiwidHlwZSI6InJlc3BvbnNlLnRleHQuZGVsdGEiLCJyZXNwb25zZV9pZCI6InJlc3BfUGQ3NFVMamxnVzhrd1VJeEFwWEdIIiwiaXRlbV9pZCI6Iml0ZW1fSXpZYjFoNmhuTFdlM1JEUUlUREpMIiwib3V0cHV0X2luZGV4IjowLCJjb250ZW50X2luZGV4IjowfQ=="
+    },
+    {
+      "direction": "receive",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJkZWx0YSI6IuminOiJsiIsImV2ZW50X2lkIjoiZXZlbnRfSHJ6eW5nV251N09BVlg2Y3F1bUVjIiwidHlwZSI6InJlc3BvbnNlLnRleHQuZGVsdGEiLCJyZXNwb25zZV9pZCI6InJlc3BfUGQ3NFVMamxnVzhrd1VJeEFwWEdIIiwiaXRlbV9pZCI6Iml0ZW1fSXpZYjFoNmhuTFdlM1JEUUlUREpMIiwib3V0cHV0X2luZGV4IjowLCJjb250ZW50X2luZGV4IjowfQ=="
+    },
+    {
+      "direction": "receive",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJkZWx0YSI6Iu+8miIsImV2ZW50X2lkIjoiZXZlbnRfVnE2cklHck9TcmRua21rSmM0RnMxIiwidHlwZSI6InJlc3BvbnNlLnRleHQuZGVsdGEiLCJyZXNwb25zZV9pZCI6InJlc3BfUGQ3NFVMamxnVzhrd1VJeEFwWEdIIiwiaXRlbV9pZCI6Iml0ZW1fSXpZYjFoNmhuTFdlM1JEUUlUREpMIiwib3V0cHV0X2luZGV4IjowLCJjb250ZW50X2luZGV4IjowfQ=="
+    },
+    {
+      "direction": "receive",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJkZWx0YSI6IuiTneiJsu+8jOW9oueKtu+8muaWueWdlyIsImV2ZW50X2lkIjoiZXZlbnRfWTlxaVFjRFhLQTF6ZUFwQ3pETEVOIiwidHlwZSI6InJlc3BvbnNlLnRleHQuZGVsdGEiLCJyZXNwb25zZV9pZCI6InJlc3BfUGQ3NFVMamxnVzhrd1VJeEFwWEdIIiwiaXRlbV9pZCI6Iml0ZW1fSXpZYjFoNmhuTFdlM1JEUUlUREpMIiwib3V0cHV0X2luZGV4IjowLCJjb250ZW50X2luZGV4IjowfQ=="
+    },
+    {
+      "direction": "receive",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJkZWx0YSI6IuOAgiIsImV2ZW50X2lkIjoiZXZlbnRfUmpWVkQ2SHdMT3JYVWc0S1R6dWZHIiwidHlwZSI6InJlc3BvbnNlLnRleHQuZGVsdGEiLCJyZXNwb25zZV9pZCI6InJlc3BfUGQ3NFVMamxnVzhrd1VJeEFwWEdIIiwiaXRlbV9pZCI6Iml0ZW1fSXpZYjFoNmhuTFdlM1JEUUlUREpMIiwib3V0cHV0X2luZGV4IjowLCJjb250ZW50X2luZGV4IjowfQ=="
+    },
+    {
+      "direction": "receive",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJ0ZXh0Ijoi6JOd6Imy5pa55Z2X44CC6aKc6Imy77ya6JOd6Imy77yM5b2i54q277ya5pa55Z2X44CCIiwiZXZlbnRfaWQiOiJldmVudF9UUHA5aHh6RGxYWjJCQmRUVU10YXAiLCJ0eXBlIjoicmVzcG9uc2UudGV4dC5kb25lIiwicmVzcG9uc2VfaWQiOiJyZXNwX1BkNzRVTGpsZ1c4a3dVSXhBcFhHSCIsIml0ZW1faWQiOiJpdGVtX0l6WWIxaDZobkxXZTNSRFFJVERKTCIsIm91dHB1dF9pbmRleCI6MCwiY29udGVudF9pbmRleCI6MH0="
+    },
+    {
+      "direction": "receive",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJldmVudF9pZCI6ImV2ZW50X0FxVjlLNjJad1p1Nk5TNGZIT2VqcyIsInR5cGUiOiJyZXNwb25zZS5jb250ZW50X3BhcnQuZG9uZSIsInJlc3BvbnNlX2lkIjoicmVzcF9QZDc0VUxqbGdXOGt3VUl4QXBYR0giLCJpdGVtX2lkIjoiaXRlbV9JelliMWg2aG5MV2UzUkRRSVRESkwiLCJvdXRwdXRfaW5kZXgiOjAsImNvbnRlbnRfaW5kZXgiOjAsInBhcnQiOnsidHlwZSI6InRleHQiLCJ0ZXh0Ijoi6JOd6Imy5pa55Z2X44CC6aKc6Imy77ya6JOd6Imy77yM5b2i54q277ya5pa55Z2X44CCIn19"
+    },
+    {
+      "direction": "receive",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJldmVudF9pZCI6ImV2ZW50X1pXVkwydU5MUEFyZkJUblphMWN6cSIsInR5cGUiOiJyZXNwb25zZS5vdXRwdXRfaXRlbS5kb25lIiwicmVzcG9uc2VfaWQiOiJyZXNwX1BkNzRVTGpsZ1c4a3dVSXhBcFhHSCIsIm91dHB1dF9pbmRleCI6MCwiaXRlbSI6eyJpZCI6Iml0ZW1fSXpZYjFoNmhuTFdlM1JEUUlUREpMIiwib2JqZWN0IjoicmVhbHRpbWUuaXRlbSIsInR5cGUiOiJtZXNzYWdlIiwic3RhdHVzIjoiY29tcGxldGVkIiwicm9sZSI6ImFzc2lzdGFudCIsImNvbnRlbnQiOlt7InR5cGUiOiJ0ZXh0In1dfX0="
+    },
+    {
+      "direction": "receive",
+      "kind": "message",
+      "opcode": 1,
+      "payload": "eyJldmVudF9pZCI6ImV2ZW50X1FUQ2p6b0RheTZOVEwyVFZvazl2RCIsInR5cGUiOiJyZXNwb25zZS5kb25lIiwicmVzcG9uc2UiOnsiaWQiOiJyZXNwX1BkNzRVTGpsZ1c4a3dVSXhBcFhHSCIsIm9iamVjdCI6InJlYWx0aW1lLnJlc3BvbnNlIiwiY29udmVyc2F0aW9uX2lkIjoiY29udl9ObGprRUtzUW5pdWMyNEwxU0IxZ0ciLCJzdGF0dXMiOiJjb21wbGV0ZWQiLCJtb2RhbGl0aWVzIjpbInRleHQiXSwidm9pY2UiOiJUaW5hIiwib3V0cHV0X2F1ZGlvX2Zvcm1hdCI6InBjbSIsIm91dHB1dCI6W3siaWQiOiJpdGVtX0l6WWIxaDZobkxXZTNSRFFJVERKTCIsIm9iamVjdCI6InJlYWx0aW1lLml0ZW0iLCJ0eXBlIjoibWVzc2FnZSIsInN0YXR1cyI6ImNvbXBsZXRlZCIsInJvbGUiOiJhc3Npc3RhbnQiLCJjb250ZW50IjpbeyJ0eXBlIjoidGV4dCIsInRleHQiOiLok53oibLmlrnlnZfjgILpopzoibLvvJrok53oibLvvIzlvaLnirbvvJrmlrnlnZfjgIIifV19XSwidXNhZ2UiOnsidG90YWxfdG9rZW5zIjo0NTYsImlucHV0X3Rva2VucyI6NDQ0LCJvdXRwdXRfdG9rZW5zIjoxMiwiaW5wdXRfdG9rZW5zX2RldGFpbHMiOnsidGV4dF90b2tlbnMiOjQ0NH0sIm91dHB1dF90b2tlbnNfZGV0YWlscyI6eyJ0ZXh0X3Rva2VucyI6MTJ9fX19"
+    },
+    {
+      "direction": "send",
+      "kind": "close",
+      "close_code": 1000
+    },
+    {
+      "direction": "receive",
+      "kind": "close",
+      "close_code": 1000
+    }
+  ]
+}

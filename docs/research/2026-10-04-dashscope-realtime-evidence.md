@@ -1,10 +1,10 @@
 # DashScope Realtime 独立录制与证据表
 
-日期：2026-10-04。Task 5 实现工具及离线验证；控制器随后实际调用三次。前两次在业务
-输入前因配置确认失败停止；第三次完成 TTS 业务但未取得关闭回应，仍是失败录制。
-Task 6 据此离线修正配置确认、收尾及双单位用量，**尚无完整真实能力结论**。
-以上为前三次的历史诊断快照；当前控制器通知本批已用 **6/8**。本次仅根据后续两份
-失败实录修正自动流收尾与 item 身份，不新增真实调用；完整能力状态由控制器管理。
+日期：2026-10-04。本批真实尝试已达 **8/8，停止调用，禁止换 batch 绕过**。
+取得 TTS commit、TTS server_commit、文本三轮双工具三份完整真实轨迹；其中文本候选
+从第八次原录制离线恢复。本次源审查、原字节归档及正式 handler 链路离线回放已通过，
+新增真实调用为 0。生产 Build 仍不开门、矩阵仍为 **PLANNED**，没有真实 gateway smoke。
+已取得的原生负载保全证据与尚缺的逐能力语义证据分别列于下文，不能据此宣称整门可投放。
 
 ## 工具边界
 
@@ -28,7 +28,7 @@ Task 6 据此离线修正配置确认、收尾及双单位用量，**尚无完�
 
 ## 隐私、来源和输出
 
-只上传固定公开短句及程序图形。声音使用系统音色 Cherry，不使用个人录音、声音复刻、
+录制器只允许固定公开短句及程序图形；本批未执行图形/音频输入场景。TTS 声音使用系统音色 Cherry，不使用个人录音、声音复刻、
 用户照片或业务内容。音频输入只能读取带格式、公开短句、来源标记及 SHA-256 的
 `audio-sample.json`，并核对真正存在的 `audio.pcm`。来源标记是自洽账本，不是认证；
 控制器只使用本录制器从真实 TTS 取得的样本，不手写账本给 chirp 或个人录音换身份。
@@ -48,7 +48,9 @@ Task 6 据此离线修正配置确认、收尾及双单位用量，**尚无完�
 只保留值完全符合白名单的 `Upgrade`、`Connection` 握手头；鉴权头、request ID、Cookie、
 任意 Server 字段及握手错误 body 均不保存。事件中若发现凭据（包括 JSON 转义形式）或
 鉴权字段，整条拒收，不能脱敏后还声称字节原样。日志只输出固定分类及计数，不输出
-URL、原始头、secret、消息正文或 close reason。原始消息是私有候选，入库前仍须人工审核。
+URL、原始头、secret、消息正文或 close reason。原始消息入库前须源审查；三份成功轨迹
+已逐条解码审阅公开文本、固定工具、系统音色来源和安全头，未发现凭据或个人信息。
+未试听或识别 PCM，不把来源审核冒充语音内容人工验收。独立审核状态见归档 README。
 
 ### 四点来源与关闭证据
 
@@ -90,8 +92,8 @@ URL、原始头、secret、消息正文或 close reason。原始消息是私有�
   `model-api-reference/omni-realtime-api/`；TTS 位于
   `model-api-reference/audio-api-references/speech-synthesis-api-reference/qwen-tts-realtime-api-reference/`。
 - Omni 客户端事件页写 `conversation.item.create` 仅支持 `function_call_output`，但官方
-  使用指南写可用 `message + input_text`。`text-tools` 将实测这一差异；失败就保留失败，
-  不回退到另一个输入方式。工具定义使用嵌套 `function` 对象。
+  使用指南写可用 `message + input_text`。`text-tools-v3` 已取得这种输入的真实 ack 和
+  完成回复；失败历史保持原样，没有回退输入方式。工具定义使用嵌套 `function` 对象。
 - `session.updated` 名称不是配置采纳证明：`session.created` 与 `session.updated` 的
   model 必须明确等于请求模型；音频格式及采样率必须在新式 `audio` 结构回显一致，
   输出上限等请求字段仍逐项核对。只有下述 TTS 语言字段接受已观察到的一对大小写值。
@@ -110,9 +112,23 @@ URL、原始头、secret、消息正文或 close reason。原始消息是私有�
 
 ## 已执行批次与 Task 6 契约修正
 
-批次固定为 `.local/recordings/dsrealtime/batch-20261004`。下列历史快照截至 `.attempt-3`，
-当时为 3/8；当前已用 6/8，剩余额度仅由控制器调度。前两份 `recording.json` 的 payload
-均已 base64 解码核验：各只有接收 created、发送 update、接收 updated 和本地 close，
+批次固定为 `.local/recordings/dsrealtime/batch-20261004`，当前 **8/8**。八次尝试均保留，
+失败也占槽，不存在本批剩余额度；本次归档/回放没有预留新槽。
+
+| 次序 / 开始时间（北京时间，2026-10-04） | run | 结果及事实 |
+|---|---|---|
+| 1 / 12:38:52 | `tts-commit` | 101 后语言请求 Chinese、回显 chinese，配置未确认，未送业务短句 |
+| 2 / 12:39:57 | `text-tools` | 101 后 turn_detection:null 被省略，配置未确认，未送文本 |
+| 3 / 12:50:57 | `tts-commit-v2` | TTS 业务完成，字符25/token8+32；缺真实 close 回应，保留失败 |
+| 4 / 13:22:52 | `tts-commit-v3` | 完整 commit：8 个音频 delta、1 个 completed done、finished、双向 close1000 |
+| 5 / 13:23:12 | `tts-server-commit` | finish 前已有自动 created+2 个非空音频，旧驱动等 done 超时；失败原件不补尾 |
+| 6 / 13:23:59 | `text-tools-v2` | 服务端重分配 item.id，旧驱动等作者 ID 超时；未发 response.create |
+| 7 / 13:41:15 | `tts-server-commit-v2` | 完整自动提交：同 response 音频先于 finish，完成 done 后于 finish，双向 close1000 |
+| 8 / 13:41:30 | `text-tools-v3` | 三轮业务、双工具及结果 ack、双向 close1000 完整；候选校验失败后仅离线修正 previous_item_id 规则并恢复 |
+
+第 1/3/4/5/7 次请求及回显 `qwen3-tts-flash-realtime`，第 2/6/8 次为
+`qwen3.5-omni-flash-realtime`，地域均为北京。八槽保持原样；没有第九次调用。
+前两份 `recording.json` 的 payload 均已 base64 解码核验：各只有接收 created、发送 update、接收 updated 和本地 close，
 101 成功后都以 `unconfirmed_config` 停止，`configuration_confirmed=false`。没有业务
 输入、response、usage、成功候选或音频样本；usage 缺失不等于零费用。
 
@@ -180,11 +196,9 @@ Task 6 的离线处理边界：
 
 ## 控制器显式命令
 
-以下是控制器后续显式执行的模板，Task 6 未执行任何真实调用。已失败的 `tts-commit`
-与 `text-tools` 目录不可覆盖；若控制器继续，使用下面同批次的新 run 目录，并核对总尝试数。
-请从仓库根执行。`DASHSCOPE_API_KEY` 由安全环境预先提供，禁止把值写进命令或日志。
-以下五种场景只是命令模板，并非当前待执行队列；本批最多八次，当前已用六次，
-仅控制器选择剩余最多两次，先审阅上一份结果再执行下一条，不循环、不自动重跑、不换 batch。
+以下仅保留研究命令模板，**本批已经 8/8，不可再运行，不得换 batch 绕过**。
+这些不是当前待执行队列，不覆盖任何历史目录，也不因缺口自动重试。
+模板以仓库根为工作目录；`DASHSCOPE_API_KEY` 由安全环境提供，禁止把值写进命令或日志。
 
 ```bash
 export OMUGW_SMOKE_WS_URL=wss://dashscope.aliyuncs.com/api-ws/v1/realtime
@@ -244,7 +258,7 @@ go test -tags=smoke ./tests/smoke -run '^TestRecordDSRealtime$' -count=1 -timeou
 的 item_id 等待 ASR，即使转写晚于 response.done 也不漏录。人工核对转写与短句、回答
 与红圆/蓝方块；单有 committed 不代表模型理解了图片。
 若配置回显仍省略 `turn_detection`，当前录制器将提前失败；不得为继续录制而省略请求 null
-或把缺字段解释为 manual。尚无成功 TTS 样本时也不能执行本场景。
+或把缺字段解释为 manual。已有真实 TTS 样本但内容尚未试听/识别；本批额度已满，不能执行本场景。
 
 ### 5. server_vad + 音频输出期间取消
 
@@ -266,31 +280,58 @@ response.cancel 并绑定取消目标。官方 cancel 不带 response_id，录�
 
 ## 15 项能力的真实证据账本
 
-取得完整真实调用后填写：候选相对路径、SHA-256、`nodes[].id`、回显模型、usage、人工结论。
-15 项当前均未取得完整证据；上述两份配置失败轨迹及第三份收尾失败轨迹只能作局部事实与
-诊断依据。下表“未录制”指未取得可投放的完整 fixture，不否认第三次已收到 TTS 业务消息。
-下列是审核标准，不是能力完成声明。
+### 三份归档与 handler 验收
 
-| 能力 | 场景 / 必须定位的轨迹与字段 | 保全断言 / 当前缺口 |
-|---|---|---|
-| text_generation | text-tools 或 audio-image；非空 response.text.delta + 对应 response.done | opcode、文本字节、response_id 引用；未录制 |
-| streaming | 实际 text/audio delta 序列 + 终态 | 分片单向顺序与完整消息字节；未录制 |
-| tool_calling | text-tools；function_call、arguments、call_id、function_call_output、最终 done | 名称/参数/结果、call_id 绑定不可错接；未录制 |
-| parallel_tool_calls | 同一个 response.done.output 含两个不同 call_id | 不以两轮串行调用充当并行；未录制 |
-| vision_input | audio-image；程序 JPEG 提交及真实回答 | 人工核对红圆/蓝方块，**不自动加 Coverage**；未录制 |
-| audio_input | PCM 样本、input_audio_buffer.committed.item_id、对应转写 | SHA、16000 Hz 新式回显、字节/提交关联；未录制 |
-| audio_output | 非空 audio.delta、明确格式采样率、completed done | base64 解码字节及样本摘要；未录制 |
-| speech_synthesis | TTS 固定短句、Cherry 回显、非空 PCM、done | 输入文本/音色/格式/输出字节，人工试听；未录制 |
-| speech_recognition | transcription.completed.item_id + 非空 transcript | 与真实落盘短句对应，不能以 chirp 或 commit 充当 ASR；未录制 |
-| stateful_conversation | 第二轮复述第一轮口令，发生在工具结果回传之前 | 人工核对轮次和正文，**不自动加 Coverage**；未录制 |
-| realtime_session | session.created/updated 的实际结构和配置 | 两份配置失败、第三份已确认配置但关闭失败；未取得完整会话证据 |
-| realtime_server_vad | speech_started、speech_stopped、committed | item_id、时间字段、原消息因果顺序；未录制 |
-| realtime_interrupt_turns | response.created → 活跃时同实体非空 audio.delta → cancel → 同目标 cancelled done | 拒绝错ID、空音频、提前终结及终态ID复用；见证/Coverage绑定同链；未录制 |
-| realtime_image_input | 音频 append → image append → commit → 真实视觉回答 | 图像 SHA 和字节；理解证据人工审阅，**不自动加 Coverage**；未录制 |
-| realtime_commit_modes | 两份 TTS：commit 的 committed；server_commit 在finish前自动created→同实体非空audio，之后取得同ID completed done（可在finish后）、finished与正常close | 两模式分别核对回显与收尾；仅finish排空或跨ID事件不计自动提交；未录制 |
+归档根为 `testdata/fixtures/dashscope/realtime/`，不进入 routes。
+文件全量摘要、原录制摘要、源审查和音频账本见
+[归档 README](../../testdata/fixtures/dashscope/realtime/README.md)。下表别名用于节点引用：
 
-自动 Coverage 只给事件支持的条目；语义判读的三项保留人工缺口。Coverage 不等于投放。
-失败轨迹可用于诊断，不能改成成功 fixture；来源或摘要篡改不能靠重算 hash 洗白。
+| 别名 / 原字节候选 | SHA-256 | 节点 / response 终态 | 权威用量（输入/输出 token；音频输出 token；字符） |
+|---|---|---|---|
+| C / `tts-commit-v3.json` | `41eab869cd2456ce2244e887867306bf336c07ae403378842d5a291748f3e429` | 48 / `n0020_1` | 8/31；31；25 |
+| A / `tts-server-commit-v2.json` | `a6140efd3485acda1d0b3dbbc0d6b9c6036f17bcddd92cc27c593efd68f80f52` | 46 / `n0020_1` | 8/36；36；25 |
+| T / `text-tools-v3.json` | `2155931e0220da70a2693dbb45bb0fcf63a92fbd9eef6d516dfc7b41c7f277a2` | 102 / `n0016_1,n0030_1,n0049_1` | 三笔341/9、380/28、444/12，合计1165/49；无字符 |
+
+三个原 recording 的全部消息分别按双点复制核对 opcode/payload，无重编码；
+真实 send/receive close1000 均保留在 `recordings/` 原件。C/A 音频分别为 78294/91016 字节，
+原 audio.delta 拼接、候选内嵌样本和源 audio.pcm 完全一致。
+
+`TestWSRecordedConformance` 使用显式测试整门矩阵、`buildWithWS(..., true)`、正式 Mux、
+WSHandler 与真实 provider 连接本地 WSReplayUpstream，由独立 ReplayWS 驱动双端。
+首个 session.created 在下游 101 前送出，逐字节核验后才运行深拷贝 tail；tail 删除动态规则，
+全部 ID 改为严格字面匹配，终态符号交接为原消息 response.id。原 fixture 完整加载校验，
+仅测试内 tail 重算摘要，归档不变。详情见 README 的身份/终态交接说明。
+46/44/100 个剩余节点及 1/1/3 个终态全部完成，原始因果顺序、鉴权替换、路径/模型、
+音频及消息字节通过；所有工作者和 handler join、共享预算归零。计量预期使用上表独立字面值，
+不调用 Inspect 生成预期；不把字符与 token 相加或据此推算账单。
+
+### 逐项边界
+
+下表“离线通过”只指这些已录制轨迹经过 handler 的保全，不代表所有模式都支持。
+`nXXXX_0` 是原记录相应方向发送点，`nXXXX_1` 是另一侧接收点。
+
+| 能力 | 真实证据 / 节点 | gateway 离线结果 | 当前缺口 |
+|---|---|---|---|
+| text_generation | T `n0010_1–n0012_1`、`n0040_1–n0045_1` 非空文本及3个 done | opcode、全文字节、response ID 通过 | 未做真实 gateway smoke |
+| streaming | C `n0009_1–n0016_1`，A `n0007_1,n0009_1–n0016_1`，T 上述文本分片 | 顺序、字节、对应 done 通过 | 仅本次轨迹，不穷举调度 |
+| tool_calling | T `n0021_1–n0030_1` 名称/参数/call_id；`n0031_0,n0033_0` 回传，`n0032_1,n0034_1` ack；`n0049_1` 最终 done | 原字节、call_id/前驱身份通过 | 仅固定公开工具，未执行外部工具 |
+| parallel_tool_calls | T `n0030_1` 同一 response.output 含 test_color/test_shape 两个不同 call_id | 同轮完整 output 原字节通过 | 不代表工具执行并发性 |
+| vision_input | 本批未执行 audio-image | 无真实轨迹可验 | 缺 JPEG 提交、真实回答及红圆/蓝方块人工核对 |
+| audio_input | 本批未发送 PCM 输入 | 无真实轨迹可验 | 缺新式16000 Hz回显、committed/item/输入样本链；manual 确认仍缺 |
+| audio_output | C/A `n0002_1` PCM/16000/Cherry 回显、非空 audio.delta 与 `n0020_1` | 原始 PCM、内嵌样本及 SHA 通过 | 只证明 TTS 输出，未验 Omni 音频输出 |
+| speech_synthesis | C/A `n0003_0` 固定短句 → 上述 PCM/done | 输入/音色/格式/输出字节通过 | **未试听、未 ASR；不能声称合成内容人工通过** |
+| speech_recognition | 本批未执行 ASR | 无真实轨迹可验 | 缺 transcription.completed、item_id 及短句内容对应 |
+| stateful_conversation | T 第一轮确认口令；第二轮 `n0030_1` 只有双工具、无工具结果前复述 | 三轮消息保全通过，不能据此判语义通过 | **缺证据**；第三轮已获“蓝色/方块”工具结果，不可倒推记忆 |
+| realtime_session | C/A/T `n0000_1,n0002_1` 配置，完整业务及close；C `n0022_1`/A `n0021_1` finished | 首事件、session 身份、更新及完整关闭通过 | 仅所请求配置；T 的默认 VAD 回显不算 VAD 行为证据 |
+| realtime_server_vad | 本批未执行 vad-interrupt | 无真实轨迹可验 | 缺 speech_started/stopped/committed 同 item 因果链 |
+| realtime_interrupt_turns | 本批未发送 cancel | 无真实轨迹可验 | 缺活跃同 response 音频→cancel→cancelled；合成拒绝测试不能代替 |
+| realtime_image_input | 本批未发送 image append | 无真实轨迹可验 | 缺音频→图像→commit 及视觉理解；不能用文本回答替代 |
+| realtime_commit_modes | C `n0004_0` commit→`n0005_1` committed；A `n0004_1` 自动created→`n0007_1` 同ID音频→`n0008_0` finish→`n0020_1` completed→`n0021_1` finished→close | 两模式配置、严格同ID及完整尾部通过 | 自动模式真正先音频后finish已证明；不外推其他模型 |
+
+Coverage 不等于投放；八项有局部或完整原生轨迹，剩余七项缺真实闭环。
+此外 speech_synthesis 的内容验证也未完成。未来仍需补齐上述缺口、逐项验收及真实 gateway smoke，
+再独立评审整门投放。当前生产 Build=false、Phase1 PLANNED、Redeem/白名单均未改动。
+失败轨迹保留诊断身份，不补造尾部或改成成功 fixture；源摘要不能靠重算洗白。
 
 ## 离线验证命令
 
@@ -304,9 +345,12 @@ go test -race -tags=smoke ./tests/smoke -run '^TestDSRealtimeRecorderOffline' -c
 OMUGW_RECORD_DSREALTIME=0 OMUGW_SMOKE=0 \
 go vet -tags=smoke ./tests/smoke
 
+go test ./internal/gateway -run '^TestWS(Recorded|BuildGate)' -count=1 -v
+go test -race ./internal/gateway ./internal/testkit ./internal/protocol/dashscoperealtime ./internal/provider/dashscoperealtime ./internal/transport/ws -count=1
+
 OMUGW_RECORD_DSREALTIME=0 OMUGW_SMOKE=0 \
 go test -tags=smoke ./tests/smoke -run '^TestRecordDSRealtime$' -count=1 -v
 ```
 
-最后一条必须显示 SKIP。五种场景的本地脚本验证只能证明工具，合成数据全部留在临时目录，
-没有生产 routes 文件、矩阵兑现或门注册变更。
+最后一条必须显示 SKIP。五种场景的本地合成脚本只证明录制工具；新增三份真实归档的
+handler 回放证明对应原生负载保全。两者都没有生产 routes 文件、矩阵兑现或门注册变更。
