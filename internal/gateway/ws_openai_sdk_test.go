@@ -184,8 +184,8 @@ func runOpenAIRealtimeSDK(t *testing.T, mode string) {
 		}
 	}
 	if mode == "no-pong" {
-		// HTTP reader 取消、relay 空闲错误与心跳写锁竞争都须有限退出；
-		// CloseWithResult 遇写锁占用会中断 TCP。沉默端不保证收到礼貌 close。
+		// 沉默只能归为读取故障，不能伪造主动取消的 1001；CloseWithResult
+		// 遇心跳写锁占用会中断 TCP，失败端本地仍可能观察到 1006。
 		if !sdkIdleClose(result.CloseCode, result.CloseReason) || result.OpenMillis < 700 || result.OpenMillis > 5000 {
 			t.Fatalf("不回 pong 的客户端未在空闲期限后有限关闭: %+v", result)
 		}
@@ -280,7 +280,7 @@ func sdkUpstream(r *http.Request, w http.ResponseWriter, steps []sdkStep, mode s
 	defer closed.Release()
 	wantCode, wantReason := uint16(1000), "sdk-close"
 	if mode == "no-pong" {
-		if !sdkIdleClose(int(closed.Code), closed.Reason) {
+		if closed.Code != 1011 || closed.Reason != "downstream connection failed" {
 			return fmt.Errorf("沉默关闭未抵达上游: %d %q", closed.Code, closed.Reason)
 		}
 		return nil
@@ -292,7 +292,7 @@ func sdkUpstream(r *http.Request, w http.ResponseWriter, steps []sdkStep, mode s
 }
 
 func sdkIdleClose(code int, reason string) bool {
-	return (code == 1001 || code == 1006) && reason == "" || code == 1011 && reason == "downstream connection failed"
+	return code == 1006 && reason == "" || code == 1011 && reason == "downstream connection failed"
 }
 
 func sdkRunNode(t *testing.T, input sdkInput) sdkResult {

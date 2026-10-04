@@ -41,8 +41,8 @@ SAN 与真实链校验。子进程环境不继承真实凭据、代理或 Node T
 - 客户端 `sdk-close` 原因必须抵达上游；SDK 收到的被动 close ACK 按 transport
   契约为 `1000` 空原因，两段关闭分别核验。
 - 业务沉默时正常自动 pong，至少接收 6 次心跳、跨过 HTTP total 后正常关闭；
-  关闭 autoPong 时验证有限清理。后者允许既有 HTTP 请求取消与 relay 空闲错误
-  仲裁产生的 `1001/空原因` 或 `1011/downstream connection failed`；有限关闭与心跳
+  关闭 autoPong 时验证有限清理，必须分类为 `1011/downstream connection failed`，
+  不能让接管前遗留的 HTTP reader 副作用伪造主动取消的 1001。有限关闭与心跳
   写锁竞争时，transport 直接中断 TCP，可见 `1006/空原因`（上游可见 EOF）。只在
   这个主动停回 pong 的负例接受异常断连，且要求连接至少存活 700ms、5 秒内退出，
   防止连接刚建立就断开冒充空闲清理；正常 close 仍严格核验码与原因。
