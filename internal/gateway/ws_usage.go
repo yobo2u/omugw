@@ -23,6 +23,7 @@ type wsUsageEvent struct {
 	Details                        obs.WSTokenDetails
 	Characters                     *int64
 	Seconds                        *float64
+	SecondsUnit                    bool
 	Diagnostic                     string
 	Failure                        *canonical.Error
 }
@@ -46,6 +47,7 @@ type wsUsageRecord struct {
 	hasCharacters bool
 	seconds       float64
 	hasSeconds    bool
+	secondsUnit   bool
 	details       obs.WSTokenDetails
 	diagnostic    string
 }
@@ -101,6 +103,7 @@ func (w *wsUsage) Observe(e wsUsageEvent) error {
 	record := wsUsageRecord{
 		terminal: e.Terminal, usage: e.Usage, details: e.Details,
 		hasCharacters: e.Characters != nil, hasSeconds: e.Seconds != nil, diagnostic: e.Diagnostic,
+		secondsUnit: e.SecondsUnit,
 	}
 	if e.Characters != nil {
 		// 不借用调用方的字符指针，防外部复用内存使重复校验失效。
@@ -181,9 +184,11 @@ func (w *wsUsage) publish(source string, record wsUsageRecord) {
 	}
 	if record.hasSeconds {
 		w.metrics.ObserveWSSeconds(w.protocol, source, record.seconds)
+	} else if record.secondsUnit {
+		w.metrics.ObserveWSSecondsUnavailable(w.protocol, source)
 	}
 	// 字符、秒与 token 独立；只有非 token 单位时不能另记不可知/零 token。
-	if !record.hasCharacters && !record.hasSeconds || record.usage.Fidelity == canonical.FidelityAuthoritative {
+	if !record.hasCharacters && !record.hasSeconds && !record.secondsUnit || record.usage.Fidelity == canonical.FidelityAuthoritative {
 		// 细分由 presence 单独发布，避免与 Canonical 中的兼容投影重复累计音频。
 		totals := canonical.Usage{Fidelity: record.usage.Fidelity, InputTokens: record.usage.InputTokens, OutputTokens: record.usage.OutputTokens}
 		w.metrics.ObserveWSUsage(w.protocol, source, totals)

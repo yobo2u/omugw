@@ -40,6 +40,7 @@ func inspectUsage(container realtimejson.Value, e *Event, transcription bool) {
 		switch typ {
 		case "tokens":
 		case "duration":
+			e.Duration = true
 			e.Seconds, e.Diagnostic = duration(v)
 			return
 		default:

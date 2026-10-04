@@ -143,6 +143,7 @@ type Event struct {
     Usage canonical.Usage
     Details TokenDetails
     Seconds *float64
+    Duration bool
     Diagnostic string
     Failure *canonical.Error
     Transcription *bool
@@ -191,7 +192,9 @@ ValidateReady 复用身份校验并要求 type=session.created；操作码验证
 - cached 分项同时受 cached 总量与已提供同模态 input 约束。cached 总量缺失时，
   仍检查已给分项和不超过 input 及同模态子集，但不推算 cached 总量，也不要求
   cache 分项和等于 input。未知 reasoning 明细不参与计量或补差。
-- ASR `type=tokens` 与 `type=duration` 严格分支；duration 仅产出 Seconds，
+- ASR `type=tokens` 与 `type=duration` 严格分支；唯一合法的 duration 判别式先置
+  `Duration=true`，独立于 Seconds 数值是否有效；重复/错误/未知的 type 不确认单位。
+  duration 数值仅产出 Seconds，
   Usage=unavailable，不写 AudioInputSeconds、不制造零 token 记录。seconds 必须是
   有限非负数，显式 0 有 presence；数字文本最多 128 字节，超出保守标 invalid。
   在浮点舍入前按十进制有效数字区分数学零与非零：负非零值一律 invalid，正非零值
@@ -230,6 +233,12 @@ ValidateReady 复用身份校验并要求 type=session.created；操作码验证
   `omugw_ws_audio_input_seconds_total{protocol,source,fidelity="authoritative"}` 和
   `omugw_ws_usage_records_total{unit="seconds",...}`；显式 0 有记录，非有限/负值拒绝。
   duration-only 不产生 token 记录，秒数不写 Canonical token 投影。
+- 已确认 duration 但 seconds 缺失/null/非法/重复/越界时，`Duration=true` 且
+  `Seconds=nil`、`usage_invalid`；observer 映射为 `SecondsUnit`，账本将单位事实
+  纳入终态快照比较，防止 tokens 与 duration 同为 unavailable 时误去重。
+  `ObserveWSSecondsUnavailable(protocol, source string)` 只增
+  `omugw_ws_usage_records_total{unit="seconds",fidelity="unavailable",...}`，不发布
+  token 记录或任何秒数样本（含假零）。重复不重记，迟到单位冲突诊断但不翻账。
 - `obs.WSTokenCount{Value,Present}` / `WSTokenDetails` 与
   `ObserveWSTokenDetails(protocol, source string, details WSTokenDetails)` 固定发布
   `text_input`、`audio_input`、`image_input`、`cache_read`、`cached_text_input`、

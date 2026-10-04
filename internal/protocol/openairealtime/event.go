@@ -23,9 +23,11 @@ type Event struct {
 	Usage                    canonical.Usage
 	Details                  TokenDetails
 	Seconds                  *float64
-	Diagnostic               string
-	Failure                  *canonical.Error
-	Transcription            *bool
+	// Duration 保留已确认的单位；Seconds=nil 不能把不可用的秒误记成 token。
+	Duration      bool
+	Diagnostic    string
+	Failure       *canonical.Error
+	Transcription *bool
 }
 
 // Inspect 失败只表示无法安全关联观测，不改写或接管调用方的原始应用消息。

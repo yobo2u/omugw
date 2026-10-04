@@ -354,3 +354,73 @@ func TestOpenAIRealtimeObserverFinished(t *testing.T) {
 		}
 	}
 }
+
+func TestOpenAIRealtimeDurationUnavailable(t *testing.T) {
+	for _, tc := range []struct{ name, fields string }{
+		{"missing", ``},
+		{"null", `,"seconds":null`},
+		{"string", `,"seconds":"NaN"`},
+		{"object", `,"seconds":{}`},
+		{"negative", `,"seconds":-1`},
+		{"duplicate", `,"seconds":0,"seconds":1`},
+		{"escaped-duplicate", `,"seconds":0,"secon\u0064s":0`},
+		{"overflow", `,"seconds":1e999`},
+		{"boundary-overflow", `,"seconds":1.7976931348623159e308`},
+		{"positive-underflow", `,"seconds":1e-999`},
+		{"rounded-underflow", `,"seconds":2e-324`},
+		{"negative-underflow", `,"seconds":-1e-999`},
+		{"negative-subnormal", `,"seconds":-5e-324`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			o, reg := newOpenAIObserverTest(t)
+			raw := openAIASR("i", 0, `{"type":"duration"`+tc.fields+`}`)
+			observeOpenAI(t, o, raw, raw, strings.Replace(raw, `"terminal"`, `"another-event"`, 1))
+			o.Finish()
+			o.Finish()
+			assertOpenAIMetric(t, reg, "omugw_ws_usage_records_total", map[string]string{"source": "transcription", "unit": "seconds", "fidelity": "unavailable"}, 1)
+			assertOpenAIMetric(t, reg, "omugw_ws_usage_records_total", map[string]string{"unit": "tokens"}, 0)
+			assertOpenAIMetric(t, reg, "omugw_ws_usage_records_total", map[string]string{"fidelity": "authoritative"}, 0)
+			assertOpenAIMetric(t, reg, "omugw_ws_diagnostics_total", map[string]string{"reason": "usage_invalid"}, 1)
+			assertOpenAIMetric(t, reg, "omugw_ws_diagnostics_total", map[string]string{"reason": "usage_conflict"}, 0)
+			assertNoOpenAINumericUsage(t, reg)
+		})
+	}
+}
+
+func TestOpenAIRealtimeUnavailableUnitConflict(t *testing.T) {
+	const invalidSeconds = `{"type":"duration","seconds":null}`
+	const invalidTokens = `{"type":"tokens","input_tokens":null,"output_tokens":null}`
+	for _, tc := range []struct{ name, first, next, unit string }{
+		{"seconds-to-tokens", invalidSeconds, invalidTokens, "seconds"},
+		{"tokens-to-seconds", invalidTokens, invalidSeconds, "tokens"},
+		{"seconds-to-valid", invalidSeconds, `{"type":"duration","seconds":0}`, "seconds"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			o, reg := newOpenAIObserverTest(t)
+			first := openAIASR("i", 0, tc.first)
+			observeOpenAI(t, o, first, first, openAIASR("i", 0, tc.next), first)
+			o.Finish()
+			assertOpenAIMetric(t, reg, "omugw_ws_usage_records_total", map[string]string{"unit": tc.unit, "fidelity": "unavailable"}, 1)
+			assertOpenAIMetric(t, reg, "omugw_ws_usage_records_total", nil, 1)
+			assertOpenAIMetric(t, reg, "omugw_ws_diagnostics_total", map[string]string{"reason": "usage_conflict"}, 1)
+			assertOpenAIMetric(t, reg, "omugw_ws_diagnostics_total", map[string]string{"reason": "usage_invalid"}, 1)
+			assertNoOpenAINumericUsage(t, reg)
+		})
+	}
+}
+
+func assertNoOpenAINumericUsage(t *testing.T, reg *prometheus.Registry) {
+	t.Helper()
+	families, err := reg.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range families {
+		switch f.GetName() {
+		case "omugw_ws_audio_input_seconds_total", "omugw_ws_tokens_total", "omugw_tokens_total":
+			if len(f.Metric) != 0 {
+				t.Errorf("不可用单位不能发布假零数值样本: %s", f.GetName())
+			}
+		}
+	}
+}

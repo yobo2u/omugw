@@ -195,7 +195,7 @@ func TestOpenAIRealtimeTranscriptionDurationRange(t *testing.T) {
 	} {
 		t.Run(tc.seconds, func(t *testing.T) {
 			e, err := Inspect([]byte(`{"type":"conversation.item.input_audio_transcription.completed","item_id":"i","content_index":0,"usage":{"type":"duration","seconds":` + tc.seconds + `}}`))
-			if err != nil || e.Source != "transcription" || e.Usage != canonical.UnavailableUsage() || e.Details != (TokenDetails{}) {
+			if err != nil || e.Source != "transcription" || !e.Duration || e.Usage != canonical.UnavailableUsage() || e.Details != (TokenDetails{}) {
 				t.Fatalf("秒数不能转成 token 或丢失来源: %+v %v", e, err)
 			}
 			var got any
@@ -214,3 +214,30 @@ func TestOpenAIRealtimeTranscriptionDurationRange(t *testing.T) {
 }
 
 func floatNumber(n float64) *float64 { return &n }
+
+func TestOpenAIRealtimeDurationUnitPresence(t *testing.T) {
+	for _, tc := range []struct {
+		usage    string
+		duration bool
+	}{
+		{`{"type":"duration","seconds":null}`, true},
+		{`{"type":"duration"}`, true},
+		{`{"type":"duration","seconds":-1}`, true},
+		{`{"type":"duration","seconds":"bad"}`, true},
+		{`{"type":"duration","seconds":0,"seconds":0}`, true},
+		{`{"type":"duration","seconds":1.25}`, true},
+		{`{"type":"duration","seconds":0}`, true},
+		{`{"type":"tokens","input_tokens":null,"output_tokens":null}`, false},
+		{`{"type":"tokens","input_tokens":13,"output_tokens":9}`, false},
+		{`{"type":"duration","type":"duration","seconds":0}`, false},
+		{`{"type":"tokens","type":"duration","seconds":0}`, false},
+		{`{"type":"future","seconds":0}`, false},
+		{`{"seconds":0}`, false},
+		{`null`, false},
+	} {
+		e, err := Inspect([]byte(`{"type":"conversation.item.input_audio_transcription.completed","item_id":"i","content_index":0,"usage":` + tc.usage + `}`))
+		if err != nil || e.Duration != tc.duration {
+			t.Fatalf("单位必须独立于数值且只取唯一合法判别式: %s: %+v %v", tc.usage, e, err)
+		}
+	}
+}

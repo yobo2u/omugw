@@ -224,6 +224,14 @@ func (m *Metrics) ObserveWSSeconds(protocol, source string, seconds float64) {
 	m.WSAudioInputSeconds.WithLabelValues(protocol, source, f).Add(seconds)
 }
 
+// ObserveWSSecondsUnavailable 保留已确认的秒单位，拒绝把坏值伪装成零秒或 token。
+func (m *Metrics) ObserveWSSecondsUnavailable(protocol, source string) {
+	if !wsProtocol(protocol) || !wsSource(source) {
+		return
+	}
+	m.WSUsageRecords.WithLabelValues(protocol, source, "seconds", string(canonical.FidelityUnavailable)).Inc()
+}
+
 // WSTokenCount 以值和 presence 区分零与缺失，也避免借用解析器的临时指针。
 type WSTokenCount struct {
 	Value   int64

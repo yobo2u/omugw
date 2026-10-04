@@ -47,7 +47,7 @@ func (o *openAIWSObserver) Finish() {
 func openAIUsageEvent(e openairealtime.Event) wsUsageEvent {
 	v := wsUsageEvent{
 		Source: e.Source, ID: e.ID, Started: e.Started, Terminal: e.Terminal, ItemPending: e.ItemPending,
-		Usage: e.Usage, Seconds: e.Seconds, Diagnostic: e.Diagnostic, Failure: e.Failure,
+		Usage: e.Usage, Seconds: e.Seconds, SecondsUnit: e.Duration, Diagnostic: e.Diagnostic, Failure: e.Failure,
 		Details: obs.WSTokenDetails{
 			TextInput: wsTokenCount(e.Details.TextInput), AudioInput: wsTokenCount(e.Details.AudioInput), ImageInput: wsTokenCount(e.Details.ImageInput),
 			CachedInput: wsTokenCount(e.Details.CachedInput), CachedTextInput: wsTokenCount(e.Details.CachedTextInput),

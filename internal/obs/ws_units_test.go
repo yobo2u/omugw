@@ -49,3 +49,22 @@ func TestObserveWSTokenDetails(t *testing.T) {
 		t.Fatal("明细重复计总量", got)
 	}
 }
+
+func TestObserveWSSecondsUnavailable(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m := NewMetrics(reg)
+	m.ObserveWSSecondsUnavailable("openai.realtime", "transcription")
+	m.ObserveWSSecondsUnavailable("dynamic-model", "transcription")
+	m.ObserveWSSecondsUnavailable("openai.realtime", "dynamic-id")
+	if got := wsMetricSum(t, reg, "omugw_ws_usage_records_total", map[string]string{"unit": "seconds", "fidelity": "unavailable"}); got != 1 {
+		t.Fatal(got)
+	}
+	if got := wsMetricSum(t, reg, "omugw_ws_usage_records_total", nil); got != 1 {
+		t.Fatal(got)
+	}
+	for _, name := range []string{"omugw_ws_audio_input_seconds_total", "omugw_ws_tokens_total", "omugw_tokens_total"} {
+		if got := countSamples(t, reg, name); got != 0 {
+			t.Fatalf("不可用时不能发布假零数值: %s %d", name, got)
+		}
+	}
+}
