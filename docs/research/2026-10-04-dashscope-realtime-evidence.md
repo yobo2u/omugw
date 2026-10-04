@@ -57,9 +57,15 @@ URL、原始头、secret、消息正文或 close reason。原始消息是私有�
   不重编码，已知动态 ID 使用 testkit bind/reference；其他字段严格匹配，转发还检查字节。
 - `After` 固化本次序列和四点接收关系，只声明本候选的保守调度，不将录制时序当协议通则。
 - TTS 在配置、音频、response 终态及 `session.finished` 充分后，与 Omni 共用主动正常
-  close 握手，不再假设业务完成后上游必主动关 socket。close 写入和等待共享一秒计时，
-  仍受会话总期限约束，退出前 join worker。只写出 close、raw EOF、超时、额外业务消息、
+  close 握手，不再假设业务完成后上游必主动关 socket。使用 transport `BeginClose`，
+  将 `min(现在+1秒, 会话截止时间)` 传为绝对期限；同一期限覆盖等写锁、帧写、真实回应、
+  TLS 清理及唤醒 worker。`finish` 中止剩余 I/O 并回收期限守卫，capture 再 join 读者和
+  会话守卫；不会在 cleanup 重新获得一秒。只写出 close、raw EOF、超时、额外业务消息、
   非正常 close 或未确认配置都不能交付成功候选。
+- `BeginClose`、自动 close 回应及最终 `CloseWithResult` 共享一次物理发送权；发送失败或
+  半帧也不重新开始一帧，开始收尾后禁止新数据/控制帧写入，晚到 ping 不阻断继续读回应。
+  普通未使用该接口的连接保留已验证的 `CloseWithResult` 生命周期。测试同时断言物理帧
+  数、实际回应与 worker 退出；期限断言有 100ms 调度容差，不把该容差作为可续期预算。
 - 对端先 close 时 transport 已自动回应，主动写可能返回 ErrClosed；录制器仍读取实际
   CloseError，原样保留收到的 code/reason，只在显式写成功时记 send。不能把幂等成功、
   自动回应或收到一帧推断成同码同 reason 的发送证据。自动回应不另造 send 记录。

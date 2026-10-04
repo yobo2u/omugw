@@ -3,6 +3,7 @@
 package smoke_test
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -26,8 +27,10 @@ func TestDSRealtimeRecorderOfflineTTSClosure(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			done := make(chan error, 1)
 			release := make(chan struct{})
+			businessFinished := make(chan time.Time, 1)
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-				c, err := ws.Accept(w, req, ws.AcceptOptions{MaxPayload: dsMaxMessage, Idle: 3 * time.Second, WriteTimeout: time.Second})
+				wire := &dsCloseHijacker{ResponseWriter: w}
+				c, err := ws.Accept(wire, req, ws.AcceptOptions{MaxPayload: dsMaxMessage, Idle: 3 * time.Second, WriteTimeout: time.Second})
 				if err != nil {
 					done <- err
 					return
@@ -52,6 +55,7 @@ func TestDSRealtimeRecorderOfflineTTSClosure(t *testing.T) {
 				p.write(dsObservedTTSDone)
 				p.read("session.finish")
 				p.write(`{"event_id":"event_ZAPsdN5wyqym4yAvGURU3","type":"session.finished"}`)
+				businessFinished <- time.Now()
 				if p.err == nil {
 					switch mode {
 					case "raw_eof":
@@ -65,10 +69,14 @@ func TestDSRealtimeRecorderOfflineTTSClosure(t *testing.T) {
 					case "abnormal_close":
 						p.err = c.Close(1011, "offline-abnormal")
 					default:
-						_, _, err := c.ReadMessage()
-						var ce *ws.CloseError
-						if !errors.As(err, &ce) || ce.Code != 1000 || ce.Reason != "" {
+						// 裸读物理帧，避免服务端 Conn 的自动回应掩盖客户端的第二帧。
+						f, err := ws.ReadFrame(wire.rw.Reader, 125)
+						if err != nil || f.Opcode != ws.OpClose || string(f.Payload) != "\x03\xe8" {
 							p.err = errors.New("客户端没有主动发送真实正常 close")
+						} else if err := ws.WriteFrame(wire.conn, ws.Frame{FIN: true, Opcode: ws.OpClose, Payload: ws.EncodeClosePayload(1000, "")}, false); err != nil {
+							p.err = err
+						} else if _, err := ws.ReadFrame(wire.rw.Reader, 125); err == nil {
+							p.err = errors.New("录制器物理发送了重复 close 或发送后数据")
 						}
 					}
 				}
@@ -80,7 +88,7 @@ func TestDSRealtimeRecorderOfflineTTSClosure(t *testing.T) {
 			elapsed := time.Since(start)
 			close(release)
 			if err := <-done; err != nil {
-				t.Error(err)
+				t.Fatal(err)
 			}
 			success := mode == "client_close" || mode == "peer_close"
 			if (r.Failure == "") != success {
@@ -89,6 +97,11 @@ func TestDSRealtimeRecorderOfflineTTSClosure(t *testing.T) {
 			if elapsed > 2*time.Second {
 				t.Errorf("业务已结束却等到整个会话期限：%v", elapsed)
 			}
+			closeElapsed := time.Since(<-businessFinished)
+			if closeElapsed > time.Second+100*time.Millisecond {
+				t.Errorf("close+capture worker join 重新续期：%v", closeElapsed)
+			}
+			t.Logf("close+join=%v（共同预算1秒，断言另留100ms调度容差）", closeElapsed)
 			f, err := dsCandidate(r)
 			if !success {
 				if err == nil {
@@ -123,6 +136,18 @@ func TestDSRealtimeRecorderOfflineTTSClosure(t *testing.T) {
 			dsReplayCandidate(t, f)
 		})
 	}
+}
+
+type dsCloseHijacker struct {
+	http.ResponseWriter
+	conn net.Conn
+	rw   *bufio.ReadWriter
+}
+
+func (w *dsCloseHijacker) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	c, rw, err := w.ResponseWriter.(http.Hijacker).Hijack()
+	w.conn, w.rw = c, rw
+	return c, rw, err
 }
 
 func TestDSRealtimeRecorderOfflineAlreadyClosedHandshake(t *testing.T) {
@@ -231,5 +256,56 @@ func TestDSRealtimeRecorderOfflineCloseWriteLosesRace(t *testing.T) {
 	<-readerDone
 	if len(r.Records) != 1 || r.Records[0].Direction != "receive" || r.Records[0].CloseReason != "independent-peer" {
 		t.Fatalf("竞争丢失了实际 receive 或补造 send：%+v", r.Records)
+	}
+}
+
+func TestDSRealtimeRecorderOfflineCloseSharesParentDeadline(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	raw, err := net.Dial("tcp", listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	peer, err := listener.Accept()
+	if err != nil {
+		raw.Close()
+		t.Fatal(err)
+	}
+	defer peer.Close()
+	gate := &dsCloseRaceConn{Conn: raw, writing: make(chan struct{}), closed: make(chan struct{})}
+	defer gate.Close()
+	c := ws.NewConn(gate, ws.RoleClient, dsMaxMessage, 0)
+	in := make(chan dsIncoming, 1)
+	readerDone := make(chan struct{})
+	go func() { defer close(readerDone); op, b, err := c.ReadMessage(); in <- dsIncoming{op, b, err} }()
+	deadline := time.Now().Add(120 * time.Millisecond)
+	ctx, cancel := context.WithDeadline(context.Background(), deadline)
+	defer cancel()
+	r := dsRecording{}
+	d := dsDriver{ctx: ctx, c: c, in: in, r: &r}
+	done := make(chan error, 1)
+	go func() { done <- d.closeHandshake() }()
+	<-gate.writing
+	timer := time.NewTimer(time.Until(deadline.Add(100 * time.Millisecond)))
+	defer timer.Stop()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Error("慢写没有实际 peer close 却成功")
+		}
+	case <-timer.C:
+		t.Error("父期限不足一秒，close 却重新获得一秒")
+		_ = gate.Close()
+		<-done
+	}
+	<-readerDone
+	if len(r.Records) != 0 {
+		t.Fatal("未实际发送或接收却补造 close 记录", r.Records)
+	}
+	if f, err := ws.ReadFrame(peer, 125); err == nil {
+		t.Fatal("超时后仍补发物理帧", f)
 	}
 }

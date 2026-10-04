@@ -151,15 +151,23 @@ func dsCapture(parent context.Context, cfg dsConfig) dsRecording {
 	return r
 }
 
-// CloseWithResult 会立即释放 socket；录制器先显式发控制帧并独立读回应，才有跨端证据。
-// 等待被一秒及会话总期限双重约束；失败仍由 capture 的关闭/worker join 兜底。
+// 发送与等待共用绝对期限；finish 中止物理 I/O，capture 再 join 自己的 worker。
+// 不能用 CloseWithResult 立即断 socket，也不能用普通帧写绕过自动回应的发送权。
 func (d *dsDriver) closeHandshake() error {
-	// 写也占用这一秒；对端可能已被 reader 自动关闭，或在本次写持锁期间抢先关闭。
-	// ErrClosed/底层写错都不是发送证据，但仍须读取通道里的实际关闭码与原因。
-	timer := time.NewTimer(time.Second)
+	deadline := time.Now().Add(time.Second)
+	if total, ok := d.ctx.Deadline(); ok && total.Before(deadline) {
+		deadline = total
+	}
+	timer := time.NewTimer(time.Until(deadline))
 	defer timer.Stop()
-	if err := d.c.WriteMessage(ws.OpClose, ws.EncodeClosePayload(1000, "")); err == nil {
+	sent, finish, _ := d.c.BeginClose(1000, "", deadline)
+	defer finish()
+	if sent {
 		d.r.Records = append(d.r.Records, dsRecord{Direction: "send", Kind: "close", CloseCode: 1000})
+	}
+	// 等锁/写已经耗尽预算时不因同时就绪的读通道获得额外宽限。
+	if !time.Now().Before(deadline) {
+		return errors.New("close_not_observed")
 	}
 	select {
 	case <-d.ctx.Done():

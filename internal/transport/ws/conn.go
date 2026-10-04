@@ -90,6 +90,10 @@ type Conn struct {
 	// 绝不在持有它的时候读，否则自动回 pong 会和对端的下一帧互相死等。
 	writeMu sync.Mutex
 	closed  atomic.Bool
+	// BeginClose 保留读侧时先封写；发送权与自动回应/最终释放共享，不能各发一帧。
+	closing       atomic.Bool
+	closeClaimed  atomic.Bool
+	closeDeadline atomic.Pointer[time.Time]
 }
 
 // NewConn 包装一条已握手的连接。limit 是单条消息重组后的负载上限，
@@ -150,7 +154,7 @@ func (c *Conn) writeFrame(op Opcode, payload []byte) error {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
 
-	if c.closed.Load() {
+	if c.closed.Load() || c.closing.Load() {
 		return ErrClosed
 	}
 	if c.writeTimeout > 0 {
@@ -208,7 +212,7 @@ func (c *Conn) CloseWithResult(code uint16, reason string) (sent bool, err error
 	if c.writeTimeout > 0 && c.writeTimeout < timeout {
 		timeout = c.writeTimeout
 	}
-	deadline := start.Add(timeout)
+	deadline := c.limitCloseDeadline(start.Add(timeout))
 	join := watchTransportClose(c.conn, deadline)
 	defer join()
 	defer func() {
@@ -218,6 +222,9 @@ func (c *Conn) CloseWithResult(code uint16, reason string) (sent bool, err error
 	}()
 	if err = c.conn.SetWriteDeadline(deadline); err != nil {
 		return false, err
+	}
+	if !c.closeClaimed.CompareAndSwap(false, true) {
+		return false, nil
 	}
 	// 原因先按协议上限截断，避免超长 reason 让编码器保留一个超大容量。
 	size := closePayloadSize(code, reason)

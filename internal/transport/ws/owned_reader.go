@@ -130,7 +130,13 @@ func (c *Conn) readOwned(ctx context.Context) (*Message, error) {
 			if err == nil {
 				switch h.opcode {
 				case OpPing:
-					err = c.writeFrame(OpPong, control.bytes)
+					// 已发 close 后不再写控制帧，但仍须读到真正的 close 回应。
+					if !c.closing.Load() {
+						err = c.writeFrame(OpPong, control.bytes)
+						if errors.Is(err, ErrClosed) && c.closing.Load() {
+							err = nil
+						}
+					}
 				case OpClose:
 					code, reason, decodeErr := parseClosePayload(control.bytes)
 					if decodeErr != nil {
