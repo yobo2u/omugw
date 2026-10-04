@@ -327,7 +327,7 @@ func TestInferenceHandlerHandshakeAndBinding(t *testing.T) {
 		inferenceWireClose(t, x.upstream, 1000, "done")
 		x.join(t, "ok")
 	})
-	for _, kind := range []string{"missing", "alias", "endpoint", "url", "pool", "native", "multimodal-dialog", "tingwu-meeting-realtime"} {
+	for _, kind := range []string{"missing", "alias", "kind", "endpoint", "url", "pool", "native", "multimodal-dialog", "tingwu-meeting-realtime"} {
 		t.Run("模型拒绝零应用发送/"+kind, func(t *testing.T) {
 			model := inferenceASR
 			if strings.Contains(kind, "dialog") || strings.Contains(kind, "tingwu") {
@@ -341,6 +341,8 @@ func TestInferenceHandlerHandshakeAndBinding(t *testing.T) {
 					target.UpstreamModel = "other"
 				case "alias":
 					target.UpstreamModel = "real-other"
+				case "kind":
+					target.Kind = degrade.ProviderOpenAIRealtime
 				case "endpoint":
 					target.Endpoint = "other"
 				case "url":
