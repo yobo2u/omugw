@@ -203,7 +203,10 @@ func closeWSConnections(conns []*ws.Conn, code uint16, reason string, deadline t
 		go func() {
 			defer wg.Done()
 			for i := worker; i < len(conns); i += 2 {
-				_, _ = conns[i].CloseWithResult(code, reason)
+				// 短暂 heartbeat 争锁不能把尚有预算的 close 变成 EOF；
+				// BeginClose 的等锁也受同一绝对守卫约束，真正慢写仍到期强拆。
+				_, finish, _ := conns[i].BeginClose(code, reason, deadline)
+				finish()
 			}
 		}()
 	}

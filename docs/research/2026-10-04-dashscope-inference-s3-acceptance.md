@@ -1,6 +1,6 @@
 # S3 Inference 音频子阶段：条件验收与证据缺口
 
-日期：2026-10-04。**本音频子阶段已在合并前通过离线条件验收；PR #19 合并后 main 的 Ubuntu race 出现大消息关闭取证故障。本次最小修复已通过本地定向及相关包普通/race，控制器独立复核、修复 PR 与远端 CI 待验。真实Inference调用0次，整门仍未投放。**
+日期：2026-10-04。**本音频子阶段已在合并前通过离线条件验收；PR #19 合并后出现大消息关闭取证故障，其补丁已独立复核通过；随后控制器在 `1a554eb` 全库检查发现 Inference drain 的 task-failed 后 close EOF。当前共享关闭协调器修复已通过本地定向及相关包普通/race，仍待控制器独立复核、全库/SDK回归及修复 PR/远端 CI。真实Inference调用0次，整门仍未投放。**
 范围仅 `audio/asr/recognition` 与 `audio/tts/SpeechSynthesizer`。
 依据：[批准设计](../superpowers/specs/2026-10-04-dashscope-inference-s3-audio-design.md)、
 [契约研究](2026-10-04-dashscope-inference-s3-contract.md)、[独立录制指南](2026-10-04-dashscope-inference-s3-recording.md)。
@@ -160,6 +160,39 @@ PR #19 已合并为 `4268fe3`。main CI `37207997625` 的 Ubuntu `make test-race
 | `go vet ./internal/gateway ./internal/transport/ws` | 无输出，exit 0 |
 
 本次修复PR、远端Ubuntu CI和控制器独立复核仍待验；此表不宣称合并后全库/SDK或远端CI通过。
+
+## `1a554eb` 收尾检查：drain 的本地错误后 close EOF
+
+控制器 `make check` 在 `TestInferenceHandlerLifecycle/绝对阶段超时/drain`
+的 `inferenceLocalFailure` 成功后，于下一条严格 close 断言读到 EOF（0.17s）。
+原配置 Connect=80ms、FirstByte=Idle=160ms、Total=300ms；本次保留原配置及
+`1011 / task_drain_timeout`，也保留三个阶段的持续心跳与绝对期限断言。
+
+源码与真实 TCP 屏障证明另一处生产竞争：`closeWSConnections` 调用
+`CloseWithResult`，后者遇到 heartbeat 的写锁会立即强拆。屏障先交付本地
+`Gateway.TaskDrainTimeout`，再固定 Ping 持锁，旧代码在尚余约79ms关闭预算时
+直接 EOF；这不是测试端自动 pong 读错。隔离反例没有传输 idle，故其强拆不能归因
+于 idle 与业务 timer 同时到期。原控制器日志未记录栈与帧，本证据不伪称恢复了那次调度。
+
+最小修复让共享协调器改用已有 `BeginClose(code, reason, deadline)` 并调用 finish：
+在相同绝对期限内等锁、发送并物理释放；真正阻塞写仍由原守卫到期强拆。
+W/B/G/Dall 及只收紧规则、本地/原文先交付、peer与业务分槽、Cancel/Stop顺序保持。
+新增 `TestWSTerminationLocalFailureHeartbeatClose` 的 released/stalled 两例：前者
+解除门闩后被动核对 Ping 与精确1011，后者核对到期强拆；二者都 join 工作者并检查预算0。
+20ms观察窗口只检验剩余B内不得提前强拆，不充当关闭预算或新增调度容差。
+
+最终测试版本回退生产修复后再次实测 RED：released 为“剩余79.54ms即强拆”与EOF，
+stalled 为“剩余79.94ms即强拆”。恢复修复后的新结果（均 `-count=1`）：
+
+| 检查 | 结果 |
+|---|---|
+| 新屏障例 + 原三个阶段超时例普通 / race | 通过，0.968s / 2.062s |
+| gateway + transport/ws 普通 | 通过，13.756s / 5.731s |
+| gateway + transport/ws race | 通过，16.954s / 6.949s |
+
+完整命令、RED/GREEN输出、后续check结果及提交记录见交接目录的
+`postmerge-drain-report.md` 与 `postmerge-drain-*.log`。改变共享生产关闭路径的代价是
+争锁时可等待至既有B而非立即退出；控制器须独立重做全库/SDK回归，远端Ubuntu仍待验。
 
 ## 未完成项与暂停
 
