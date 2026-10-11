@@ -51,7 +51,7 @@
 | `openai.realtime` | `openai.realtime` | 规划中 | ✅ | 15 | 0 | 0 | 0 | 14 | 1.000 | — |
 | `openai.realtime` | `dashscope.ws.realtime` | 规划中 | ✅ | 10 | 0 | 3 | 2 | 14 | 0.767 | — |
 | `openai.responses` | `openai.compat` | 已实现 | ✅ | 14 | 1（1 未开启） | 0 | 0 | 14 | 1.000 | 0.933（开启 convstore 后 1.000） |
-| `openai.responses` | `dashscope.compatible` | 规划中 |  | 8 | 1（1 未开启） | 2 | 4 | 14 | 0.667 | — |
+| `openai.responses` | `dashscope.compatible` | 规划中 |  | 8 | 0 | 3 | 4 | 14 | 0.633 | — |
 | `openai.responses` | `dashscope.native` | 规划中 |  | 6 | 1（1 未开启） | 4 | 4 | 14 | 0.600 | — |
 | `openai.responses` | `anthropic.messages` | 规划中 |  | 6 | 1（1 未开启） | 2 | 6 | 14 | 0.533 | — |
 
@@ -444,7 +444,7 @@
 | `embedding` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 dashscope.native |
 | `rerank` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 dashscope.native |
 | `prompt_cache` | `N/A` | 该协议的缓存由上游自动管理，客户端没有可控的缓存断点字段；显式缓存断点是 Anthropic 特有机制，Phase 2 随 Anthropic 入站一并接入 |
-| `stateful_conversation` | `EMULATE` | 上游无服务端会话，由网关侧 ConversationStore 模拟提供。Phase 1 为内存态：单副本正确，进程重启后历史丢失，多副本部署下会话不共享。默认关闭，需显式开启 convstore |
+| `stateful_conversation` | `EMULATE` | 会话由网关侧 ConversationStore 模拟提供，不使用上游的服务端会话。Phase 1 为内存态：单副本正确，进程重启后历史丢失，多副本部署下会话不共享。默认关闭，需显式开启 convstore |
 | `realtime_session` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 openai.realtime |
 | `realtime_image_input` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 dashscope.realtime |
 | `realtime_commit_modes` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 dashscope.realtime |
@@ -462,11 +462,11 @@
 | `streaming` | `PASSTHROUGH` | — |
 | `tool_calling` | `PASSTHROUGH` | — |
 | `parallel_tool_calls` | `PASSTHROUGH` | — |
-| `structured_output` | `DEGRADE` | DashScope 兼容模式支持 json_object，但不保证 strict json_schema 校验 |
+| `structured_output` | `DEGRADE` | DashScope Compatible 的 Responses 端点对 text.format 的 json_schema 不生效（返回自由文本）、对 json_object 不保证输出合法 JSON、对 function 工具的 strict 不校验；三者均原样透传 |
 | `reasoning` | `PASSTHROUGH` | — |
 | `reasoning_signature` | `N/A` | 该协议的线格式没有承载推理签名的字段，客户端无从表达；这项能力要到 Anthropic Messages 入站接入后（Phase 2）才可达 |
 | `vision_input` | `PASSTHROUGH` | — |
-| `image_detail` | `PASSTHROUGH` | — |
+| `image_detail` | `DEGRADE` | DashScope Compatible 的 Responses 端点不区分 detail 档位（实测各档 input_tokens 相同、编造值不报错）；精度与计费意图丢失 |
 | `audio_input` | `PASSTHROUGH` | — |
 | `video_input` | `N/A` | OpenAI 的线格式不接受视频输入 |
 | `file_input` | `REJECT` | 文件引用绑定具体 Provider，跨 Provider 不可迁移；网关不代下载再上传（原则 2.6），请改用 URL 或内联字节 |
@@ -478,13 +478,13 @@
 | `embedding` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 dashscope.native |
 | `rerank` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 dashscope.native |
 | `prompt_cache` | `N/A` | 该协议的缓存由上游自动管理，客户端没有可控的缓存断点字段；显式缓存断点是 Anthropic 特有机制，Phase 2 随 Anthropic 入站一并接入 |
-| `stateful_conversation` | `EMULATE` | 上游无服务端会话，由网关侧 ConversationStore 模拟提供。Phase 1 为内存态：单副本正确，进程重启后历史丢失，多副本部署下会话不共享。默认关闭，需显式开启 convstore |
+| `stateful_conversation` | `PASSTHROUGH` | 会话由上游持久化：store 与 previous_response_id 原样转发，response.id 不改写，不经网关 convstore。会话归属由上游 key 决定（跨 key 归属范围未证实），共用同一把 key 的调用方之间不隔离；省略 store 时内容按上游默认留存 7 天；多 key 部署下续轮可能落到另一把 key，得到上游 400，网关不重试 |
 | `realtime_session` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 openai.realtime |
 | `realtime_image_input` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 dashscope.realtime |
 | `realtime_commit_modes` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 dashscope.realtime |
 | `realtime_server_vad` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 openai.realtime |
 | `realtime_interrupt_turns` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 openai.realtime |
-| `web_search` | `DEGRADE` | DashScope Compatible 只有 enable_search 布尔开关：搜索上下文大小 search_context_size 与用户位置 user_location 在此丢失，响应也不返回搜索来源；仅开关本身被映射 |
+| `web_search` | `DEGRADE` | 搜索由上游内建工具执行；预览版类型 web_search_preview 由网关改写为 web_search；search_context_size 等附带选项不保证生效 |
 | `computer_use` | `REJECT` | 该内建工具在 Phase 1 不做跨 Provider 映射——各家的工具 schema 不兼容，勉强映射只会让模型收到一个它读不懂的定义 |
 | `message_name` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 openai.chat |
 
@@ -512,7 +512,7 @@
 | `embedding` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 dashscope.native |
 | `rerank` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 dashscope.native |
 | `prompt_cache` | `N/A` | 该协议的缓存由上游自动管理，客户端没有可控的缓存断点字段；显式缓存断点是 Anthropic 特有机制，Phase 2 随 Anthropic 入站一并接入 |
-| `stateful_conversation` | `EMULATE` | 上游无服务端会话，由网关侧 ConversationStore 模拟提供。Phase 1 为内存态：单副本正确，进程重启后历史丢失，多副本部署下会话不共享。默认关闭，需显式开启 convstore |
+| `stateful_conversation` | `EMULATE` | 会话由网关侧 ConversationStore 模拟提供，不使用上游的服务端会话。Phase 1 为内存态：单副本正确，进程重启后历史丢失，多副本部署下会话不共享。默认关闭，需显式开启 convstore |
 | `realtime_session` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 openai.realtime |
 | `realtime_image_input` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 dashscope.realtime |
 | `realtime_commit_modes` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 dashscope.realtime |
@@ -548,7 +548,7 @@
 | `embedding` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 dashscope.native |
 | `rerank` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 dashscope.native |
 | `prompt_cache` | `N/A` | 该协议的缓存由上游自动管理，客户端没有可控的缓存断点字段；显式缓存断点是 Anthropic 特有机制，Phase 2 随 Anthropic 入站一并接入 |
-| `stateful_conversation` | `EMULATE` | 上游无服务端会话，由网关侧 ConversationStore 模拟提供。Phase 1 为内存态：单副本正确，进程重启后历史丢失，多副本部署下会话不共享。默认关闭，需显式开启 convstore |
+| `stateful_conversation` | `EMULATE` | 会话由网关侧 ConversationStore 模拟提供，不使用上游的服务端会话。Phase 1 为内存态：单副本正确，进程重启后历史丢失，多副本部署下会话不共享。默认关闭，需显式开启 convstore |
 | `realtime_session` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 openai.realtime |
 | `realtime_image_input` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 dashscope.realtime |
 | `realtime_commit_modes` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 dashscope.realtime |

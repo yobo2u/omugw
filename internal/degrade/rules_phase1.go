@@ -29,9 +29,28 @@ const (
 	// 网关侧模拟服务端会话的代价。这句话必须跟着 EMULATE 一起出现——
 	// 客户端拿到的能力是完整的，但这份完整性是网关垫出来的，
 	// 运维得知道它的边界在哪。
-	noteEmulatedSession = "上游无服务端会话，由网关侧 ConversationStore 模拟提供。" +
+	//
+	// 只描述网关做了什么，不替上游下断言：这条 note 同时挂在 openai.compat
+	// 上，而 OpenAI 本尊是有服务端会话的。
+	noteEmulatedSession = "会话由网关侧 ConversationStore 模拟提供，不使用上游的服务端会话。" +
 		"Phase 1 为内存态：单副本正确，进程重启后历史丢失，多副本部署下会话不共享。" +
 		"默认关闭，需显式开启 convstore"
+
+	// 上游承担会话时的边界。PASS 不产生降级头，这些话只出现在矩阵文档里——
+	// 所以更要写全：透传的是协议形状，不是 OpenAI 的会话语义。
+	noteUpstreamSession = "会话由上游持久化：store 与 previous_response_id 原样转发，" +
+		"response.id 不改写，不经网关 convstore。会话归属由上游 key 决定" +
+		"（跨 key 归属范围未证实），共用同一把 key 的调用方之间不隔离；" +
+		"省略 store 时内容按上游默认留存 7 天；多 key 部署下续轮可能落到另一把 key，" +
+		"得到上游 400，网关不重试"
+
+	noteResponsesSearchCompat = "搜索由上游内建工具执行；预览版类型 web_search_preview " +
+		"由网关改写为 web_search；search_context_size 等附带选项不保证生效"
+	noteResponsesImageDetailCompat = "DashScope Compatible 的 Responses 端点不区分 detail 档位" +
+		"（实测各档 input_tokens 相同、编造值不报错）；精度与计费意图丢失"
+	noteResponsesStructuredCompat = "DashScope Compatible 的 Responses 端点对 text.format 的 " +
+		"json_schema 不生效（返回自由文本）、对 json_object 不保证输出合法 JSON、" +
+		"对 function 工具的 strict 不校验；三者均原样透传"
 )
 
 // Phase1 注册的全部路径当前均为 PLANNED。
@@ -176,11 +195,26 @@ func Phase1() (*Matrix, error) {
 	//
 	// 从对应的 Chat 路径派生，差异逐条 Override 出来。相对 Chat，Responses 多出
 	// 三样真东西：服务端会话、内建工具（computer_use / image_generation）、
-	// 更完整的推理配置。前者由网关模拟，后两者 Phase 1 不做跨 Provider 映射。
+	// 更完整的推理配置。前者按出站区分（上游有就透传，没有由网关模拟），后两者 Phase 1 不做跨 Provider 映射。
 
-	responsesExtras := func(r *Route, homogeneous bool) *Route {
-		r = r.Emulate(FeatureConversationStore, noteEmulatedSession,
+	// 会话与内建工具分开声明：两者没有因果关系，绑在一起时想让一条路径
+	// 只换会话处置，就得连内建工具一起重写。
+	//
+	// 会话按出站区分。dashscope.compatible 的 Responses 端点自己持久化会话
+	//（2026-10-11 实测：只传 previous_response_id 的续轮答得出首轮内容，
+	// store:false 后续轮 400），由网关再垫一层是用一份内存态、单副本的会话
+	// 去顶替上游原生的那份。其余出站保持模拟；openai.compat 该不该也透传
+	// 是另一个问题（#21）。
+	responsesSession := func(r *Route) *Route {
+		if r.OutProvider() == ProviderDashScopeCompatible {
+			return r.Pass(canonical.CapStatefulConversation).
+				Override(canonical.CapStatefulConversation, Passthrough, noteUpstreamSession)
+		}
+		return r.Emulate(FeatureConversationStore, noteEmulatedSession,
 			canonical.CapStatefulConversation)
+	}
+
+	responsesBuiltins := func(r *Route, homogeneous bool) *Route {
 		if homogeneous {
 			// 字节直通路径原样转发一切，内建工具也不例外。
 			// 早先把 computer_use 在直通路径上判成 REJECT 是错的：
@@ -198,16 +232,36 @@ func Phase1() (*Matrix, error) {
 	// 见 testdata/routes/openai.responses__openai.compat/ 与 ADR-0001。
 	// TestImplementedRoutesAreExplicit 要求每次转正都同步更新那份名单，
 	// 让「这条路能用了」成为一个需要有人点头的动作。
-	if err := m.Add(responsesExtras(
-		chatToOpenAI.Derive(ProtoOpenAIResponses, ProviderOpenAICompat), true,
+	if err := m.Add(responsesBuiltins(responsesSession(
+		chatToOpenAI.Derive(ProtoOpenAIResponses, ProviderOpenAICompat)), true,
 	).Redeem(EndpointOpenAIResponses, ExpressibleSet(ProtoOpenAIResponses)...).Build()); err != nil {
 		return nil, err
 	}
-	for _, base := range []*Route{chatToAnthropic, chatToDSCompat, chatToDSNative} {
-		r := responsesExtras(base.Derive(ProtoOpenAIResponses, base.OutProvider()), false)
+	for _, base := range []*Route{chatToAnthropic, chatToDSNative} {
+		r := responsesBuiltins(responsesSession(
+			base.Derive(ProtoOpenAIResponses, base.OutProvider())), false)
 		if err := m.Add(r.Build()); err != nil {
 			return nil, err
 		}
+	}
+
+	// Responses 到 DashScope Compatible：wire-compatible，打上游的 Responses
+	// 端点而不是 Chat 端点，所以不能照搬 Chat 路径的三格处置——同一个上游，
+	// 两扇门的行为不同（2026-10-11 实测，见
+	// docs/research/2026-10-11-dashscope-compatible-responses-reprobe.md）：
+	//   - image_detail：Chat 门透传，这扇门四种取值 input_tokens 全相同。
+	//   - web_search：这扇门是内建工具而非 enable_search 开关，note 不同。
+	//   - structured_output：这扇门 json_schema 返回自由文本。它与 function
+	//     工具的 strict 共用一格（UsedCapabilities），改 REJECT 会连带拒绝
+	//     带 strict 的工具调用，所以停在 DEGRADE；拆格见 #22。
+	// audio_input 沿用继承来的 PASS，但没有这扇门的证据，不在兑现之列。
+	responsesToDSCompat := responsesBuiltins(responsesSession(
+		chatToDSCompat.Derive(ProtoOpenAIResponses, ProviderDashScopeCompatible)), false).
+		Override(canonical.CapImageDetail, Degrade, noteResponsesImageDetailCompat).
+		Override(canonical.CapWebSearch, Degrade, noteResponsesSearchCompat).
+		Override(canonical.CapStructuredOutput, Degrade, noteResponsesStructuredCompat)
+	if err := m.Add(responsesToDSCompat.Build()); err != nil {
+		return nil, err
 	}
 
 	// ————————————————————————————————
