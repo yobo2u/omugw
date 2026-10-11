@@ -1,0 +1,45 @@
+{
+  "name": "openai.responses__openai.compat/parallel_tool_calls",
+  "note": "parallel_tool_calls 显式 true：解码器自 2026-10 起把它上报给矩阵，这份用例证明同源直通在该格被裁决后仍原样通过。response 是被打桩的上游返回。",
+  "request": {
+    "method": "POST",
+    "path": "/v1/responses",
+    "headers": {
+      "authorization": "<redacted>",
+      "content-type": "application/json"
+    },
+    "body": {
+      "model": "logical-fast",
+      "input": "同时查北京和上海的天气",
+      "store": false,
+      "parallel_tool_calls": true,
+      "tools": [
+        {
+          "type": "function",
+          "name": "get_weather",
+          "parameters": {
+            "type": "object",
+            "properties": {"city": {"type": "string"}},
+            "required": ["city"]
+          }
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {"content-type": "application/json"},
+    "body": {
+      "id": "resp_68a4",
+      "object": "response",
+      "status": "completed",
+      "model": "gpt-5-upstream",
+      "parallel_tool_calls": true,
+      "output": [
+        {"type": "function_call", "id": "fc_1", "call_id": "call_1", "name": "get_weather", "arguments": "{\"city\":\"北京\"}"},
+        {"type": "function_call", "id": "fc_2", "call_id": "call_2", "name": "get_weather", "arguments": "{\"city\":\"上海\"}"}
+      ],
+      "usage": {"input_tokens": 40, "output_tokens": 30, "total_tokens": 70}
+    }
+  }
+}

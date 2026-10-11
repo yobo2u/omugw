@@ -44,6 +44,10 @@ type Decoded struct {
 	// builtinCaps 只参与矩阵裁决；同源路径用 Raw 原样转发定义，异构路径不得
 	// 把这些 Provider 私有 schema 塞进 Canonical 工具列表猜测含义。
 	builtinCaps []canonical.Capability
+
+	// parallelToolCalls 记录客户端是否显式要了并行工具调用。它没有 Canonical
+	// 字段，异构出站又读不得 Extensions，能力识别只能在解码阶段完成。
+	parallelToolCalls bool
 }
 
 // Decode 把 Responses 请求线格式解成 Canonical。
@@ -122,6 +126,7 @@ func Decode(body []byte) (*Decoded, error) {
 	if w.ParallelToolCalls != nil {
 		raw, _ := json.Marshal(map[string]bool{"parallel_tool_calls": *w.ParallelToolCalls})
 		r.Extensions.Set(canonical.ExtOpenAI, raw)
+		out.parallelToolCalls = *w.ParallelToolCalls
 	}
 
 	if err := r.Validate(); err != nil {
@@ -656,6 +661,9 @@ func (d *Decoded) Capabilities() []canonical.Capability {
 	}
 	if d.RequiresStatefulConversation {
 		seen[canonical.CapStatefulConversation] = true
+	}
+	if d.parallelToolCalls {
+		seen[canonical.CapParallelToolCalls] = true
 	}
 	out := make([]canonical.Capability, 0, len(seen))
 	for _, c := range canonical.AllCapabilities() {

@@ -270,7 +270,7 @@ func TestHTTPFixturesUnaffectedByWSSupport(t *testing.T) {
 	if err != nil {
 		t.Fatal("旧 fixture 根目录读取失败")
 	}
-	wantCounts := map[string]int{"dashscope.native__dashscope.native": 6, "openai.chat__dashscope.compatible": 10, "openai.chat__dashscope.native": 13, "openai.chat__openai.compat": 2, "openai.responses__openai.compat": 3}
+	wantCounts := map[string]int{"dashscope.native__dashscope.native": 6, "openai.chat__dashscope.compatible": 10, "openai.chat__dashscope.native": 13, "openai.chat__openai.compat": 2, "openai.responses__openai.compat": 4}
 	seen := 0
 	for _, entry := range entries {
 		if !entry.IsDir() {

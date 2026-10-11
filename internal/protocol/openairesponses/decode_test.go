@@ -464,3 +464,28 @@ func hasCap(caps []canonical.Capability, want canonical.Capability) bool {
 	}
 	return false
 }
+
+// TestParallelToolCallsReportedOnlyWhenExplicitTrue 防的是矩阵从未对
+// parallel_tool_calls 裁决：该字段此前只进 Extensions，异构路径读不得
+// Extensions，于是任何路径都会把它当作不存在。条件与 Chat 解码器一致——
+// 只有显式 true 才算客户端在要这项能力，省略与 false 都不算。
+func TestParallelToolCallsReportedOnlyWhenExplicitTrue(t *testing.T) {
+	const tools = `"tools":[{"type":"function","name":"f","parameters":{"type":"object"}}]`
+	cases := []struct {
+		name  string
+		field string
+		want  bool
+	}{
+		{"显式 true", `"parallel_tool_calls":true,`, true},
+		{"显式 false", `"parallel_tool_calls":false,`, false},
+		{"省略", ``, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			d := mustDecode(t, `{"model":"m","input":"hi","store":false,`+tc.field+tools+`}`)
+			if got := hasCap(d.Capabilities(), canonical.CapParallelToolCalls); got != tc.want {
+				t.Fatalf("parallel_tool_calls 上报 = %v，期望 %v: %v", got, tc.want, d.Capabilities())
+			}
+		})
+	}
+}
