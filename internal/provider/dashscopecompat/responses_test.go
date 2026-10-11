@@ -8,6 +8,7 @@ import (
 
 	"github.com/yobo2u/omugw/internal/canonical"
 	"github.com/yobo2u/omugw/internal/degrade"
+	"github.com/yobo2u/omugw/internal/testkit"
 )
 
 // responsesInput 构造一次打 Responses 门的调用。
@@ -113,5 +114,117 @@ func TestResponsesDoorFlatAuthErrorIsRetryable(t *testing.T) {
 
 	if e.Class != canonical.ClassAuth || !e.Retryable {
 		t.Errorf("分类 = %s retryable = %v，期望 auth 且可重试", e.Class, e.Retryable)
+	}
+}
+
+// TestResponsesDoorHitsResponsesEndpoint 防的是请求被送去 Chat 端点：
+// 官方 base_url 以 /v1 结尾，入站门是 /v1/responses，去重后必须落在
+// {base}/responses。
+func TestResponsesDoorHitsResponsesEndpoint(t *testing.T) {
+	srv, got := okServer(t)
+	in := responsesInput(`{"model":"logical","input":"hi"}`)
+	in.baseURL = srv.URL + "/compatible-mode/v1"
+
+	if _, err := call(t, srv, in); err != nil {
+		t.Fatal(err)
+	}
+	if got.path != "/compatible-mode/v1/responses" {
+		t.Errorf("上游路径 = %q，期望 /compatible-mode/v1/responses", got.path)
+	}
+}
+
+// TestResponsesDoorOnlyRewritesModel 防的是直通变成重编码：除 model 外每个
+// 字段都必须原样到达上游，包括会话字段与网关不建模的参数。
+func TestResponsesDoorOnlyRewritesModel(t *testing.T) {
+	srv, got := okServer(t)
+	const raw = `{"model":"logical","input":"hi","previous_response_id":"resp_1",` +
+		`"store":true,"metadata":{"trace":"abc"},"reasoning":{"effort":"low","summary":"detailed"},` +
+		`"parallel_tool_calls":false,"text":{"format":{"type":"json_object"}},` +
+		`"tools":[{"type":"function","name":"f","strict":true,"parameters":{"type":"object"}},{"type":"web_search"}]}`
+
+	if _, err := call(t, srv, responsesInput(raw)); err != nil {
+		t.Fatal(err)
+	}
+
+	const want = `{"model":"qwen-up","input":"hi","previous_response_id":"resp_1",` +
+		`"store":true,"metadata":{"trace":"abc"},"reasoning":{"effort":"low","summary":"detailed"},` +
+		`"parallel_tool_calls":false,"text":{"format":{"type":"json_object"}},` +
+		`"tools":[{"type":"function","name":"f","strict":true,"parameters":{"type":"object"}},{"type":"web_search"}]}`
+	testkit.AssertJSONEqual(t, []byte(want), got.body, "Responses 门只应改写 model")
+}
+
+// TestResponsesDoorOmittedStoreIsNotInjected 防的是网关替客户端决定留存：
+// 省略 store 时由上游默认值生效（实测默认存储 7 天），网关写入任何值都是
+// 在改客户端没表达过的意图。
+func TestResponsesDoorOmittedStoreIsNotInjected(t *testing.T) {
+	srv, got := okServer(t)
+	if _, err := call(t, srv, responsesInput(`{"model":"logical","input":"hi"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := upstreamFields(t, got)["store"]; ok {
+		t.Errorf("上游请求里出现了 store，网关不该注入: %s", got.body)
+	}
+}
+
+// TestResponsesDoorRenamesPreviewSearch 防的是一次不发生的搜索返回 200：
+// 实测上游接受 web_search_preview 但不执行搜索，只有 web_search 生效。
+// tool_choice 必须同步改名，否则它会指向一个改名后不存在的工具。
+// 其余工具与搜索工具自带的选项保持原样。
+func TestResponsesDoorRenamesPreviewSearch(t *testing.T) {
+	srv, got := okServer(t)
+	const raw = `{"model":"logical","input":"hi",` +
+		`"tools":[{"type":"web_search_preview","search_context_size":"low"},` +
+		`{"type":"function","name":"f","parameters":{"type":"object"}}],` +
+		`"tool_choice":{"type":"web_search_preview"}}`
+
+	if _, err := call(t, srv, responsesInput(raw)); err != nil {
+		t.Fatal(err)
+	}
+
+	const want = `{"model":"qwen-up","input":"hi",` +
+		`"tools":[{"type":"web_search","search_context_size":"low"},` +
+		`{"type":"function","name":"f","parameters":{"type":"object"}}],` +
+		`"tool_choice":{"type":"web_search"}}`
+	testkit.AssertJSONEqual(t, []byte(want), got.body, "预览版搜索类型应被改写")
+}
+
+// TestResponsesDoorLeavesStringToolChoiceAlone 防的是改名逻辑误伤字符串形态
+// 的 tool_choice（auto / required / none）。
+func TestResponsesDoorLeavesStringToolChoiceAlone(t *testing.T) {
+	srv, got := okServer(t)
+	const raw = `{"model":"logical","input":"hi","tool_choice":"required",` +
+		`"tools":[{"type":"function","name":"f","parameters":{"type":"object"}}]}`
+	if _, err := call(t, srv, responsesInput(raw)); err != nil {
+		t.Fatal(err)
+	}
+	if choice := string(upstreamFields(t, got)["tool_choice"]); choice != `"required"` {
+		t.Errorf("tool_choice = %s，期望原样 \"required\"", choice)
+	}
+}
+
+// TestResponsesDoorDoesNotApplyChatSearchMapping 防的是两扇门的修补串台：
+// enable_search 是 Chat 门的映射产物，Responses 门不得注入。
+func TestResponsesDoorDoesNotApplyChatSearchMapping(t *testing.T) {
+	srv, got := okServer(t)
+	if _, err := call(t, srv, responsesInput(`{"model":"logical","input":"hi","tools":[{"type":"web_search"}]}`)); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := upstreamFields(t, got)["enable_search"]; ok {
+		t.Errorf("Responses 门不应出现 enable_search: %s", got.body)
+	}
+}
+
+// TestResponsesDoorMissingUpstreamModel 防的是把逻辑模型名发给上游。
+func TestResponsesDoorMissingUpstreamModel(t *testing.T) {
+	srv, got := okServer(t)
+	in := responsesInput(`{"model":"logical","input":"hi"}`)
+	in.upstreamModel = ""
+
+	_, err := call(t, srv, in)
+	if e := asCanonical(t, err); e.Class != canonical.ClassInternal {
+		t.Errorf("分类 = %s，期望 internal", e.Class)
+	}
+	if got.body != nil {
+		t.Error("缺少上游模型名时不应触达上游")
 	}
 }

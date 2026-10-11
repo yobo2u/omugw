@@ -1,15 +1,16 @@
 // Package dashscopecompat 是 DashScope Compatible（OpenAI 线格式）的出站适配器。
 //
-// wire-compatible 而语义异构：请求与响应仍走 Chat Completions 线格式，因此不做
+// wire-compatible 而语义异构：请求与响应仍走 OpenAI 线格式，因此不做
 // Canonical 重编码；但上游语义与 OpenAI 并不等同——模型能力、结构化输出保证、
 // Web Search 参数都有差异。所以这条路**不是**同源快通道，不得 MarkHomogeneous：
 // wire-compatible 只说明不需要重编码，不能推导为语义零损失，X-Omugw-Degraded
 // 仍由矩阵生成。
 //
-// 对客户端原始 JSON 只做两处定点修补：改写模型名；删除 web_search_options，
-// 非 null 时映射成 enable_search: true。其余字段保持原始字节——
-// 当前 IR 不承载 n、presence/frequency penalty、logprobs 等全部 Chat 参数，
-// 经 Canonical 往返会制造静默损失。
+// 按入站门做定点修补，其余字段保持原始字节（经 Canonical 往返会制造静默损失）：
+//   - Chat 门：改写模型名；删除 web_search_options，非 null 时映射成
+//     enable_search: true。
+//   - Responses 门：改写模型名；把预览版内建搜索类型改成正式版。会话字段
+//     原样转发——上游自己持久化会话。错误按 DashScope 扁平信封解码。
 package dashscopecompat
 
 import (
@@ -29,7 +30,7 @@ import (
 // ChatCompletionsPath 是 DashScope Compatible Chat 的上游端点。
 const ChatCompletionsPath = "/v1/chat/completions"
 
-// Provider 只负责 OpenAI Chat compatible wire 的出站。
+// Provider 负责 DashScope Compatible 两扇 OpenAI 线格式门的出站。
 type Provider struct {
 	client *httpx.Client
 	now    func() time.Time
@@ -48,10 +49,14 @@ func (p *Provider) Kind() degrade.Provider { return degrade.ProviderDashScopeCom
 
 // Call 把请求发给 DashScope Compatible。
 //
-// 原始 JSON 只做两处定点修补，响应原样返回给网关转发。Canonical 已在网关层
+// 原始 JSON 只做所在门的定点修补，响应原样返回给网关转发。Canonical 已在网关层
 // 完成请求校验与能力裁决，这里不消费——本路径没有 Canonical 出站编码器。
 func (p *Provider) Call(ctx context.Context, req provider.Request) (*httpx.Response, error) {
-	body, err := patch(req.Raw, req.Target.UpstreamModel)
+	patchFn := patch
+	if req.Inbound.Endpoint == degrade.EndpointOpenAIResponses {
+		patchFn = patchResponses
+	}
+	body, err := patchFn(req.Raw, req.Target.UpstreamModel)
 	if err != nil {
 		return nil, err
 	}
@@ -130,23 +135,10 @@ func (p *Provider) decodeError(resp *httpx.Response, ep degrade.Endpoint) error 
 // 就是客户端的显式搜索请求，而 enable_search 是 DashScope 原生参数，
 // OpenAI 客户端本不会发它。
 func patch(raw []byte, upstreamModel string) ([]byte, error) {
-	if upstreamModel == "" {
-		return nil, canonical.Newf(canonical.ClassInternal, "路由目标缺少上游模型名")
-	}
-
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &fields); err != nil {
-		return nil, canonical.Wrapf(err, canonical.ClassBadRequest, "请求体不是 JSON 对象")
-	}
-	if _, ok := fields["model"]; !ok {
-		return nil, canonical.Newf(canonical.ClassBadRequest, "请求体缺少 model")
-	}
-
-	patched, err := json.Marshal(upstreamModel)
+	fields, err := withModel(raw, upstreamModel)
 	if err != nil {
-		return nil, canonical.Wrapf(err, canonical.ClassInternal, "序列化模型名失败")
+		return nil, err
 	}
-	fields["model"] = patched
 
 	// 仅当客户端发了非 null 对象时映射：缺省或 null 是「不要搜索」
 	//（解码器已按此语义识别能力），此时不得替它注入 enable_search——
@@ -165,4 +157,29 @@ func patch(raw []byte, upstreamModel string) ([]byte, error) {
 		return nil, canonical.Wrapf(err, canonical.ClassInternal, "重新序列化请求体失败")
 	}
 	return out, nil
+}
+
+// withModel 把请求体解成字段表并改写模型名，是两扇门共用的第一步。
+//
+// 解成 map[string]json.RawMessage 再写回，而不是整体反序列化：这样除修补点
+// 之外的每个字段都保持原始字节，包括网关不认识的新参数。
+func withModel(raw []byte, upstreamModel string) (map[string]json.RawMessage, error) {
+	if upstreamModel == "" {
+		return nil, canonical.Newf(canonical.ClassInternal, "路由目标缺少上游模型名")
+	}
+
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return nil, canonical.Wrapf(err, canonical.ClassBadRequest, "请求体不是 JSON 对象")
+	}
+	if _, ok := fields["model"]; !ok {
+		return nil, canonical.Newf(canonical.ClassBadRequest, "请求体缺少 model")
+	}
+
+	patched, err := json.Marshal(upstreamModel)
+	if err != nil {
+		return nil, canonical.Wrapf(err, canonical.ClassInternal, "序列化模型名失败")
+	}
+	fields["model"] = patched
+	return fields, nil
 }
