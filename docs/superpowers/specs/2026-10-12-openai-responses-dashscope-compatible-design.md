@@ -1,7 +1,7 @@
 # OpenAI Responses 到 DashScope Compatible 路径投放设计
 
 **日期**：2026-10-12
-**状态**：待审阅
+**状态**：已批准，待实现
 **前序约束**：ADR-0001（声明必须由 fixture 兑现）、ADR-0002（设计分与可用分分离）
 **决策来源**：Issue #12（已关闭，会话处置）、#11（进展，解码器补报）、地图 #3
 **证据**：`docs/research/2026-10-11-dashscope-compatible-responses-reprobe.md`（实测）、
@@ -81,8 +81,7 @@ EMULATE（网关 convstore 垫会话），与上游事实不符：垫出来的�
   带这个标志。代价是 `json_schema` 请求会拿到 200 加一段散文，只靠降级头提示；
   这一点写进 note 与路径文档。
 - 把工具严格模式从 `structured_output` 拆成独立能力（使 `text.format` 可单独
-  REJECT）语义更准，但新增能力会要求全部已注册路径补声明，不在本次范围，另行
-  开票。
+  REJECT）语义更准，但新增能力会要求全部已注册路径补声明，不在本次范围，见 #22。
 
 ### `responsesExtras` 拆分
 
