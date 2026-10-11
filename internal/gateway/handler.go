@@ -316,12 +316,18 @@ func (h *Handler) serve(w *tracked, r *http.Request) (outcome, outbound string, 
 
 	h.observeVerdict(kind, verdict)
 
-	conversation, err := h.prepareConversation(r, caller, decoded, raw)
-	if err != nil {
-		return "bad_request", outbound, err
-	}
-	if conversation != nil {
-		raw = conversation.raw
+	// 必须先问矩阵再进 prepareConversation：后者在没装配存储而请求显式依赖
+	// 会话时返回内部错误，那条分支的前提是矩阵已经把请求拦下。对会话透传的
+	// 路径这个前提不成立，不加这道判断就是一个 500。
+	var conversation *conversationRequest
+	if h.emulatesConversation(kind) {
+		conversation, err = h.prepareConversation(r, caller, decoded, raw)
+		if err != nil {
+			return "bad_request", outbound, err
+		}
+		if conversation != nil {
+			raw = conversation.raw
+		}
 	}
 
 	candidates := router.OfKind(targets, kind)
@@ -553,6 +559,17 @@ func (h *Handler) relay(ctx context.Context, w *tracked, resp *httpx.Response, i
 			h.in.streamTerminal, streamTransform, h.in.encodeError)
 	}
 	return relayJSON(w, resp, in.headers, h.in.usageJSON, jsonTransform)
+}
+
+// emulatesConversation 回答「选中的这条路径，会话是不是由网关垫的」。
+//
+// 判据取自矩阵而不是 Provider 名：只有 stateful_conversation 声明为 EMULATE
+// 的路径才进 convstore。上游自己持久化会话的路径（该格 PASSTHROUGH）必须
+// 原样转发 store 与 previous_response_id——对它展开历史、写 store:false，
+// 等于用一份内存态的会话顶替上游原生的那份，而客户端无从得知。
+func (h *Handler) emulatesConversation(kind degrade.Provider) bool {
+	rule, ok := h.deps.Matrix.Lookup(h.in.protocol, kind, canonical.CapStatefulConversation)
+	return ok && rule.Disposition == degrade.Emulate
 }
 
 func (h *Handler) prepareConversation(r *http.Request, caller Caller,
