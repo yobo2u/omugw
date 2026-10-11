@@ -1,7 +1,7 @@
 # OpenAI Responses 到 DashScope Compatible 路径投放设计
 
 **日期**：2026-10-12
-**状态**：已批准，待实现
+**状态**：已实现
 **前序约束**：ADR-0001（声明必须由 fixture 兑现）、ADR-0002（设计分与可用分分离）
 **决策来源**：Issue #12（已关闭，会话处置）、#11（进展，解码器补报）、地图 #3
 **证据**：`docs/research/2026-10-11-dashscope-compatible-responses-reprobe.md`（实测）、
@@ -38,7 +38,8 @@ EMULATE（网关 convstore 垫会话），与上游事实不符：垫出来的�
 1. 入站仍由 `openairesponses.Decode` 严格解码，Canonical 只服务请求校验、能力识别
    与矩阵裁决。
 2. 出站以客户端原始 JSON 为基准，只做两处定点修补：改写 `model`；把 `tools` 里
-   `type` 为 `web_search_preview` 的项改成 `web_search`。其余字节不动。
+   `type` 为 `web_search_preview` 的项改成 `web_search`，`tool_choice` 与 `tools`
+   同步改名（否则 `tool_choice` 会指向一个不存在的工具）。其余字节不动。
 3. 上游响应 JSON 与 SSE 原样回传，`response.id` 不改写。
 4. 会话由上游承担：`store` 与 `previous_response_id` 原样转发，本路径不经
    convstore，即使运维开启了它。
@@ -100,7 +101,9 @@ EMULATE（网关 convstore 垫会话），与上游事实不符：垫出来的�
 
 - `stateful_conversation`（PASS，无降级头，写进矩阵文档与 README）：会话由上游
   持久化；归属由上游 key 决定，共用同一把 key 的调用方之间不隔离；省略 `store`
-  时内容按上游默认留存 7 天；多 key 部署下续轮可能落到另一把 key 而得到上游 400。
+  时内容按上游文档默认留存 7 天（出自上游文档，未实测）；实测同一把 key 下任何
+  调用方都能凭 id 续轮，因此不隔离，跨 key 是否可见未证实；多 key 部署下续轮可能
+  落到另一把 key 而得到上游 400，网关不换 key 重试。
 - `web_search`（DEGRADE）：搜索由上游内建工具执行；预览版类型由网关改写为
   `web_search`；附带选项不保证生效。
 - `image_detail`（DEGRADE）：上游不区分 `detail` 档位，精度与计费意图丢失。
@@ -147,7 +150,9 @@ CapStatefulConversation)` 查选中路径的处置，只有 EMULATE 才进
 
 `dashscopecompat.Call` 现有的 `patch` 面向 Chat 线格式（删 `web_search_options`、
 映射 `enable_search`），对 Responses 请求是死代码。按 `req.Inbound.Endpoint` 分成
-两个修补函数：Chat 门走现有逻辑不变；Responses 门只做 `model` 改写与工具类型改名。
+两个修补函数：Chat 门走现有逻辑不变；Responses 门只做 `model` 改写与工具类型改名
+（`tools` 与 `tool_choice` 同步改名；`tool_choice` 这一半没有真实上游证据，见
+「未证实项」）。
 `pathFor` 不改：入站端点 `/v1/responses` 与以 `/v1` 结尾的 `base_url` 去重后正好
 落到上游 Responses 端点。
 
@@ -161,9 +166,16 @@ CapStatefulConversation)` 查选中路径的处置，只有 EMULATE 才进
 
 ### 上游更窄的语义
 
-`tool_choice: "required"` 配多个工具时上游返回 400
-（`Please set one tool in required mode.`）。网关不预判，原样映射回客户端并写进
-文档。
+上游在两处比 OpenAI 更窄，网关都不预判，由上游 400 原样映射回客户端并写进文档：
+
+1. `tool_choice: "required"` 配多个工具时返回 400
+   （`Please set one tool in required mode.`）。
+2. 思考模式下拒绝 `required` 或对象形态的 `tool_choice`（2026-10-12 实测，
+   模型 qwen3.8-flash）：录制 `tool_choice: {"type":"web_search_preview"}`（经网关
+   改写为 `web_search`）返回 400，原话
+   `The tool_choice parameter does not support being set to required or object in thinking mode`。
+   qwen3.8-flash 默认思考，所以这与工具名无关；`web_search-preview` 用例因此最终
+   不带 `tool_choice` 录制。
 
 ### 经网关不可达的上游扩展
 
@@ -191,8 +203,14 @@ Responses 门下改用扁平解码：先试扁平形状，取不到 `code`/`mess
 信封编码给客户端。分类映射表在实施计划里按实测错误码逐条列出，至少覆盖已观察到
 的 `InvalidParameter`（400，含 `Not found previous_response_id`）与模型不存在。
 
-续轮未命中（上游 400）归为 bad_request：不重试、不冷却凭据。它不是凭据故障，
-换凭据只会更糟。
+续轮未命中（上游 400）归为 bad_request：同一凭据池内不换 key 重试、不冷却凭据。
+它不是凭据故障，换凭据只会更糟。
+
+但同一模型配置了多个上游目标时，网关既有的 `dispatch` 在遇到不可重试错误后会
+换下一个上游目标（`break // 换凭据也没用，换下一个上游`），所以每个目标各被尝试
+一次；这是全部路径共有的行为，本次未改。其余目标对未知 id 同样返回 400
+（**推断**，依据是实测「未存储的 id 返回 400」；跨目标、跨 key 的行为本身
+**未实测**），客户端最终拿到最后一个目标的 400。
 
 ## 解码器修复（先于新路径）
 
@@ -210,18 +228,27 @@ Responses 解码器（`internal/protocol/openairesponses/decode.go:122`）把
 录制入口沿用 `tests/smoke` 里的显式开关模式（新增专用环境变量，未设置即跳过），
 不走裸 `make smoke`，不落盘、不打印凭据。主录模型 `qwen3.8-flash`。
 
-正例（每项兑现能力至少一份）：
+录制目录里的 21 份用例（`*.json` 基名，2026-10-12 录制，模型 qwen3.8-flash，
+北京域名）：basic、error-required-two-tools、image_detail、parallel_tool_calls-false、
+parallel_tool_calls-true、reasoning、reasoning-replay、reasoning-streaming、
+stateful-continue、stateful-store-false、stateful-store-omitted、streaming、
+structured_output、structured_output-json_object、structured_output-tool-strict、
+tool_calling、tool_calling-result、tool_calling-streaming、vision_input、
+web_search、web_search-preview。
+
+正例（每项兑现能力至少一份）；`error-required-two-tools` 属于下面的负例，
+也以同一目录下的录制用例存在：
 
 | 用例 | 覆盖 | 断言要点 |
 |---|---|---|
 | basic、streaming | text_generation、streaming | 上游请求 `model` 已改写，其余字段保持 |
-| tool_calling、tool_calling-streaming | tool_calling | `function_call_arguments` 事件原样转发 |
+| tool_calling、tool_calling-streaming、tool_calling-result | tool_calling | `function_call_arguments` 事件原样转发；`tool_calling-result` 回传 function_call 项加 function_call_output，经严格解码器回放通过 |
 | parallel_tool_calls-true、-false | parallel_tool_calls | 字段原样到达上游；无降级头 |
-| reasoning、reasoning-replay | reasoning | 回传 reasoning 项的续问被上游接受 |
+| reasoning、reasoning-streaming、reasoning-replay | reasoning | 回传 reasoning 项的续问被上游接受（`reasoning-replay` 经严格解码器回放通过） |
 | vision_input | vision_input | 无降级头 |
 | image_detail | image_detail | 出现降级头 |
-| web_search、web_search_preview | web_search | 后者的上游请求里类型已改写；出现降级头 |
-| structured_output-json_schema、-json_object、-tool-strict | structured_output | 字段原样到达上游；出现降级头 |
+| web_search、web_search-preview | web_search | 后者的上游请求里类型已改写；出现降级头；`web_search-preview` 不带 `tool_choice`（见「上游更窄的语义」） |
+| structured_output、structured_output-json_object、structured_output-tool-strict | structured_output | 字段原样到达上游；出现降级头 |
 | stateful-continue | stateful_conversation | 上游请求保留 `previous_response_id`，`response.id` 未改写；装配 convstore 时同样不展开历史 |
 | stateful-store-false | stateful_conversation | 续轮得到上游 400，映射为 bad_request，凭据未冷却 |
 | stateful-store-omitted | stateful_conversation | 上游请求里没有被写入 `store` |
@@ -238,7 +265,11 @@ Responses 解码器（`internal/protocol/openairesponses/decode.go:122`）把
 ### 未证实项
 
 - **上游 id 的归属范围**：两把 key 交叉续轮没有测过（手头只有一把 key）。note 写
-  「归属范围未证实」，列为投放前必测项；拿到第二把 key 后补一次探测。
+  「会话是否跨 key 可见未证实」，列为投放前必测项；拿到第二把 key 后补一次探测。
+- **`tool_choice` 改名**：适配器把 `tool_choice` 里的 `web_search_preview` 同步改成
+  `web_search`，这段代码没有真实上游证据。保留它是因为不改名必然指向一个不存在
+  的工具；上游是否接受 `tool_choice: {"type":"web_search"}`（非思考模式或其他
+  模型上）未证实——唯一一次录制在思考模式下被 400 拒绝，与工具名无关。
 - 其他地域、专属域名、国际站；搜索工具附带选项；`qwen3.5-flash` 省略
   `parallel_tool_calls` 时的默认值。
 - 9 月 27 日记录过 `parallel_tool_calls` 类型违例返回 200，10 月 11 日同一模型

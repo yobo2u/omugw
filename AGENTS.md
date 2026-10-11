@@ -128,6 +128,9 @@ docs/               # principles.md、degradation-matrix.md（生成物）、adr
 - **不要**在 `internal/transport/ws` 里用 `net.Pipe` 写测试：它无缓冲且完全同步，
   自动回 pong 会与对端的下一帧互相死等。那是 `net.Pipe` 的性质，不是被测代码的
   问题——用带内核缓冲的本地 TCP 对。
+- **不要**把 `dashscope.compatible` 的两扇门当成一回事：Chat 门与 Responses
+  门是同一个上游的两个端点，实测行为不同（图片 `detail`、结构化输出、搜索
+  参数形态、错误信封都不一样）。一扇门的 fixture 不构成另一扇门的证据。
 
 ## Agent skills
 
@@ -181,22 +184,32 @@ make smoke         # 端到端冒烟，需 OMUGW_SMOKE=1 与真实凭据
 
 ## NOTES
 
-- **当前状态**：14 条路径已登记，5 条已通车（`openai.responses →
+- **当前状态**：14 条路径已登记，6 条已通车（`openai.responses →
   openai.compat`、`openai.chat → openai.compat`、`dashscope.native →
-  dashscope.native`，均为同源直通；以及第一条异构路径 `openai.chat →
+  dashscope.native`，均为同源直通；以及三条异构路径 `openai.chat →
+  dashscope.compatible`、`openai.chat → dashscope.native`、`openai.responses →
   dashscope.compatible`）。兑现粒度是**端点 × 能力**：OpenAI 两条直通在各自的
   唯一门上兑现全部可表达能力；DashScope Native 投放了两个端点——文本生成与
   多模态生成，每门 18 项中 5 项；Chat 到 DashScope Compatible 是 wire-compatible
   而非同源——请求保持 Chat 线格式、只做定点修补（model 改写与
-  web_search_options → enable_search），在 `/v1/chat/completions` 门兑现 9 项
-  可交付能力（7 PASS + 2 DEGRADE），file_input / audio_output 维持 REJECT 422，
-  设计与可用均为 8/11 ≈ 0.727。Chat 到 DashScope Native 是首条请求与响应都完整
-  重编码的异构路径，在 `/v1/chat/completions` 门兑现 8 项能力（text_generation /
-  streaming / tool_calling / parallel_tool_calls / structured_output / reasoning /
-  vision_input / web_search）；`audio_input` 设计处置保持 PASS 但无真实证据、
-  本期不兑现，含它的请求由矩阵在触达上游前返回 501；门可用分 6.5/11 ≈ 0.591，
-  `Gated()` 为真，设计分 7.5/11 ≈ 0.682 不变。其余 Native POST 端点由
-  `POST /api/v1/` 兜底返回 DashScope 协议化 501。其余 9 条路径打过去仍是 501。
+  web_search_options → enable_search），在 `/v1/chat/completions` 门兑现 11 项
+  可交付能力（9 PASS + 2 DEGRADE），file_input / audio_output 维持 REJECT 422，
+  设计与可用均为 10/13 ≈ 0.769。
+  Responses 到 DashScope Compatible 同为 wire-compatible：请求保持 Responses
+  线格式、只做定点修补（model 改写与 web_search_preview → web_search），在
+  `/v1/responses` 门兑现 10 项（7 PASS + 3 DEGRADE）；会话由上游持久化，该格
+  PASSTHROUGH、不经 convstore；`audio_input` 无证据不兑现（501），
+  file_input / audio_output / computer_use / image_generation 为 REJECT 422；
+  设计分 9.5/15 ≈ 0.633，门可用分 8.5/15 ≈ 0.567。同一上游的两扇门行为不同
+  （这扇门 `detail` 档位被忽略、`json_schema` 返回自由文本），处置不得互相照搬。
+  Chat 到 DashScope Native 是首条请求与响应都完整重编码的异构路径，在
+  `/v1/chat/completions` 门兑现 10 项能力（text_generation / streaming /
+  tool_calling / parallel_tool_calls / structured_output / reasoning /
+  vision_input / image_detail / web_search / message_name）；`audio_input` 设计
+  处置保持 PASS 但无真实证据、本期不兑现，含它的请求由矩阵在触达上游前返回
+  501；门可用分 7.5/13 ≈ 0.577，`Gated()` 为真，设计分 8.5/13 ≈ 0.654 不变。
+  其余 Native POST 端点由 `POST /api/v1/` 兜底返回 DashScope 协议化 501。
+  其余 8 条路径打过去仍是 501。
 - 配置的 `auth`/`credentials`/`providers`/`models` 四块**要么全配要么全不配**；
   全不配 = 只提供 `/healthz`（合法形态），配一半直接启动失败。
 - `convstore` 是内存态：单副本正确、重启丢失、多副本不共享。因此

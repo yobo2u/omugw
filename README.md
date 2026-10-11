@@ -3,9 +3,9 @@
 多协议双向转换的 AI 网关数据面。不把 OpenAI 格式当作内部总线，而是在
 **入站协议**与**出站 Provider** 之间建立可控的转换层。
 
-> **状态：M1 进行中——OpenAI 族两条同源直通、DashScope Native 两个端点、Chat → DashScope Compatible 与 Chat → DashScope Native 已转正，网关可用。**
+> **状态：M1 进行中——OpenAI 族两条同源直通、DashScope Native 两个端点、Chat → DashScope Compatible、Chat → DashScope Native 与 Responses → DashScope Compatible 已转正，网关可用。**
 >
-> 降级矩阵登记了 14 条转换路径，**其中 5 条已实现**：
+> 降级矩阵登记了 14 条转换路径，**其中 6 条已实现**：
 > `openai.responses → openai.compat`、`openai.chat → openai.compat` 与
 > `dashscope.native → dashscope.native`（均为同源直通），以及第一条异构路径
 > `openai.chat → dashscope.compatible`（wire-compatible：请求仍是 Chat 线格式，
@@ -14,7 +14,11 @@
 > 以及首条请求与响应都完整重编码的异构路径 `openai.chat → dashscope.native`
 >（在 `/v1/chat/completions` 门兑现 10 项能力；`audio_input` 设计处置是 PASS，
 > 但缺少真实证据、本期不兑现，含它的请求由矩阵返回 501；设计分 8.5/13 ≈ 0.654，
-> 门可用分 7.5/13 ≈ 0.577，`dashscope.compatible` 的 0.769 仍优先）。
+> 门可用分 7.5/13 ≈ 0.577，`dashscope.compatible` 的 0.769 仍优先），
+> 以及 `openai.responses → dashscope.compatible`（wire-compatible：请求仍是
+> Responses 线格式，会话由上游持久化、不经 `convstore`；在 `/v1/responses` 门
+> 兑现 10 项能力，`audio_input` 无证据不兑现；设计分 9.5/15 ≈ 0.633，
+> 可用分 8.5/15 ≈ 0.567）。
 > 其中 DashScope Native 路径投放了文本生成与多模态生成两个端点，
 > 每扇门各兑现 5 项能力（多模态门为视觉 / 音频 / 视频输入加文本与流式）。
 > 其余仍是 `PLANNED`，
@@ -50,8 +54,21 @@
   省略时按协议默认值 `true` 存一轮，但只有显式 `store:true` 或
   `previous_response_id` 才算依赖服务端会话——未启用 `convstore` 的部署
   照常处理普通请求，无需客户端改写。
-  DashScope Compatible 的 Responses 端点另有原生会话契约，其路径尚未投放，
-  会话处置待[专项决定](https://github.com/yobo2u/omugw/issues/12)，不能一概视为无状态。
+  DashScope Compatible 的 Responses 端点自己持久化会话，因此
+  `openai.responses → dashscope.compatible` 上该格是 `PASSTHROUGH`：`store` 与
+  `previous_response_id` 原样转发，`response.id` 不改写，**不经 `convstore`**
+  （即使已开启）。由此带来几条与 OpenAI 不同的边界，部署前必须知道：
+  省略 `store` 时内容按上游文档默认**留存 7 天**（出自上游文档，未实测）；
+  实测同一把上游 key 下任何调用方都能凭 id 续轮，因此**共用同一把上游 key 的
+  调用方之间不隔离**，会话是否跨 key 可见未证实；
+  多 key 部署下续轮可能落到另一把 key，得到上游 400——同一凭据池内网关不换 key
+  重试、不冷却凭据；但同一模型配置了多个上游目标时，网关按既有规则对每个目标各
+  尝试一次（全部路径共有的行为，本次未改），其余目标对未知 id 同样返回 400
+  （推断，依据是实测「未存储的 id 返回 400」；跨目标、跨 key 的行为本身未实测），
+  客户端最终拿到最后一个目标的 400。
+  上游在思考模式下拒绝对象形态或 `required` 的 `tool_choice`（实测返回 400，
+  qwen3.8-flash 默认思考），网关原样回传该 400。
+  网关不投放 `GET` / `DELETE /responses/{id}`，客户端拿到的 id 只能用于续轮。
 - **同源走快通道。** 入站协议族 == 出站 Provider 族时字节级透传，只改写鉴权，
   不进 Canonical——保住 TTFT，绕开绝大多数转换 bug。
 - **流式 failover 只在首字节之前有效。** 首字节发出后上游失败一律不重试

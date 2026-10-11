@@ -89,3 +89,28 @@
 - `qwen3.5-flash` 省略 `parallel_tool_calls` 时的默认值。
 - `incomplete` / `failed` 终止事件与流内错误事件的形状（实测只见到
   `response.completed`）。
+
+## 8. 2026-10-12 录制补充
+
+2026-10-12 经网关录制 fixture 时的观察（模型 qwen3.8-flash，北京域名；
+`testdata/routes/openai.responses__dashscope.compatible/`）。
+
+1. **思考模式下对象形态的 `tool_choice` 被拒（实测）。** 录制
+   `tool_choice: {"type":"web_search_preview"}`（经网关改写为 `web_search`）时上游
+   返回 400，原话 `The tool_choice parameter does not support being set to required or object in thinking mode`。
+   qwen3.8-flash 默认思考，所以这与工具名无关。因此 `web_search-preview` 用例
+   最终不带 `tool_choice` 录制。
+2. **`tool_choice` 改名没有真实上游证据（未证实）。** 网关把 `tool_choice` 中的
+   `web_search_preview` 同步改名为 `web_search`，保留它是因为不改名必然指向一个
+   不存在的工具；上游在非思考模式或其他模型上是否接受
+   `tool_choice: {"type":"web_search"}` 未证实。
+3. **上游输出项原样回传可行（实测）。** `reasoning-replay` 与 `tool_calling-result`
+   两份录制经网关严格解码器回放通过（reasoning 项；function_call 项加
+   function_call_output）。
+4. **其余结果与 2026-10-11 一致（实测）。** 并行 `true` → 4 个调用、`false` → 1 个；
+   `vision_input` 与 `image_detail` 的 `input_tokens` 相同，均为 158；`json_schema`
+   返回自由文本；续轮答出口令；`store:false` 后续轮 400；省略 `store` 回显
+   `store: true`。
+
+第 7 节的未验证项没有因本次录制被验证：`incomplete` / `failed` 终止事件与流内错误
+事件的形状仍只见到 `response.completed`，其余各项亦同。

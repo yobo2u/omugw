@@ -7,8 +7,8 @@
 
 | 文件 | 职责 |
 |---|---|
-| `build.go` | 从 `config.Config` 装配凭据池、Provider、Router、Handler、Mux；`convstore.enabled` 同时进入矩阵可用性并创建内存 Store。出站适配器按协议族装配：`openai.compat` / `dashscope.native` 两类同源直通走 passthrough，wire-compatible 的 `dashscope.compatible` 走专用定点修补器；未实现的协议族在启动阶段直接拒绝。Mux 注册先落四个精确端点（OpenAI 两门 + Native 文本 / 多模态两门，Native 两门复用同一 handler 实例），再挂 DashScope Native 命名空间的两条兜底：`POST /api/v1/` 返回协议化 501，不带方法的 `/api/v1/` 返回框架 404——未投放端点在进 Handler 主链路之前就被拦下。注册清单（`doors`）是端点与处理器的唯一事实来源：每行只写端点与 `*Handler`，协议由处理器身份派生；启动期按 `Inbound`（协议 + 端点）对矩阵兑现与 Mux 注册做双向对账，任一方向失败即启动失败 |
-| `handler.go` | `serve()` 主链路 + `dispatch()` 两层 failover + `tracked` 首字节跟踪 |
+| `build.go` | 从 `config.Config` 装配凭据池、Provider、Router、Handler、Mux；`convstore.enabled` 同时进入矩阵可用性并创建内存 Store。出站适配器按协议族装配：`openai.compat` / `dashscope.native` 两类同源直通走 passthrough，wire-compatible 的 `dashscope.compatible` 走专用定点修补器（按入站门分支：Chat 门与 Responses 门各有修补与错误信封）；未实现的协议族在启动阶段直接拒绝。Mux 注册先落四个精确端点（OpenAI 两门 + Native 文本 / 多模态两门，Native 两门复用同一 handler 实例），再挂 DashScope Native 命名空间的两条兜底：`POST /api/v1/` 返回协议化 501，不带方法的 `/api/v1/` 返回框架 404——未投放端点在进 Handler 主链路之前就被拦下。注册清单（`doors`）是端点与处理器的唯一事实来源：每行只写端点与 `*Handler`，协议由处理器身份派生；启动期按 `Inbound`（协议 + 端点）对矩阵兑现与 Mux 注册做双向对账，任一方向失败即启动失败 |
+| `handler.go` | `serve()` 主链路 + `dispatch()` 两层 failover + `tracked` 首字节跟踪；会话是否进 `convstore` 由 `emulatesConversation` 按矩阵该格处置决定，只有 EMULATE 才进 |
 | `relay.go` | `relayJSON` / `relayStream`：回写响应、抽取 usage、流中断收尾 |
 | `auth.go` | 常量时间 API Key 校验，产出 `Caller` |
 | `conformance_test.go` | 路径级端到端 fixture 回放 + golden 断言 |

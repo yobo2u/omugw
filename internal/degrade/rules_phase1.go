@@ -39,10 +39,10 @@ const (
 	// 上游承担会话时的边界。PASS 不产生降级头，这些话只出现在矩阵文档里——
 	// 所以更要写全：透传的是协议形状，不是 OpenAI 的会话语义。
 	noteUpstreamSession = "会话由上游持久化：store 与 previous_response_id 原样转发，" +
-		"response.id 不改写，不经网关 convstore。会话归属由上游 key 决定" +
-		"（跨 key 归属范围未证实），共用同一把 key 的调用方之间不隔离；" +
-		"省略 store 时内容按上游默认留存 7 天；多 key 部署下续轮可能落到另一把 key，" +
-		"得到上游 400，网关不重试"
+		"response.id 不改写，不经网关 convstore。实测同一把上游 key 下任何调用方" +
+		"都能凭 id 续轮，共用同一把 key 的调用方之间不隔离；会话是否跨 key 可见未证实；" +
+		"省略 store 时内容按上游文档默认留存 7 天（出自上游文档，未实测）；" +
+		"多 key 部署下续轮可能落到另一把 key，得到上游 400，网关不换 key 重试"
 
 	noteResponsesSearchCompat = "搜索由上游内建工具执行；预览版类型 web_search_preview " +
 		"由网关改写为 web_search；search_context_size 等附带选项不保证生效"
