@@ -65,7 +65,8 @@
 ## 5. 错误信封
 
 扁平形状：`{"request_id": "...", "code": "InvalidParameter", "message": "..."}`，
-没有 OpenAI 的外层 `error` 对象。
+没有 OpenAI 的外层 `error` 对象。模型不存在返回 400 `InvalidParameter`，
+message 为 `Unsupported model: '<name>'`（2026-10-11 实测）。
 
 ## 6. 流式事件面
 
@@ -92,12 +93,15 @@
 
 ## 8. 2026-10-12 录制补充
 
-2026-10-12 经网关录制 fixture 时的观察（模型 qwen3.8-flash，北京域名；
-`testdata/routes/openai.responses__dashscope.compatible/`）。
+2026-10-12 录制 fixture 时的观察（模型 qwen3.8-flash，北京域名；
+`testdata/routes/openai.responses__dashscope.compatible/`）。录制脚本
+（`tests/smoke/record_responses_dscompat_live_test.go`）**不经过网关**：它把用例表里
+手写声明的期望上游请求体直接 POST 给上游。「网关会发出同样的字节」由事后的
+conformance 回放单独验证，不是录制本身证明的。
 
 1. **思考模式下对象形态的 `tool_choice` 被拒（实测）。** 录制
-   `tool_choice: {"type":"web_search_preview"}`（经网关改写为 `web_search`）时上游
-   返回 400，原话 `The tool_choice parameter does not support being set to required or object in thinking mode`。
+   `tool_choice: {"type":"web_search_preview"}`（录制脚本按适配器的改名规则实际发出
+   `{"type":"web_search"}`，不是网关产出的请求）时上游返回 400，原话 `The tool_choice parameter does not support being set to required or object in thinking mode`。
    qwen3.8-flash 默认思考，所以这与工具名无关。因此 `web_search-preview` 用例
    最终不带 `tool_choice` 录制。
 2. **`tool_choice` 改名没有真实上游证据（未证实）。** 网关把 `tool_choice` 中的

@@ -102,8 +102,12 @@ EMULATE（网关 convstore 垫会话），与上游事实不符：垫出来的�
 - `stateful_conversation`（PASS，无降级头，写进矩阵文档与 README）：会话由上游
   持久化；实测同一把上游 key 的续轮成功；网关转发时不带调用方身份，上游只能按
   key 识别（推断），因此共用同一把上游 key 的调用方之间应视为不隔离；会话是否
-  跨 key 可见未证实；省略 `store` 时内容按上游文档默认留存 7 天（出自上游文档，
-  未实测）；多 key 部署下续轮可能落到另一把 key 而得到上游 400，网关不换 key 重试。
+  跨 key 可见未证实；若会话按上游 key 归属（推断，未证实），凭据池里有 N 把 key
+  时，加权轮询会让大约 (N−1)/N 的续轮落到另一把 key 而得到上游 400，不是偶发；
+  另外首轮所用的 key 被限流（429）时网关会换 key，续轮得到的是「Not found
+  previous_response_id」的 400 而不是 429（读 `dispatch` 代码得出，未实测）；依赖
+  续轮的部署在跨 key 归属实测完成前，建议为该模型配置单 key 凭据池；省略 `store`
+  时内容按上游文档默认留存 7 天（出自上游文档，未实测）。
 - `web_search`（DEGRADE）：搜索由上游内建工具执行；预览版类型由网关改写为
   `web_search`；附带选项不保证生效。
 - `image_detail`（DEGRADE）：上游不区分 `detail` 档位，精度与计费意图丢失。
@@ -143,6 +147,15 @@ CapStatefulConversation)` 查选中路径的处置，只有 EMULATE 才进
 `prepareConversation`。这样矩阵仍是唯一权威，#21 日后改 `openai.compat` 的处置时
 主链路不用再动。
 
+**选路后果（读代码得出，未有专门测试）**：同一逻辑模型同时配了 `openai.compat` 与
+`dashscope.compatible` 两个目标、且 convstore 未开启时，显式依赖服务端会话的请求
+（带 `previous_response_id` 或显式 `store:true`）在 `openai.compat` 上因 EMULATE 格
+不可用而被 `BestOutbound`（`internal/degrade/preference.go`）逐个候选 `Check`
+淘汰，落到次选的 `dashscope.compatible`（PASS）。此前次选该格是 PLANNED，请求会被
+矩阵拦下并说明「convstore 未开启」；现在是换了模型作答，或把 OpenAI 的 id 发给
+DashScope 得到上游 400。这是能力选路的既有语义，不是本分支的 bug，但属于本次把
+该格改为 PASS 带来的新后果。
+
 `:301` 处「装了 convstore 且省略 `store`」时追加 `CapStatefulConversation` 的逻辑
 保留：对本路径该格是 PASS，不产生降级头，也不改变裁决。
 
@@ -172,8 +185,9 @@ CapStatefulConversation)` 查选中路径的处置，只有 EMULATE 才进
    （`Please set one tool in required mode.`）。
 2. 思考模式下拒绝对象形态的 `tool_choice`（2026-10-12 实测，模型
    qwen3.8-flash；错误文案同时提到 required，未单独验证）：录制
-   `tool_choice: {"type":"web_search_preview"}`（经网关改写为 `web_search`）
-   返回 400，原话
+   `tool_choice: {"type":"web_search_preview"}`（录制脚本按适配器的改名规则实际发出
+   `{"type":"web_search"}`，不是网关产出的请求；录制脚本直连上游、不经网关，
+   「网关发出同样的字节」由 conformance 回放单独验证）返回 400，原话
    `The tool_choice parameter does not support being set to required or object in thinking mode`。
    qwen3.8-flash 默认思考，所以这与工具名无关；`web_search-preview` 用例因此最终
    不带 `tool_choice` 录制。
@@ -202,7 +216,9 @@ Responses 解码器拒绝未知字段，上游扩展参数（`conversation`、`e
 Responses 门下改用扁平解码：先试扁平形状，取不到 `code`/`message` 再回落嵌套
 形状（官方文档里两种形状并存）。解码结果仍是 `canonical.Error`，由入站侧按 OpenAI
 信封编码给客户端。分类映射表在实施计划里按实测错误码逐条列出，至少覆盖已观察到
-的 `InvalidParameter`（400，含 `Not found previous_response_id`）与模型不存在。
+的 `InvalidParameter`（400，含 `Not found previous_response_id`）与模型不存在
+（2026-10-11 实测：400 `InvalidParameter`，message 为 `Unsupported model: '<name>'`，
+由单元测试覆盖）。
 
 续轮未命中（上游 400）归为 bad_request：同一凭据池内不换 key 重试、不冷却凭据。
 它不是凭据故障，换凭据只会更糟。
@@ -267,7 +283,10 @@ web_search、web_search-preview。
 ### 未证实项
 
 - **上游 id 的归属范围**：两把 key 交叉续轮没有测过（手头只有一把 key）。note 写
-  「会话是否跨 key 可见未证实」，投放后待补测（需要第二把 key）。
+  「会话是否跨 key 可见未证实」，投放后待补测（需要第二把 key）。若按 key 归属
+  （推断），多 key 凭据池下约 (N−1)/N 的续轮会得到上游 400，且首轮 key 被限流时
+  续轮会得到 400 而非 429（读 `dispatch` 代码得出，未实测）——这是常态而非偶发，
+  补测结果同时决定这条后果的量级。
 - **`tool_choice` 改名**：适配器把 `tool_choice` 里的 `web_search_preview` 同步改成
   `web_search`，这段代码没有真实上游证据。保留它是因为不改名必然指向一个不存在
   的工具；上游是否接受 `tool_choice: {"type":"web_search"}`（非思考模式或其他
