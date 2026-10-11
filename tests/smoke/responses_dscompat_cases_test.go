@@ -111,6 +111,48 @@ func TestRDCFixtureRedactsRequestID(t *testing.T) {
 	}
 }
 
+// TestRDCHasFunctionCall 防的是守卫自己失灵：它放过无调用的种子，或把坏 JSON
+// 当成有调用，录制就会白花钱。
+func TestRDCHasFunctionCall(t *testing.T) {
+	cases := []struct {
+		name   string
+		output string
+		want   bool
+	}{
+		{"含 function_call", `[{"type":"reasoning"},{"type":"function_call","call_id":"c1"}]`, true},
+		{"只有 message", `[{"type":"message"}]`, false},
+		{"空数组", `[]`, false},
+		{"非法 JSON", `{not json`, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := rdcHasFunctionCall(json.RawMessage(tc.output)); got != tc.want {
+				t.Errorf("rdcHasFunctionCall(%s) = %v，期望 %v", tc.output, got, tc.want)
+			}
+		})
+	}
+}
+
+// rdcHasFunctionCall 报告种子轮的 output 是否含 function_call 条目。
+//
+// 防的是花钱录一份没有工具结果的 tool-result fixture：种子轮若被模型直接
+// 文字作答，rdcToolOutputs 会拼出空串，随后的请求照样 200，录制成功却什么
+// 也没证明，只能在审阅时才发现。output 解析失败按「没有」处理。
+func rdcHasFunctionCall(output json.RawMessage) bool {
+	var items []struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(output, &items); err != nil {
+		return false
+	}
+	for _, it := range items {
+		if it.Type == "function_call" {
+			return true
+		}
+	}
+	return false
+}
+
 // rdcSeed 是种子轮（不入库的前一轮真实请求）留下的两样东西。
 type rdcSeed struct {
 	ID     string
