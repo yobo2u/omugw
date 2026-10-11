@@ -101,8 +101,9 @@ EMULATE（网关 convstore 垫会话），与上游事实不符：垫出来的�
 
 - `stateful_conversation`（PASS，无降级头，写进矩阵文档与 README）：会话由上游
   持久化；归属由上游 key 决定，共用同一把 key 的调用方之间不隔离；省略 `store`
-  时内容按上游文档默认留存 7 天（出自上游文档，未实测）；实测同一把 key 下任何
-  调用方都能凭 id 续轮，因此不隔离，跨 key 是否可见未证实；多 key 部署下续轮可能
+  时内容按上游文档默认留存 7 天（出自上游文档，未实测）；实测同一把 key 的续轮
+  成功；网关转发时不带调用方身份，上游只能按 key 识别（推断），因此应视为不隔离，
+  跨 key 是否可见未证实；多 key 部署下续轮可能
   落到另一把 key 而得到上游 400，网关不换 key 重试。
 - `web_search`（DEGRADE）：搜索由上游内建工具执行；预览版类型由网关改写为
   `web_search`；附带选项不保证生效。
@@ -170,8 +171,8 @@ CapStatefulConversation)` 查选中路径的处置，只有 EMULATE 才进
 
 1. `tool_choice: "required"` 配多个工具时返回 400
    （`Please set one tool in required mode.`）。
-2. 思考模式下拒绝 `required` 或对象形态的 `tool_choice`（2026-10-12 实测，
-   模型 qwen3.8-flash）：录制 `tool_choice: {"type":"web_search_preview"}`（经网关
+2. 思考模式下拒绝对象形态的 `tool_choice`（2026-10-12 实测，模型
+   qwen3.8-flash；错误文案同时提到 required，未单独验证）：录制 `tool_choice: {"type":"web_search_preview"}`（经网关
    改写为 `web_search`）返回 400，原话
    `The tool_choice parameter does not support being set to required or object in thinking mode`。
    qwen3.8-flash 默认思考，所以这与工具名无关；`web_search-preview` 用例因此最终
@@ -210,7 +211,8 @@ Responses 门下改用扁平解码：先试扁平形状，取不到 `code`/`mess
 换下一个上游目标（`break // 换凭据也没用，换下一个上游`），所以每个目标各被尝试
 一次；这是全部路径共有的行为，本次未改。其余目标对未知 id 同样返回 400
 （**推断**，依据是实测「未存储的 id 返回 400」；跨目标、跨 key 的行为本身
-**未实测**），客户端最终拿到最后一个目标的 400。
+**未实测**），客户端最终拿到最后一个目标的 400（读 `dispatch` 代码得出，且以「其余目标同样
+返回 400」这一推断为前提）。
 
 ## 解码器修复（先于新路径）
 
@@ -265,7 +267,7 @@ web_search、web_search-preview。
 ### 未证实项
 
 - **上游 id 的归属范围**：两把 key 交叉续轮没有测过（手头只有一把 key）。note 写
-  「会话是否跨 key 可见未证实」，列为投放前必测项；拿到第二把 key 后补一次探测。
+  「会话是否跨 key 可见未证实」，投放后待补测（需要第二把 key）。
 - **`tool_choice` 改名**：适配器把 `tool_choice` 里的 `web_search_preview` 同步改成
   `web_search`，这段代码没有真实上游证据。保留它是因为不改名必然指向一个不存在
   的工具；上游是否接受 `tool_choice: {"type":"web_search"}`（非思考模式或其他
@@ -279,7 +281,7 @@ web_search、web_search-preview。
 
 - `make matrix-update` 重新生成 `docs/degradation-matrix.md`。
 - 更新根 `AGENTS.md` 的状态段（路径数、通车数、本路径的兑现摘要）。
-- README：省略 `store` 时内容默认在上游留存 7 天；共用上游 key 的调用方之间会话
+- README：省略 `store` 时内容默认在上游留存 7 天（出自上游文档，未实测）；共用上游 key 的调用方之间会话
   不隔离；本路径不经 convstore。
 - 更正并提交 #10 契约调研文档，归档 10 月 11 日两轮实测摘要（随本 spec 提交）。
 - 不新增 ADR：没有引入新的系统级约束。

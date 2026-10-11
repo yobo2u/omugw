@@ -479,7 +479,7 @@
 | `embedding` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 dashscope.native |
 | `rerank` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 dashscope.native |
 | `prompt_cache` | `N/A` | 该协议的缓存由上游自动管理，客户端没有可控的缓存断点字段；显式缓存断点是 Anthropic 特有机制，Phase 2 随 Anthropic 入站一并接入 |
-| `stateful_conversation` | `PASSTHROUGH` | 会话由上游持久化：store 与 previous_response_id 原样转发，response.id 不改写，不经网关 convstore。实测同一把上游 key 下任何调用方都能凭 id 续轮，共用同一把 key 的调用方之间不隔离；会话是否跨 key 可见未证实；省略 store 时内容按上游文档默认留存 7 天（出自上游文档，未实测）；多 key 部署下续轮可能落到另一把 key，得到上游 400，网关不换 key 重试 |
+| `stateful_conversation` | `PASSTHROUGH` | 会话由上游持久化：store 与 previous_response_id 原样转发，response.id 不改写，不经网关 convstore。实测同一把上游 key 的续轮成功；网关转发时不带调用方身份，上游只能按 key 识别（推断），因此共用同一把 key 的调用方之间应视为不隔离；会话是否跨 key 可见未证实；省略 store 时内容按上游文档默认留存 7 天（出自上游文档，未实测）；多 key 部署下续轮可能落到另一把 key，得到上游 400，网关不换 key 重试 |
 | `realtime_session` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 openai.realtime |
 | `realtime_image_input` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 dashscope.realtime |
 | `realtime_commit_modes` | `N/A` | openai.responses 表达不了该能力，请改用入站协议 dashscope.realtime |
