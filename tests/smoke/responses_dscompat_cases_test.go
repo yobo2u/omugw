@@ -373,9 +373,9 @@ func rdcCases() []rdcCase {
 		},
 		{
 			name: "web_search-preview",
-			note: "预览版类型：网关把 tools 与 tool_choice 里的 web_search_preview 改写为 web_search，上游因此真的执行搜索。",
+			note: "预览版类型：网关把 tools 里的 web_search_preview 改写为 web_search，上游因此真的执行搜索。不带 tool_choice——该模型默认思考，上游在思考模式下拒绝对象形态的 tool_choice（2026-10-12 录制时实测 400）。",
 			build: rdcStatic(rdcBody(`"input":"今天杭州的天气如何？","store":false,` +
-				`"tools":[{"type":"web_search_preview"}],"tool_choice":{"type":"web_search_preview"}`)),
+				`"tools":[{"type":"web_search_preview"}]`)),
 			upstream: func(client string) string {
 				return strings.ReplaceAll(client, `"web_search_preview"`, `"web_search"`)
 			},
