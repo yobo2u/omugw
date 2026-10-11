@@ -200,7 +200,7 @@ func TestDecodeErrorCapsReadVolumeAt64KiB(t *testing.T) {
 		},
 	}
 
-	err := p.decodeError(resp)
+	err := p.decodeError(resp, "")
 	if err == nil {
 		t.Fatal("期望 decodeError 返回非 nil 错误")
 	}

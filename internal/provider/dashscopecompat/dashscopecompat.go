@@ -22,7 +22,6 @@ import (
 
 	"github.com/yobo2u/omugw/internal/canonical"
 	"github.com/yobo2u/omugw/internal/degrade"
-	"github.com/yobo2u/omugw/internal/protocol/openaiwire"
 	"github.com/yobo2u/omugw/internal/provider"
 	"github.com/yobo2u/omugw/internal/transport/httpx"
 )
@@ -82,7 +81,7 @@ func (p *Provider) Call(ctx context.Context, req provider.Request) (*httpx.Respo
 	}
 
 	if resp.StatusCode >= 400 {
-		return nil, p.decodeError(resp)
+		return nil, p.decodeError(resp, req.Inbound.Endpoint)
 	}
 	return resp, nil
 }
@@ -102,10 +101,9 @@ func acceptFor(stream bool) string {
 	return "application/json"
 }
 
-// decodeError 读出错误体并按 OpenAI 信封解码——DashScope Compatible 的
-// 非 2xx 与 OpenAI 同形。读之前设上限：一个故障上游可能在 5xx 里塞进
-// 一整个 HTML 页面，甚至更糟。
-func (p *Provider) decodeError(resp *httpx.Response) error {
+// decodeError 读出错误体并按入站门对应的信封解码。读之前设上限：一个故障
+// 上游可能在 5xx 里塞进一整个 HTML 页面，甚至更糟。
+func (p *Provider) decodeError(resp *httpx.Response, ep degrade.Endpoint) error {
 	defer resp.Body.Close()
 
 	const maxErrorBody = 64 << 10
@@ -118,7 +116,7 @@ func (p *Provider) decodeError(resp *httpx.Response) error {
 			break
 		}
 	}
-	return openaiwire.DecodeError(resp.StatusCode, body, resp.Header, p.now())
+	return decodeErrorBody(ep, resp.StatusCode, body, resp.Header, p.now())
 }
 
 // patch 对客户端原始 JSON 做仅有的两处修改：改写模型名；删除
