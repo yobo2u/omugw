@@ -100,11 +100,10 @@ EMULATE（网关 convstore 垫会话），与上游事实不符：垫出来的�
 ### note 文本
 
 - `stateful_conversation`（PASS，无降级头，写进矩阵文档与 README）：会话由上游
-  持久化；归属由上游 key 决定，共用同一把 key 的调用方之间不隔离；省略 `store`
-  时内容按上游文档默认留存 7 天（出自上游文档，未实测）；实测同一把 key 的续轮
-  成功；网关转发时不带调用方身份，上游只能按 key 识别（推断），因此应视为不隔离，
-  跨 key 是否可见未证实；多 key 部署下续轮可能
-  落到另一把 key 而得到上游 400，网关不换 key 重试。
+  持久化；实测同一把上游 key 的续轮成功；网关转发时不带调用方身份，上游只能按
+  key 识别（推断），因此共用同一把上游 key 的调用方之间应视为不隔离；会话是否
+  跨 key 可见未证实；省略 `store` 时内容按上游文档默认留存 7 天（出自上游文档，
+  未实测）；多 key 部署下续轮可能落到另一把 key 而得到上游 400，网关不换 key 重试。
 - `web_search`（DEGRADE）：搜索由上游内建工具执行；预览版类型由网关改写为
   `web_search`；附带选项不保证生效。
 - `image_detail`（DEGRADE）：上游不区分 `detail` 档位，精度与计费意图丢失。
@@ -172,8 +171,9 @@ CapStatefulConversation)` 查选中路径的处置，只有 EMULATE 才进
 1. `tool_choice: "required"` 配多个工具时返回 400
    （`Please set one tool in required mode.`）。
 2. 思考模式下拒绝对象形态的 `tool_choice`（2026-10-12 实测，模型
-   qwen3.8-flash；错误文案同时提到 required，未单独验证）：录制 `tool_choice: {"type":"web_search_preview"}`（经网关
-   改写为 `web_search`）返回 400，原话
+   qwen3.8-flash；错误文案同时提到 required，未单独验证）：录制
+   `tool_choice: {"type":"web_search_preview"}`（经网关改写为 `web_search`）
+   返回 400，原话
    `The tool_choice parameter does not support being set to required or object in thinking mode`。
    qwen3.8-flash 默认思考，所以这与工具名无关；`web_search-preview` 用例因此最终
    不带 `tool_choice` 录制。
@@ -281,8 +281,8 @@ web_search、web_search-preview。
 
 - `make matrix-update` 重新生成 `docs/degradation-matrix.md`。
 - 更新根 `AGENTS.md` 的状态段（路径数、通车数、本路径的兑现摘要）。
-- README：省略 `store` 时内容默认在上游留存 7 天（出自上游文档，未实测）；共用上游 key 的调用方之间会话
-  不隔离；本路径不经 convstore。
+- README：省略 `store` 时内容默认在上游留存 7 天（出自上游文档，未实测）；共用上游 key 的调用方之间
+  会话应视为不隔离（推断，网关转发时不带调用方身份）；本路径不经 convstore。
 - 更正并提交 #10 契约调研文档，归档 10 月 11 日两轮实测摘要（随本 spec 提交）。
 - 不新增 ADR：没有引入新的系统级约束。
 
