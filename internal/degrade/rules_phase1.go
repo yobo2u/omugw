@@ -259,7 +259,23 @@ func Phase1() (*Matrix, error) {
 		chatToDSCompat.Derive(ProtoOpenAIResponses, ProviderDashScopeCompatible)), false).
 		Override(canonical.CapImageDetail, Degrade, noteResponsesImageDetailCompat).
 		Override(canonical.CapWebSearch, Degrade, noteResponsesSearchCompat).
-		Override(canonical.CapStructuredOutput, Degrade, noteResponsesStructuredCompat)
+		Override(canonical.CapStructuredOutput, Degrade, noteResponsesStructuredCompat).
+		// 兑现门槛是端到端真实 fixture 通过（ADR-0001）：二十一份真实上游录制在
+		// testdata/routes/openai.responses__dashscope.compatible/，回放与上游
+		// 请求断言在 internal/gateway/responses_dscompat_conformance_test.go。
+		// 四项 REJECT 不在兑现之列；audio_input 无证据不兑现，门保持 Gated。
+		Redeem(EndpointOpenAIResponses,
+			canonical.CapTextGeneration,
+			canonical.CapStreaming,
+			canonical.CapToolCalling,
+			canonical.CapParallelToolCalls,
+			canonical.CapStructuredOutput,
+			canonical.CapReasoning,
+			canonical.CapVisionInput,
+			canonical.CapImageDetail,
+			canonical.CapStatefulConversation,
+			canonical.CapWebSearch,
+		)
 	if err := m.Add(responsesToDSCompat.Build()); err != nil {
 		return nil, err
 	}

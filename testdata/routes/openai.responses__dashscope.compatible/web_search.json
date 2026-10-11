@@ -1,0 +1,223 @@
+{
+  "name": "openai.responses__dashscope.compatible/web_search",
+  "note": "DEGRADE 举证（文件名即能力名）：内建 web_search 由上游执行，输出含 web_search_call。",
+  "request": {
+    "method": "POST",
+    "path": "/v1/responses",
+    "headers": {
+      "authorization": "\u003credacted\u003e",
+      "content-type": "application/json"
+    },
+    "body": {
+      "model": "logical-fast",
+      "input": "今天杭州的天气如何？",
+      "store": false,
+      "tools": [
+        {
+          "type": "web_search"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "background": false,
+      "completed_at": 1791742298,
+      "created_at": 1791742284,
+      "frequency_penalty": 0.0,
+      "id": "resp_9ccaa0a6-97a1-92fb-81d7-8f6ee0ac6154",
+      "metadata": {},
+      "model": "qwen3.8-flash",
+      "object": "response",
+      "output": [
+        {
+          "id": "msg_8daf34f6-db58-4586-af7f-dcff072c7b59",
+          "summary": [
+            {
+              "text": "用户询问今天杭州的天气情况。今天是2026年10月12日。我需要使用web_search工具来查询实时天气信息，因为我无法直接获取当前天气数据。\n\n让我构造一个搜索查询来查找杭州今天的天气。",
+              "type": "summary_text"
+            }
+          ],
+          "type": "reasoning"
+        },
+        {
+          "action": {
+            "queries": [
+              "杭州今天天气 2026年10月12日",
+              "杭州实时天气预报"
+            ],
+            "query": "杭州今天天气 2026年10月12日",
+            "sources": [
+              {
+                "type": "url",
+                "url": "https://www.weather.com.cn/weather40d/101210101.shtml"
+              },
+              {
+                "type": "url",
+                "url": "https://worldweather.wmo.int/zh/city.html?cityId=556"
+              },
+              {
+                "type": "url",
+                "url": "https://hk.trip.com/blog/hangzhou-weather-tour/"
+              },
+              {
+                "type": "url",
+                "url": "https://www.nmc.cn/publish/forecast/AZJ/hangzhou.html"
+              },
+              {
+                "type": "url",
+                "url": "https://tw.weatherspark.com/m/135673/10/%E6%9D%AD%E5%B7%9E%E3%80%81%E4%B8%AD%E5%9C%8B%E7%9A%8410%E6%9C%88%E5%B9%B3%E5%9D%87%E5%A4%A9%E6%B0%A3"
+              },
+              {
+                "type": "url",
+                "url": "https://www.hzqx.cn/pc/hztq/"
+              },
+              {
+                "type": "url",
+                "url": "https://mirror-earth.com/wea_history/330100"
+              },
+              {
+                "type": "url",
+                "url": "https://www.accuweather.com/zh/cn/hangzhou/106832/march-weather/106832"
+              },
+              {
+                "type": "url",
+                "url": "https://zh.climate-data.org/%E4%BA%9E%E6%B4%B2/%E4%B8%AD%E5%9B%BD/%E6%B5%99%E6%B1%9F%E7%9C%81/%E6%9D%AD%E5%B7%9E-2330/t/%E5%8D%81%E6%9C%88-10/"
+              },
+              {
+                "type": "url",
+                "url": "https://www.nmc.cn/publish/forecast/AZJ/hangzhou.html"
+              },
+              {
+                "type": "url",
+                "url": "https://www.weather.com.cn/weather/101210101.shtml"
+              },
+              {
+                "type": "url",
+                "url": "https://www.hzqx.cn/pc/hztq/"
+              },
+              {
+                "type": "url",
+                "url": "https://www.weather.com.cn/weather1dn/101210101.shtml"
+              },
+              {
+                "type": "url",
+                "url": "https://www.qweather.com/weather30d/hangzhou-101210101.html"
+              },
+              {
+                "type": "url",
+                "url": "https://www.ventusky.com/zh-tw/hangzhou"
+              },
+              {
+                "type": "url",
+                "url": "https://www.aqi.in/weather/cn/china/zhejiang/hangzhou/hangzhou"
+              },
+              {
+                "type": "url",
+                "url": "https://www.accuweather.com/zh/cn/hangzhou/106832/10-day-weather-forecast/106832"
+              },
+              {
+                "type": "url",
+                "url": "https://www.msn.com/zh-tw/weather/forecast/in-%E6%9D%AD%E5%B7%9E%E5%B8%82,%E6%B5%99%E6%B1%9F%E7%9C%81"
+              }
+            ],
+            "type": "search"
+          },
+          "id": "msg_0d20dfbe-9603-4687-b879-ff63be6e3837",
+          "status": "completed",
+          "type": "web_search_call"
+        },
+        {
+          "id": "msg_4dc96a76-01a0-432d-9b18-467691234b9d",
+          "summary": [
+            {
+              "text": "根据搜索结果，我可以整理出杭州今天（2026年10月12日）的天气情况：\n\n从多个来源综合信息：\n1. 中国天气网（weather.com.cn）：12日晴，27℃/18℃\n2. 中央气象台（nmc.cn）：10/12周一，晴，东北风微风，最高27℃，最低18℃\n3. Trip.com：10月12日天晴\n4. 实时数据：当前温度约22℃左右\n\n所以今天杭州的天气是晴天，气温18-27℃，微风。让我给用户一个简洁明了的回答。\n",
+              "type": "summary_text"
+            }
+          ],
+          "type": "reasoning"
+        },
+        {
+          "content": [
+            {
+              "annotations": [],
+              "text": "根据搜索到的天气信息，今天（2026年10月12日）杭州的天气情况如下：\n\n## ☀️ 杭州今日天气\n\n- **天气状况**：晴 ☀️\n- **气温**：18℃ ~ 27℃\n- **风向**：东北风，微风\n\n### 逐时参考温度\n| 时间 | 温度 |\n|------|------|\n| 上午11:00 | 约 22.6℃ |\n| 下午14:00 | 约 23.5℃ |\n| 下午17:00 | 约 22.6℃ |\n\n### 📅 未来几天气温走势\n- **10/13（周二）**：晴，18~28℃\n- **10/14（周三）**：多云转小雨，17~24℃\n- **10/15（周四）**：多云转中雨，18~24℃\n\n### 💡 生活建议\n今天是难得的晴天，气温舒适，非常适合户外活动、出行或晾晒衣物。不过早晚温差较大（最高27℃，最低18℃），建议穿薄外套。从周三开始杭州将迎来降雨，如果有出行计划，建议尽量安排在今天或周二。\n\n\u003e 数据来源：中国天气网、中央气象台",
+              "type": "output_text"
+            }
+          ],
+          "id": "msg_93946e09-dabb-44b6-9d4e-dd1e99a28eba",
+          "role": "assistant",
+          "status": "completed",
+          "type": "message"
+        }
+      ],
+      "parallel_tool_calls": true,
+      "presence_penalty": 0.0,
+      "service_tier": "default",
+      "status": "completed",
+      "store": false,
+      "temperature": 1.0,
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "type": "web_search"
+        }
+      ],
+      "top_logprobs": 0,
+      "top_p": 1.0,
+      "usage": {
+        "input_tokens": 3018,
+        "input_tokens_details": {
+          "cached_tokens": 0
+        },
+        "output_tokens": 542,
+        "output_tokens_details": {
+          "reasoning_tokens": 194
+        },
+        "total_tokens": 3560,
+        "x_details": [
+          {
+            "input_tokens": 3018,
+            "output_tokens": 542,
+            "output_tokens_details": {
+              "reasoning_tokens": 194
+            },
+            "plugins": {
+              "web_search": {
+                "count": 1
+              }
+            },
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            },
+            "total_tokens": 3560,
+            "x_billing_type": "response_api"
+          }
+        ],
+        "x_tools": {
+          "web_search": {
+            "count": 1
+          }
+        }
+      }
+    }
+  },
+  "upstream": {
+    "method": "POST",
+    "path": "/v1/responses",
+    "body": {
+      "input": "今天杭州的天气如何？",
+      "model": "upstream-model",
+      "store": false,
+      "tools": [
+        {
+          "type": "web_search"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,166 @@
+{
+  "name": "openai.responses__dashscope.compatible/reasoning-replay",
+  "note": "把上一轮 output（含 reasoning 项）原样回传后续问。#11 的录制项：思考历史在本路径原样到达上游。",
+  "request": {
+    "method": "POST",
+    "path": "/v1/responses",
+    "headers": {
+      "authorization": "\u003credacted\u003e",
+      "content-type": "application/json"
+    },
+    "body": {
+      "model": "logical-fast",
+      "store": false,
+      "input": [
+        {
+          "role": "user",
+          "content": "一个数除以 7 余 3，除以 5 余 2，最小的正整数是多少？"
+        },
+        {
+          "id": "msg_89e9c146-f99f-4c31-9c1e-4d8b69c181ae",
+          "summary": [
+            {
+              "text": "我需要找一个最小的正整数，满足：\n- 除以 7 余 3\n- 除以 5 余 2\n\n设这个数为 x。\n\n条件：\n- x ≡ 3 (mod 7)\n- x ≡ 2 (mod 5)\n\n方法：逐个列举满足第一个条件的数，然后检查是否满足第二个条件。\n\n满足 x ≡ 3 (mod 7) 的数：3, 10, 17, 24, 31, 38, ...\n\n检查除以 5 余 2：\n- 3 ÷ 5 = 0 余 3 ❌\n- 10 ÷ 5 = 2 余 0 ❌\n- 17 ÷ 5 = 3 余 2 ✅\n\n所以最小的正整数是 17。\n\n验证：17 ÷ 7 = 2 余 3 ✅；17 ÷ 5 = 3 余 2 ✅。",
+              "type": "summary_text"
+            }
+          ],
+          "type": "reasoning"
+        },
+        {
+          "content": [
+            {
+              "annotations": [],
+              "text": "## 求解过程\n\n设这个正整数为 $x$，需要同时满足：\n\n$$x \\equiv 3 \\pmod{7}$$\n$$x \\equiv 2 \\pmod{5}$$\n\n**方法：列举满足第一个条件的数，逐一检验第二个条件。**\n\n满足 $x \\equiv 3 \\pmod{7}$ 的正整数依次为：\n\n| $x$ | $x \\div 5$ 的余数 | 是否满足 |\n|-----|-------------------|----------|\n| 3   | 3                 | ❌       |\n| 10  | 0                 | ❌       |\n| **17**  | **2**             | ✅       |\n\n## 验证\n\n- $17 \\div 7 = 2 \\cdots\\cdots 3$ ✅\n- $17 \\div 5 = 3 \\cdots\\cdots 2$ ✅\n\n$$\\boxed{17}$$",
+              "type": "output_text"
+            }
+          ],
+          "id": "msg_f3479e95-e3ea-49e7-ad89-7ae1e6c7ddc9",
+          "role": "assistant",
+          "status": "completed",
+          "type": "message"
+        },
+        {
+          "role": "user",
+          "content": "把刚才的答案加 1 是多少？只回数字。"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "background": false,
+      "completed_at": 1791742278,
+      "created_at": 1791742278,
+      "frequency_penalty": 0.0,
+      "id": "resp_e1d1fa9b-2129-924d-bce4-053919465429",
+      "metadata": {},
+      "model": "qwen3.8-flash",
+      "object": "response",
+      "output": [
+        {
+          "id": "msg_696b40aa-717c-4b05-9634-5028dc49137b",
+          "summary": [
+            {
+              "text": "用户问刚才的答案17加1是多少，只需要回数字。\n",
+              "type": "summary_text"
+            }
+          ],
+          "type": "reasoning"
+        },
+        {
+          "content": [
+            {
+              "annotations": [],
+              "text": "18",
+              "type": "output_text"
+            }
+          ],
+          "id": "msg_4f07d128-2066-4123-bc20-b486c028324b",
+          "role": "assistant",
+          "status": "completed",
+          "type": "message"
+        }
+      ],
+      "parallel_tool_calls": true,
+      "presence_penalty": 0.0,
+      "service_tier": "default",
+      "status": "completed",
+      "store": false,
+      "temperature": 1.0,
+      "tool_choice": "auto",
+      "tools": [],
+      "top_logprobs": 0,
+      "top_p": 1.0,
+      "usage": {
+        "input_tokens": 579,
+        "input_tokens_details": {
+          "cached_tokens": 0
+        },
+        "output_tokens": 19,
+        "output_tokens_details": {
+          "reasoning_tokens": 14
+        },
+        "total_tokens": 598,
+        "x_details": [
+          {
+            "input_tokens": 579,
+            "output_tokens": 19,
+            "output_tokens_details": {
+              "reasoning_tokens": 14
+            },
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            },
+            "total_tokens": 598,
+            "x_billing_type": "response_api"
+          }
+        ]
+      }
+    }
+  },
+  "upstream": {
+    "method": "POST",
+    "path": "/v1/responses",
+    "body": {
+      "input": [
+        {
+          "role": "user",
+          "content": "一个数除以 7 余 3，除以 5 余 2，最小的正整数是多少？"
+        },
+        {
+          "id": "msg_89e9c146-f99f-4c31-9c1e-4d8b69c181ae",
+          "summary": [
+            {
+              "text": "我需要找一个最小的正整数，满足：\n- 除以 7 余 3\n- 除以 5 余 2\n\n设这个数为 x。\n\n条件：\n- x ≡ 3 (mod 7)\n- x ≡ 2 (mod 5)\n\n方法：逐个列举满足第一个条件的数，然后检查是否满足第二个条件。\n\n满足 x ≡ 3 (mod 7) 的数：3, 10, 17, 24, 31, 38, ...\n\n检查除以 5 余 2：\n- 3 ÷ 5 = 0 余 3 ❌\n- 10 ÷ 5 = 2 余 0 ❌\n- 17 ÷ 5 = 3 余 2 ✅\n\n所以最小的正整数是 17。\n\n验证：17 ÷ 7 = 2 余 3 ✅；17 ÷ 5 = 3 余 2 ✅。",
+              "type": "summary_text"
+            }
+          ],
+          "type": "reasoning"
+        },
+        {
+          "content": [
+            {
+              "annotations": [],
+              "text": "## 求解过程\n\n设这个正整数为 $x$，需要同时满足：\n\n$$x \\equiv 3 \\pmod{7}$$\n$$x \\equiv 2 \\pmod{5}$$\n\n**方法：列举满足第一个条件的数，逐一检验第二个条件。**\n\n满足 $x \\equiv 3 \\pmod{7}$ 的正整数依次为：\n\n| $x$ | $x \\div 5$ 的余数 | 是否满足 |\n|-----|-------------------|----------|\n| 3   | 3                 | ❌       |\n| 10  | 0                 | ❌       |\n| **17**  | **2**             | ✅       |\n\n## 验证\n\n- $17 \\div 7 = 2 \\cdots\\cdots 3$ ✅\n- $17 \\div 5 = 3 \\cdots\\cdots 2$ ✅\n\n$$\\boxed{17}$$",
+              "type": "output_text"
+            }
+          ],
+          "id": "msg_f3479e95-e3ea-49e7-ad89-7ae1e6c7ddc9",
+          "role": "assistant",
+          "status": "completed",
+          "type": "message"
+        },
+        {
+          "role": "user",
+          "content": "把刚才的答案加 1 是多少？只回数字。"
+        }
+      ],
+      "model": "upstream-model",
+      "store": false
+    }
+  }
+}

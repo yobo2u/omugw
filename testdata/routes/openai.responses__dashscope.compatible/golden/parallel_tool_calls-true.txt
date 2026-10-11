@@ -1,0 +1,127 @@
+status: OK
+Content-Type: application/json
+---
+{
+      "background": false,
+      "completed_at": 1791742258,
+      "created_at": 1791742257,
+      "frequency_penalty": 0.0,
+      "id": "resp_b6fdaf53-1a5a-9a3d-80db-9bb44d508222",
+      "metadata": {},
+      "model": "qwen3.8-flash",
+      "object": "response",
+      "output": [
+        {
+          "id": "msg_f83f270a-f949-4e89-9b02-4e8499debc43",
+          "summary": [
+            {
+              "text": "用户要求同时查询北京、上海、广州三个城市的天气，以及东京的当前时间。这是四个独立的调用，没有依赖关系，所以应该在同一个 block 中并行调用。",
+              "type": "summary_text"
+            }
+          ],
+          "type": "reasoning"
+        },
+        {
+          "arguments": "{\"city\": \"北京\"}",
+          "call_id": "call_270ed2cd72754cf1a4f5ad78",
+          "id": "msg_9642f2e3-456c-4c77-9cc3-754fbfad691b",
+          "name": "get_weather",
+          "status": "completed",
+          "type": "function_call"
+        },
+        {
+          "arguments": "{\"city\": \"上海\"}",
+          "call_id": "call_976b662ab4394eb39550c199",
+          "id": "msg_9613191c-309e-4b5d-b41e-46e7a2ac10b0",
+          "name": "get_weather",
+          "status": "completed",
+          "type": "function_call"
+        },
+        {
+          "arguments": "{\"city\": \"广州\"}",
+          "call_id": "call_a50593c8bcd34d099a1f8f46",
+          "id": "msg_cdb480a6-9433-4650-b000-c7e41ccc283b",
+          "name": "get_weather",
+          "status": "completed",
+          "type": "function_call"
+        },
+        {
+          "arguments": "{\"city\": \"东京\"}",
+          "call_id": "call_bf5a5e83b5a5483bb72c390e",
+          "id": "msg_cdb7676a-0b2f-414d-b37d-cd348a5aa9c9",
+          "name": "get_time",
+          "status": "completed",
+          "type": "function_call"
+        }
+      ],
+      "parallel_tool_calls": true,
+      "presence_penalty": 0.0,
+      "service_tier": "default",
+      "status": "completed",
+      "store": false,
+      "temperature": 1.0,
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "description": "查询指定城市的当前天气",
+          "name": "get_weather",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "city": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "city"
+            ],
+            "type": "object"
+          },
+          "type": "function"
+        },
+        {
+          "description": "查询指定城市的当前时间",
+          "name": "get_time",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "city": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "city"
+            ],
+            "type": "object"
+          },
+          "type": "function"
+        }
+      ],
+      "top_logprobs": 0,
+      "top_p": 1.0,
+      "usage": {
+        "input_tokens": 425,
+        "input_tokens_details": {
+          "cached_tokens": 0
+        },
+        "output_tokens": 143,
+        "output_tokens_details": {
+          "reasoning_tokens": 37
+        },
+        "total_tokens": 568,
+        "x_details": [
+          {
+            "input_tokens": 425,
+            "output_tokens": 143,
+            "output_tokens_details": {
+              "reasoning_tokens": 37
+            },
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            },
+            "total_tokens": 568,
+            "x_billing_type": "response_api"
+          }
+        ]
+      }
+    }

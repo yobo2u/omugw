@@ -1,0 +1,79 @@
+status: OK
+Content-Type: application/json
+X-Omugw-Degraded: image_detail=DashScope Compatible 的 Responses 端点不区分 detail 档位（实测各档 input_tokens 相同、编造值不报错）；精度与计费意图丢失
+---
+{
+      "background": false,
+      "completed_at": 1791742283,
+      "created_at": 1791742282,
+      "frequency_penalty": 0.0,
+      "id": "resp_91795c4b-58b8-9088-a066-44f365924acf",
+      "metadata": {},
+      "model": "qwen3.8-flash",
+      "object": "response",
+      "output": [
+        {
+          "id": "msg_563bfb5a-398f-4e7f-aa23-431928dd2d8e",
+          "summary": [
+            {
+              "text": "用户询问图片主色调，要求一句话回答。观察图像：从右上角的深红渐变到左下角的橙红/橙黄，整体属于红色系渐变。主色调应概括为红色（或红橙渐变）。需简洁，一句话。排除冗长描述，直接给出结论。",
+              "type": "summary_text"
+            }
+          ],
+          "type": "reasoning"
+        },
+        {
+          "content": [
+            {
+              "annotations": [],
+              "text": "这张图的主色调是红色（由红到橙的渐变）。",
+              "type": "output_text"
+            }
+          ],
+          "id": "msg_0d67eba5-614a-4ef4-be6b-cf7f396373c8",
+          "role": "assistant",
+          "status": "completed",
+          "type": "message"
+        }
+      ],
+      "parallel_tool_calls": true,
+      "presence_penalty": 0.0,
+      "service_tier": "default",
+      "status": "completed",
+      "store": false,
+      "temperature": 1.0,
+      "tool_choice": "auto",
+      "tools": [],
+      "top_logprobs": 0,
+      "top_p": 1.0,
+      "usage": {
+        "input_tokens": 158,
+        "input_tokens_details": {
+          "cached_tokens": 0
+        },
+        "output_tokens": 78,
+        "output_tokens_details": {
+          "reasoning_tokens": 60
+        },
+        "total_tokens": 236,
+        "x_details": [
+          {
+            "image_tokens": 66,
+            "input_tokens": 158,
+            "input_tokens_details": {
+              "image_tokens": 66,
+              "text_tokens": 92
+            },
+            "output_tokens": 78,
+            "output_tokens_details": {
+              "reasoning_tokens": 60
+            },
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            },
+            "total_tokens": 236,
+            "x_billing_type": "response_api"
+          }
+        ]
+      }
+    }

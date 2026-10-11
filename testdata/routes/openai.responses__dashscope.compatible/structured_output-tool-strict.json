@@ -1,0 +1,156 @@
+{
+  "name": "openai.responses__dashscope.compatible/structured_output-tool-strict",
+  "note": "function 工具带 strict:true：与 text.format 共用 structured_output 一格，工具调用照常可用，上游不校验 strict。",
+  "request": {
+    "method": "POST",
+    "path": "/v1/responses",
+    "headers": {
+      "authorization": "\u003credacted\u003e",
+      "content-type": "application/json"
+    },
+    "body": {
+      "model": "logical-fast",
+      "input": "查一下北京天气。",
+      "store": false,
+      "tools": [
+        {
+          "type": "function",
+          "strict": true,
+          "name": "get_weather",
+          "description": "查询指定城市的当前天气",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "city": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "city"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "background": false,
+      "completed_at": 1791742310,
+      "created_at": 1791742309,
+      "frequency_penalty": 0.0,
+      "id": "resp_0e820af6-d29a-9682-a746-e9baedb78f8c",
+      "metadata": {},
+      "model": "qwen3.8-flash",
+      "object": "response",
+      "output": [
+        {
+          "id": "msg_290c512a-6b00-4e68-bc68-4f1204b104be",
+          "summary": [
+            {
+              "text": "用户想查北京的天气，我需要使用 get_weather 工具。",
+              "type": "summary_text"
+            }
+          ],
+          "type": "reasoning"
+        },
+        {
+          "arguments": "{\"city\": \"北京\"}",
+          "call_id": "call_a64bb96ae87b41758ab072e3",
+          "id": "msg_bb4499a8-1daf-4cf2-928c-018c8bf6f790",
+          "name": "get_weather",
+          "status": "completed",
+          "type": "function_call"
+        }
+      ],
+      "parallel_tool_calls": true,
+      "presence_penalty": 0.0,
+      "service_tier": "default",
+      "status": "completed",
+      "store": false,
+      "temperature": 1.0,
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "description": "查询指定城市的当前天气",
+          "name": "get_weather",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "city": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "city"
+            ],
+            "type": "object"
+          },
+          "strict": true,
+          "type": "function"
+        }
+      ],
+      "top_logprobs": 0,
+      "top_p": 1.0,
+      "usage": {
+        "input_tokens": 351,
+        "input_tokens_details": {
+          "cached_tokens": 0
+        },
+        "output_tokens": 41,
+        "output_tokens_details": {
+          "reasoning_tokens": 13
+        },
+        "total_tokens": 392,
+        "x_details": [
+          {
+            "input_tokens": 351,
+            "output_tokens": 41,
+            "output_tokens_details": {
+              "reasoning_tokens": 13
+            },
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            },
+            "total_tokens": 392,
+            "x_billing_type": "response_api"
+          }
+        ]
+      }
+    }
+  },
+  "upstream": {
+    "method": "POST",
+    "path": "/v1/responses",
+    "body": {
+      "input": "查一下北京天气。",
+      "model": "upstream-model",
+      "store": false,
+      "tools": [
+        {
+          "type": "function",
+          "strict": true,
+          "name": "get_weather",
+          "description": "查询指定城市的当前天气",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "city": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "city"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,86 @@
+status: OK
+Content-Type: application/json
+---
+{
+      "background": false,
+      "completed_at": 1791742252,
+      "created_at": 1791742251,
+      "frequency_penalty": 0.0,
+      "id": "resp_c24a9b8b-4a70-96e7-81eb-f8883934620a",
+      "metadata": {},
+      "model": "qwen3.8-flash",
+      "object": "response",
+      "output": [
+        {
+          "id": "msg_e90ffaa6-e8d2-4f7f-a4bd-5deee64da9ae",
+          "summary": [
+            {
+              "text": "用户要求查询北京的天气。我需要调用 get_weather 工具，参数 city 为“北京”。",
+              "type": "summary_text"
+            }
+          ],
+          "type": "reasoning"
+        },
+        {
+          "arguments": "{\"city\": \"北京\"}",
+          "call_id": "call_342b3efad0f7497d91043aac",
+          "id": "msg_24914fcc-d01b-4524-b0fa-991076c6979e",
+          "name": "get_weather",
+          "status": "completed",
+          "type": "function_call"
+        }
+      ],
+      "parallel_tool_calls": true,
+      "presence_penalty": 0.0,
+      "service_tier": "default",
+      "status": "completed",
+      "store": false,
+      "temperature": 1.0,
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "description": "查询指定城市的当前天气",
+          "name": "get_weather",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "city": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "city"
+            ],
+            "type": "object"
+          },
+          "type": "function"
+        }
+      ],
+      "top_logprobs": 0,
+      "top_p": 1.0,
+      "usage": {
+        "input_tokens": 351,
+        "input_tokens_details": {
+          "cached_tokens": 0
+        },
+        "output_tokens": 48,
+        "output_tokens_details": {
+          "reasoning_tokens": 20
+        },
+        "total_tokens": 399,
+        "x_details": [
+          {
+            "input_tokens": 351,
+            "output_tokens": 48,
+            "output_tokens_details": {
+              "reasoning_tokens": 20
+            },
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            },
+            "total_tokens": 399,
+            "x_billing_type": "response_api"
+          }
+        ]
+      }
+    }

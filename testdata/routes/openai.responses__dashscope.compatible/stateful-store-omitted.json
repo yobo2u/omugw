@@ -1,0 +1,100 @@
+{
+  "name": "openai.responses__dashscope.compatible/stateful-store-omitted",
+  "note": "省略 store：网关不写入该字段，上游按默认值存储（响应回显 store:true，留存 7 天）。",
+  "request": {
+    "method": "POST",
+    "path": "/v1/responses",
+    "headers": {
+      "authorization": "\u003credacted\u003e",
+      "content-type": "application/json"
+    },
+    "body": {
+      "model": "logical-fast",
+      "input": "Reply OK."
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "background": false,
+      "completed_at": 1791742318,
+      "created_at": 1791742317,
+      "frequency_penalty": 0.0,
+      "id": "resp_5093add4-bd44-9ad3-a3ae-4a7dd59d70f8",
+      "metadata": {},
+      "model": "qwen3.8-flash",
+      "object": "response",
+      "output": [
+        {
+          "id": "msg_9c8fbd32-4fc6-43d1-a57a-46d6be504627",
+          "summary": [
+            {
+              "text": "The user wants me to simply reply \"OK.\"",
+              "type": "summary_text"
+            }
+          ],
+          "type": "reasoning"
+        },
+        {
+          "content": [
+            {
+              "annotations": [],
+              "text": "OK.",
+              "type": "output_text"
+            }
+          ],
+          "id": "msg_3ce31b83-592e-4e90-8983-7c61f4543d41",
+          "role": "assistant",
+          "status": "completed",
+          "type": "message"
+        }
+      ],
+      "parallel_tool_calls": true,
+      "presence_penalty": 0.0,
+      "service_tier": "default",
+      "status": "completed",
+      "store": true,
+      "temperature": 1.0,
+      "tool_choice": "auto",
+      "tools": [],
+      "top_logprobs": 0,
+      "top_p": 1.0,
+      "usage": {
+        "input_tokens": 96,
+        "input_tokens_details": {
+          "cached_tokens": 0
+        },
+        "output_tokens": 15,
+        "output_tokens_details": {
+          "reasoning_tokens": 10
+        },
+        "total_tokens": 111,
+        "x_details": [
+          {
+            "input_tokens": 96,
+            "output_tokens": 15,
+            "output_tokens_details": {
+              "reasoning_tokens": 10
+            },
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            },
+            "total_tokens": 111,
+            "x_billing_type": "response_api"
+          }
+        ]
+      }
+    }
+  },
+  "upstream": {
+    "method": "POST",
+    "path": "/v1/responses",
+    "body": {
+      "input": "Reply OK.",
+      "model": "upstream-model"
+    }
+  }
+}

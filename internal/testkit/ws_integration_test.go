@@ -270,7 +270,7 @@ func TestHTTPFixturesUnaffectedByWSSupport(t *testing.T) {
 	if err != nil {
 		t.Fatal("旧 fixture 根目录读取失败")
 	}
-	wantCounts := map[string]int{"dashscope.native__dashscope.native": 6, "openai.chat__dashscope.compatible": 10, "openai.chat__dashscope.native": 13, "openai.chat__openai.compat": 2, "openai.responses__openai.compat": 4}
+	wantCounts := map[string]int{"dashscope.native__dashscope.native": 6, "openai.chat__dashscope.compatible": 10, "openai.chat__dashscope.native": 13, "openai.chat__openai.compat": 2, "openai.responses__dashscope.compatible": 21, "openai.responses__openai.compat": 4}
 	seen := 0
 	for _, entry := range entries {
 		if !entry.IsDir() {
@@ -288,7 +288,7 @@ func TestHTTPFixturesUnaffectedByWSSupport(t *testing.T) {
 				if f.Response.WS != nil {
 					t.Fatal("合成 WS 样例混进真实路径证据")
 				}
-				if (entry.Name() == "openai.chat__dashscope.compatible" || entry.Name() == "openai.chat__dashscope.native") && f.Upstream == nil {
+				if (entry.Name() == "openai.chat__dashscope.compatible" || entry.Name() == "openai.chat__dashscope.native" || entry.Name() == "openai.responses__dashscope.compatible") && f.Upstream == nil {
 					t.Fatal("旧异构路径缺少独立 upstream，不能用 WS 例外豁免")
 				}
 				if f.Upstream != nil {

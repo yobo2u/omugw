@@ -122,7 +122,9 @@ func newHarness(t *testing.T, implemented bool, ups ...*upstream) *harness {
 	t.Helper()
 	kind := degrade.ProviderOpenAICompat
 	if !implemented {
-		kind = degrade.ProviderDashScopeCompatible
+		// 哨兵指向仍是 PLANNED 的 anthropic.messages：dashscope.compatible
+		// 已转正，继续拿它当「未实现」会让 501 测试在转正当天变红。
+		kind = degrade.ProviderAnthropicMessages
 	}
 	return newHarnessFor(t, harnessConfig{
 		requestPath: "/v1/responses",
@@ -163,6 +165,21 @@ func newChatDSCompatHarness(t *testing.T, ups ...*upstream) *harness {
 		requestPath: "/v1/chat/completions",
 		kind:        degrade.ProviderDashScopeCompatible,
 		newHandler:  NewChatHandler,
+		limits:      config.Default().Limits,
+		factory:     dashScopeCompatFactory,
+	}, ups...)
+}
+
+// newResponsesDSCompatHarness 是 Responses -> DashScope Compatible 路径的 harness。
+//
+// 与 Chat 那条共用同一个适配器工厂：适配器按入站门分支，装成两个不同的
+// 东西就测不到分支选错的情形。
+func newResponsesDSCompatHarness(t *testing.T, ups ...*upstream) *harness {
+	t.Helper()
+	return newHarnessFor(t, harnessConfig{
+		requestPath: "/v1/responses",
+		kind:        degrade.ProviderDashScopeCompatible,
+		newHandler:  NewResponsesHandler,
 		limits:      config.Default().Limits,
 		factory:     dashScopeCompatFactory,
 	}, ups...)

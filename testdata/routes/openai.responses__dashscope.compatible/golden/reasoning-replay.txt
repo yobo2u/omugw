@@ -1,0 +1,73 @@
+status: OK
+Content-Type: application/json
+---
+{
+      "background": false,
+      "completed_at": 1791742278,
+      "created_at": 1791742278,
+      "frequency_penalty": 0.0,
+      "id": "resp_e1d1fa9b-2129-924d-bce4-053919465429",
+      "metadata": {},
+      "model": "qwen3.8-flash",
+      "object": "response",
+      "output": [
+        {
+          "id": "msg_696b40aa-717c-4b05-9634-5028dc49137b",
+          "summary": [
+            {
+              "text": "用户问刚才的答案17加1是多少，只需要回数字。\n",
+              "type": "summary_text"
+            }
+          ],
+          "type": "reasoning"
+        },
+        {
+          "content": [
+            {
+              "annotations": [],
+              "text": "18",
+              "type": "output_text"
+            }
+          ],
+          "id": "msg_4f07d128-2066-4123-bc20-b486c028324b",
+          "role": "assistant",
+          "status": "completed",
+          "type": "message"
+        }
+      ],
+      "parallel_tool_calls": true,
+      "presence_penalty": 0.0,
+      "service_tier": "default",
+      "status": "completed",
+      "store": false,
+      "temperature": 1.0,
+      "tool_choice": "auto",
+      "tools": [],
+      "top_logprobs": 0,
+      "top_p": 1.0,
+      "usage": {
+        "input_tokens": 579,
+        "input_tokens_details": {
+          "cached_tokens": 0
+        },
+        "output_tokens": 19,
+        "output_tokens_details": {
+          "reasoning_tokens": 14
+        },
+        "total_tokens": 598,
+        "x_details": [
+          {
+            "input_tokens": 579,
+            "output_tokens": 19,
+            "output_tokens_details": {
+              "reasoning_tokens": 14
+            },
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            },
+            "total_tokens": 598,
+            "x_billing_type": "response_api"
+          }
+        ]
+      }
+    }

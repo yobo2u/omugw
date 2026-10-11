@@ -1,0 +1,102 @@
+{
+  "name": "openai.responses__dashscope.compatible/basic",
+  "note": "最小闭环：只改写 model，其余字段原样到达上游；响应原样回传。",
+  "request": {
+    "method": "POST",
+    "path": "/v1/responses",
+    "headers": {
+      "authorization": "\u003credacted\u003e",
+      "content-type": "application/json"
+    },
+    "body": {
+      "model": "logical-fast",
+      "input": "用一句话介绍杭州。",
+      "store": false
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "background": false,
+      "completed_at": 1791742249,
+      "created_at": 1791742247,
+      "frequency_penalty": 0.0,
+      "id": "resp_b58e8018-8399-958f-b21e-f848e96f9b85",
+      "metadata": {},
+      "model": "qwen3.8-flash",
+      "object": "response",
+      "output": [
+        {
+          "id": "msg_6d1b9c51-44eb-4edf-b2d4-33a4156756b7",
+          "summary": [
+            {
+              "text": "用户要求用一句话介绍杭州。需要用中文回复，简洁概括杭州：历史文化名城、西湖、江南水乡、数字经济/创新活力等。只需一句话。",
+              "type": "summary_text"
+            }
+          ],
+          "type": "reasoning"
+        },
+        {
+          "content": [
+            {
+              "annotations": [],
+              "text": "杭州是一座以西湖美景和江南文脉闻名、兼具历史文化底蕴与现代数字创新活力的中国城市。",
+              "type": "output_text"
+            }
+          ],
+          "id": "msg_5ca7f103-11d6-488c-9847-5c0c6746beee",
+          "role": "assistant",
+          "status": "completed",
+          "type": "message"
+        }
+      ],
+      "parallel_tool_calls": true,
+      "presence_penalty": 0.0,
+      "service_tier": "default",
+      "status": "completed",
+      "store": false,
+      "temperature": 1.0,
+      "tool_choice": "auto",
+      "tools": [],
+      "top_logprobs": 0,
+      "top_p": 1.0,
+      "usage": {
+        "input_tokens": 98,
+        "input_tokens_details": {
+          "cached_tokens": 0
+        },
+        "output_tokens": 56,
+        "output_tokens_details": {
+          "reasoning_tokens": 32
+        },
+        "total_tokens": 154,
+        "x_details": [
+          {
+            "input_tokens": 98,
+            "output_tokens": 56,
+            "output_tokens_details": {
+              "reasoning_tokens": 32
+            },
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            },
+            "total_tokens": 154,
+            "x_billing_type": "response_api"
+          }
+        ]
+      }
+    }
+  },
+  "upstream": {
+    "method": "POST",
+    "path": "/v1/responses",
+    "body": {
+      "input": "用一句话介绍杭州。",
+      "model": "upstream-model",
+      "store": false
+    }
+  }
+}

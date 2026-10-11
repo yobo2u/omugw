@@ -1,0 +1,74 @@
+status: OK
+Content-Type: application/json
+---
+{
+      "background": false,
+      "completed_at": 1791742315,
+      "created_at": 1791742314,
+      "frequency_penalty": 0.0,
+      "id": "resp_0629f911-28fa-94a4-94f8-f490cb731bab",
+      "metadata": {},
+      "model": "qwen3.8-flash",
+      "object": "response",
+      "output": [
+        {
+          "id": "msg_06e4c8b2-6d55-4c4a-a68a-6437a391acb4",
+          "summary": [
+            {
+              "text": "The user is asking me what their codeword was. In the first message, they stated: \"My secret codeword is MANGO42.\" They want me to reply with one word.\n\nThe codeword is MANGO42. I should reply with that one word.\n",
+              "type": "summary_text"
+            }
+          ],
+          "type": "reasoning"
+        },
+        {
+          "content": [
+            {
+              "annotations": [],
+              "text": "MANGO42",
+              "type": "output_text"
+            }
+          ],
+          "id": "msg_a9ad2e2f-17d9-4c7e-b6d3-d1790abb3f1d",
+          "role": "assistant",
+          "status": "completed",
+          "type": "message"
+        }
+      ],
+      "parallel_tool_calls": true,
+      "presence_penalty": 0.0,
+      "previous_response_id": "resp_44f61fed-40a1-987e-ba08-648181c5c78b",
+      "service_tier": "default",
+      "status": "completed",
+      "store": true,
+      "temperature": 1.0,
+      "tool_choice": "auto",
+      "tools": [],
+      "top_logprobs": 0,
+      "top_p": 1.0,
+      "usage": {
+        "input_tokens": 133,
+        "input_tokens_details": {
+          "cached_tokens": 0
+        },
+        "output_tokens": 67,
+        "output_tokens_details": {
+          "reasoning_tokens": 60
+        },
+        "total_tokens": 200,
+        "x_details": [
+          {
+            "input_tokens": 133,
+            "output_tokens": 67,
+            "output_tokens_details": {
+              "reasoning_tokens": 60
+            },
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            },
+            "total_tokens": 200,
+            "x_billing_type": "response_api"
+          }
+        ]
+      }
+    }

@@ -1,0 +1,111 @@
+{
+  "name": "openai.responses__dashscope.compatible/reasoning",
+  "note": "推理：输出含 reasoning 项，usage 带 reasoning_tokens。",
+  "request": {
+    "method": "POST",
+    "path": "/v1/responses",
+    "headers": {
+      "authorization": "\u003credacted\u003e",
+      "content-type": "application/json"
+    },
+    "body": {
+      "model": "logical-fast",
+      "input": "一个数除以 7 余 3，除以 5 余 2，最小的正整数是多少？",
+      "store": false,
+      "reasoning": {
+        "effort": "low"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "background": false,
+      "completed_at": 1791742266,
+      "created_at": 1791742261,
+      "frequency_penalty": 0.0,
+      "id": "resp_49bfbd86-0455-97b6-b436-f22d009aec1e",
+      "metadata": {},
+      "model": "qwen3.8-flash",
+      "object": "response",
+      "output": [
+        {
+          "id": "msg_599770f4-9135-4595-aaef-b9978b5b3ca4",
+          "summary": [
+            {
+              "text": "这是一个中国剩余定理的问题。\n\n设这个数为 n。\n\n条件：\n- n ≡ 3 (mod 7)\n- n ≡ 2 (mod 5)\n\n我需要找满足这两个同余条件的最小正整数。\n\n方法：从 n ≡ 3 (mod 7) 出发，列出满足第一个条件的数：\nn = 3, 10, 17, 24, 31, 38, 45, 52, 59, 66, 73, 80, ...\n\n然后检查哪些满足 n ≡ 2 (mod 5)：\n- 3 mod 5 = 3 ❌\n- 10 mod 5 = 0 ❌\n- 17 mod 5 = 2 ✓\n\n所以最小的正整数是 17。\n\n验证：17 ÷ 7 = 2 余 3 ✓，17 ÷ 5 = 3 余 2 ✓。",
+              "type": "summary_text"
+            }
+          ],
+          "type": "reasoning"
+        },
+        {
+          "content": [
+            {
+              "annotations": [],
+              "text": "## 求解过程\n\n设这个数为 $n$，需满足：\n\n$$n \\equiv 3 \\pmod{7}$$\n$$n \\equiv 2 \\pmod{5}$$\n\n**方法：逐一枚举**\n\n由第一个条件，满足 $n \\equiv 3 \\pmod{7}$ 的正整数为：\n\n$$3,\\ 10,\\ 17,\\ 24,\\ 31,\\ 38,\\ \\dots$$\n\n再逐一检查除以 5 的余数：\n\n| $n$ | $n \\bmod 5$ | 是否满足 |\n|-----|-------------|----------|\n| 3   | 3           | ❌ |\n| 10  | 0           | ❌ |\n| **17** | **2**     | ✅ |\n\n## 验证\n\n$$17 \\div 7 = 2 \\cdots\\cdots 3 \\quad \\checkmark$$\n$$17 \\div 5 = 3 \\cdots\\cdots 2 \\quad \\checkmark$$\n\n## 答案\n\n$$\\boxed{17}$$",
+              "type": "output_text"
+            }
+          ],
+          "id": "msg_2a3a70b9-b775-4100-a0a6-1f22b3eb79fa",
+          "role": "assistant",
+          "status": "completed",
+          "type": "message"
+        }
+      ],
+      "parallel_tool_calls": true,
+      "presence_penalty": 0.0,
+      "reasoning": {
+        "effort": "low"
+      },
+      "service_tier": "default",
+      "status": "completed",
+      "store": false,
+      "temperature": 1.0,
+      "tool_choice": "auto",
+      "tools": [],
+      "top_logprobs": 0,
+      "top_p": 1.0,
+      "usage": {
+        "input_tokens": 104,
+        "input_tokens_details": {
+          "cached_tokens": 0
+        },
+        "output_tokens": 471,
+        "output_tokens_details": {
+          "reasoning_tokens": 221
+        },
+        "total_tokens": 575,
+        "x_details": [
+          {
+            "input_tokens": 104,
+            "output_tokens": 471,
+            "output_tokens_details": {
+              "reasoning_tokens": 221
+            },
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            },
+            "total_tokens": 575,
+            "x_billing_type": "response_api"
+          }
+        ]
+      }
+    }
+  },
+  "upstream": {
+    "method": "POST",
+    "path": "/v1/responses",
+    "body": {
+      "input": "一个数除以 7 余 3，除以 5 余 2，最小的正整数是多少？",
+      "model": "upstream-model",
+      "reasoning": {
+        "effort": "low"
+      },
+      "store": false
+    }
+  }
+}

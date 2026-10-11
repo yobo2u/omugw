@@ -1,0 +1,88 @@
+status: OK
+Content-Type: application/json
+X-Omugw-Degraded: structured_output=DashScope Compatible 的 Responses 端点对 text.format 的 json_schema 不生效（返回自由文本）、对 json_object 不保证输出合法 JSON、对 function 工具的 strict 不校验；三者均原样透传
+---
+{
+      "background": false,
+      "completed_at": 1791742310,
+      "created_at": 1791742309,
+      "frequency_penalty": 0.0,
+      "id": "resp_0e820af6-d29a-9682-a746-e9baedb78f8c",
+      "metadata": {},
+      "model": "qwen3.8-flash",
+      "object": "response",
+      "output": [
+        {
+          "id": "msg_290c512a-6b00-4e68-bc68-4f1204b104be",
+          "summary": [
+            {
+              "text": "用户想查北京的天气，我需要使用 get_weather 工具。",
+              "type": "summary_text"
+            }
+          ],
+          "type": "reasoning"
+        },
+        {
+          "arguments": "{\"city\": \"北京\"}",
+          "call_id": "call_a64bb96ae87b41758ab072e3",
+          "id": "msg_bb4499a8-1daf-4cf2-928c-018c8bf6f790",
+          "name": "get_weather",
+          "status": "completed",
+          "type": "function_call"
+        }
+      ],
+      "parallel_tool_calls": true,
+      "presence_penalty": 0.0,
+      "service_tier": "default",
+      "status": "completed",
+      "store": false,
+      "temperature": 1.0,
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "description": "查询指定城市的当前天气",
+          "name": "get_weather",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "city": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "city"
+            ],
+            "type": "object"
+          },
+          "strict": true,
+          "type": "function"
+        }
+      ],
+      "top_logprobs": 0,
+      "top_p": 1.0,
+      "usage": {
+        "input_tokens": 351,
+        "input_tokens_details": {
+          "cached_tokens": 0
+        },
+        "output_tokens": 41,
+        "output_tokens_details": {
+          "reasoning_tokens": 13
+        },
+        "total_tokens": 392,
+        "x_details": [
+          {
+            "input_tokens": 351,
+            "output_tokens": 41,
+            "output_tokens_details": {
+              "reasoning_tokens": 13
+            },
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            },
+            "total_tokens": 392,
+            "x_billing_type": "response_api"
+          }
+        ]
+      }
+    }

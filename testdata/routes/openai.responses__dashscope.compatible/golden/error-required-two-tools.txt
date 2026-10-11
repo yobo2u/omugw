@@ -1,0 +1,4 @@
+status: Bad Request
+Content-Type: application/json
+---
+{"error":{"message":"\u003c400\u003e InternalError.Algo.InvalidParameter: Please set one tool in required mode.","type":"invalid_request_error","code":"InvalidParameter"}}

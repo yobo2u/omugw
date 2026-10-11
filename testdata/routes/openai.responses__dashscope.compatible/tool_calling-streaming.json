@@ -1,0 +1,226 @@
+{
+  "name": "openai.responses__dashscope.compatible/tool_calling-streaming",
+  "note": "function 工具调用（流式）：response.function_call_arguments.delta/done 原样转发。",
+  "request": {
+    "method": "POST",
+    "path": "/v1/responses",
+    "headers": {
+      "authorization": "\u003credacted\u003e",
+      "content-type": "application/json"
+    },
+    "body": {
+      "model": "logical-fast",
+      "input": "查一下北京天气。",
+      "store": false,
+      "stream": true,
+      "tools": [
+        {
+          "type": "function",
+          "name": "get_weather",
+          "description": "查询指定城市的当前天气",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "city": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "city"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/event-stream"
+    },
+    "sse": {
+      "events": [
+        {
+          "event": "response.created",
+          "data": "{\"sequence_number\":0,\"type\":\"response.created\",\"response\":{\"top_logprobs\":0,\"metadata\":{},\"presence_penalty\":0.0,\"created_at\":1791742252,\"store\":false,\"tools\":[{\"name\":\"get_weather\",\"description\":\"查询指定城市的当前天气\",\"type\":\"function\",\"parameters\":{\"additionalProperties\":false,\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"]}}],\"output\":[],\"top_p\":1.0,\"completed_at\":1791742252,\"frequency_penalty\":0.0,\"parallel_tool_calls\":true,\"background\":false,\"temperature\":1.0,\"tool_choice\":\"auto\",\"model\":\"qwen3.8-flash\",\"service_tier\":\"default\",\"id\":\"resp_0ad0ccb4-03ef-9665-b689-b5d226746f0a\",\"object\":\"response\",\"status\":\"queued\"}}",
+          "id": "1"
+        },
+        {
+          "event": "response.in_progress",
+          "data": "{\"sequence_number\":1,\"type\":\"response.in_progress\",\"response\":{\"top_logprobs\":0,\"metadata\":{},\"presence_penalty\":0.0,\"created_at\":1791742252,\"store\":false,\"tools\":[{\"name\":\"get_weather\",\"description\":\"查询指定城市的当前天气\",\"type\":\"function\",\"parameters\":{\"additionalProperties\":false,\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"]}}],\"output\":[],\"top_p\":1.0,\"completed_at\":1791742252,\"frequency_penalty\":0.0,\"parallel_tool_calls\":true,\"background\":false,\"temperature\":1.0,\"tool_choice\":\"auto\",\"model\":\"qwen3.8-flash\",\"service_tier\":\"default\",\"id\":\"resp_0ad0ccb4-03ef-9665-b689-b5d226746f0a\",\"object\":\"response\",\"status\":\"in_progress\"}}",
+          "id": "2"
+        },
+        {
+          "event": "response.output_item.added",
+          "data": "{\"sequence_number\":2,\"item\":{\"summary\":[],\"type\":\"reasoning\",\"id\":\"msg_f5a6cf50-91c4-463b-a6e9-9b617d83e695\"},\"output_index\":0,\"type\":\"response.output_item.added\"}",
+          "id": "3"
+        },
+        {
+          "event": "response.reasoning_text.delta",
+          "data": "{\"delta\":\"We\",\"sequence_number\":3,\"output_index\":0,\"type\":\"response.reasoning_text.delta\",\"content_index\":0,\"item_id\":\"msg_f5a6cf50-91c4-463b-a6e9-9b617d83e695\"}",
+          "id": "4"
+        },
+        {
+          "event": "response.reasoning_text.delta",
+          "data": "{\"delta\":\" need respond\",\"sequence_number\":4,\"output_index\":0,\"type\":\"response.reasoning_text.delta\",\"content_index\":0,\"item_id\":\"msg_f5a6cf50-91c4-463b-a6e9-9b617d83e695\"}",
+          "id": "5"
+        },
+        {
+          "event": "response.reasoning_text.delta",
+          "data": "{\"delta\":\" to user in\",\"sequence_number\":5,\"output_index\":0,\"type\":\"response.reasoning_text.delta\",\"content_index\":0,\"item_id\":\"msg_f5a6cf50-91c4-463b-a6e9-9b617d83e695\"}",
+          "id": "6"
+        },
+        {
+          "event": "response.reasoning_text.delta",
+          "data": "{\"delta\":\" Chinese.\",\"sequence_number\":6,\"output_index\":0,\"type\":\"response.reasoning_text.delta\",\"content_index\":0,\"item_id\":\"msg_f5a6cf50-91c4-463b-a6e9-9b617d83e695\"}",
+          "id": "7"
+        },
+        {
+          "event": "response.reasoning_text.delta",
+          "data": "{\"delta\":\" User asks \\\"查\",\"sequence_number\":7,\"output_index\":0,\"type\":\"response.reasoning_text.delta\",\"content_index\":0,\"item_id\":\"msg_f5a6cf50-91c4-463b-a6e9-9b617d83e695\"}",
+          "id": "8"
+        },
+        {
+          "event": "response.reasoning_text.delta",
+          "data": "{\"delta\":\"一下\",\"sequence_number\":8,\"output_index\":0,\"type\":\"response.reasoning_text.delta\",\"content_index\":0,\"item_id\":\"msg_f5a6cf50-91c4-463b-a6e9-9b617d83e695\"}",
+          "id": "9"
+        },
+        {
+          "event": "response.reasoning_text.delta",
+          "data": "{\"delta\":\"北京天气。\\\"\",\"sequence_number\":9,\"output_index\":0,\"type\":\"response.reasoning_text.delta\",\"content_index\":0,\"item_id\":\"msg_f5a6cf50-91c4-463b-a6e9-9b617d83e695\"}",
+          "id": "10"
+        },
+        {
+          "event": "response.reasoning_text.delta",
+          "data": "{\"delta\":\" Need use get_weather\",\"sequence_number\":10,\"output_index\":0,\"type\":\"response.reasoning_text.delta\",\"content_index\":0,\"item_id\":\"msg_f5a6cf50-91c4-463b-a6e9-9b617d83e695\"}",
+          "id": "11"
+        },
+        {
+          "event": "response.reasoning_text.delta",
+          "data": "{\"delta\":\". Need\",\"sequence_number\":11,\"output_index\":0,\"type\":\"response.reasoning_text.delta\",\"content_index\":0,\"item_id\":\"msg_f5a6cf50-91c4-463b-a6e9-9b617d83e695\"}",
+          "id": "12"
+        },
+        {
+          "event": "response.reasoning_text.delta",
+          "data": "{\"delta\":\" call with city Beijing\",\"sequence_number\":12,\"output_index\":0,\"type\":\"response.reasoning_text.delta\",\"content_index\":0,\"item_id\":\"msg_f5a6cf50-91c4-463b-a6e9-9b617d83e695\"}",
+          "id": "13"
+        },
+        {
+          "event": "response.reasoning_text.delta",
+          "data": "{\"delta\":\" or\",\"sequence_number\":13,\"output_index\":0,\"type\":\"response.reasoning_text.delta\",\"content_index\":0,\"item_id\":\"msg_f5a6cf50-91c4-463b-a6e9-9b617d83e695\"}",
+          "id": "14"
+        },
+        {
+          "event": "response.reasoning_text.delta",
+          "data": "{\"delta\":\" 北京. Then\",\"sequence_number\":14,\"output_index\":0,\"type\":\"response.reasoning_text.delta\",\"content_index\":0,\"item_id\":\"msg_f5a6cf50-91c4-463b-a6e9-9b617d83e695\"}",
+          "id": "15"
+        },
+        {
+          "event": "response.reasoning_text.delta",
+          "data": "{\"delta\":\" final answer based on\",\"sequence_number\":15,\"output_index\":0,\"type\":\"response.reasoning_text.delta\",\"content_index\":0,\"item_id\":\"msg_f5a6cf50-91c4-463b-a6e9-9b617d83e695\"}",
+          "id": "16"
+        },
+        {
+          "event": "response.reasoning_text.delta",
+          "data": "{\"delta\":\" output\",\"sequence_number\":16,\"output_index\":0,\"type\":\"response.reasoning_text.delta\",\"content_index\":0,\"item_id\":\"msg_f5a6cf50-91c4-463b-a6e9-9b617d83e695\"}",
+          "id": "17"
+        },
+        {
+          "event": "response.reasoning_text.delta",
+          "data": "{\"delta\":\".\",\"sequence_number\":17,\"output_index\":0,\"type\":\"response.reasoning_text.delta\",\"content_index\":0,\"item_id\":\"msg_f5a6cf50-91c4-463b-a6e9-9b617d83e695\"}",
+          "id": "18"
+        },
+        {
+          "event": "response.reasoning_text.delta",
+          "data": "{\"delta\":\"\",\"sequence_number\":18,\"output_index\":0,\"type\":\"response.reasoning_text.delta\",\"content_index\":0,\"item_id\":\"msg_f5a6cf50-91c4-463b-a6e9-9b617d83e695\"}",
+          "id": "19"
+        },
+        {
+          "event": "response.reasoning_text.done",
+          "data": "{\"sequence_number\":19,\"text\":\"We need respond to user in Chinese. User asks \\\"查一下北京天气。\\\" Need use get_weather. Need call with city Beijing or 北京. Then final answer based on output.\",\"output_index\":0,\"type\":\"response.reasoning_text.done\",\"content_index\":0,\"item_id\":\"msg_f5a6cf50-91c4-463b-a6e9-9b617d83e695\"}",
+          "id": "20"
+        },
+        {
+          "event": "response.output_item.done",
+          "data": "{\"sequence_number\":20,\"item\":{\"summary\":[{\"type\":\"summary_text\",\"text\":\"We need respond to user in Chinese. User asks \\\"查一下北京天气。\\\" Need use get_weather. Need call with city Beijing or 北京. Then final answer based on output.\"}],\"type\":\"reasoning\",\"id\":\"msg_f5a6cf50-91c4-463b-a6e9-9b617d83e695\"},\"output_index\":0,\"type\":\"response.output_item.done\"}",
+          "id": "21"
+        },
+        {
+          "event": "response.output_item.added",
+          "data": "{\"sequence_number\":21,\"item\":{\"name\":\"get_weather\",\"arguments\":\"\",\"id\":\"msg_52ae11b7-5f8f-4211-880d-cee4f37fe609\",\"type\":\"function_call\",\"call_id\":\"call_69d62ed55354472ebe86bf46\",\"status\":\"in_progress\"},\"output_index\":1,\"type\":\"response.output_item.added\"}",
+          "id": "22"
+        },
+        {
+          "event": "response.function_call_arguments.delta",
+          "data": "{\"delta\":\"\",\"sequence_number\":22,\"output_index\":1,\"type\":\"response.function_call_arguments.delta\",\"item_id\":\"msg_52ae11b7-5f8f-4211-880d-cee4f37fe609\"}",
+          "id": "23"
+        },
+        {
+          "event": "response.function_call_arguments.delta",
+          "data": "{\"delta\":\"{\\\"city\\\": \",\"sequence_number\":23,\"output_index\":1,\"type\":\"response.function_call_arguments.delta\",\"item_id\":\"msg_52ae11b7-5f8f-4211-880d-cee4f37fe609\"}",
+          "id": "24"
+        },
+        {
+          "event": "response.function_call_arguments.delta",
+          "data": "{\"delta\":\"\\\"北京\",\"sequence_number\":24,\"output_index\":1,\"type\":\"response.function_call_arguments.delta\",\"item_id\":\"msg_52ae11b7-5f8f-4211-880d-cee4f37fe609\"}",
+          "id": "25"
+        },
+        {
+          "event": "response.function_call_arguments.delta",
+          "data": "{\"delta\":\"\\\"\",\"sequence_number\":25,\"output_index\":1,\"type\":\"response.function_call_arguments.delta\",\"item_id\":\"msg_52ae11b7-5f8f-4211-880d-cee4f37fe609\"}",
+          "id": "26"
+        },
+        {
+          "event": "response.function_call_arguments.delta",
+          "data": "{\"delta\":\"}\",\"sequence_number\":26,\"output_index\":1,\"type\":\"response.function_call_arguments.delta\",\"item_id\":\"msg_52ae11b7-5f8f-4211-880d-cee4f37fe609\"}",
+          "id": "27"
+        },
+        {
+          "event": "response.function_call_arguments.done",
+          "data": "{\"name\":\"get_weather\",\"sequence_number\":27,\"arguments\":\"{\\\"city\\\": \\\"北京\\\"}\",\"output_index\":1,\"type\":\"response.function_call_arguments.done\",\"item_id\":\"msg_52ae11b7-5f8f-4211-880d-cee4f37fe609\"}",
+          "id": "28"
+        },
+        {
+          "event": "response.output_item.done",
+          "data": "{\"sequence_number\":28,\"item\":{\"name\":\"get_weather\",\"arguments\":\"{\\\"city\\\": \\\"北京\\\"}\",\"id\":\"msg_52ae11b7-5f8f-4211-880d-cee4f37fe609\",\"type\":\"function_call\",\"call_id\":\"call_69d62ed55354472ebe86bf46\",\"status\":\"completed\"},\"output_index\":1,\"type\":\"response.output_item.done\"}",
+          "id": "29"
+        },
+        {
+          "event": "response.completed",
+          "data": "{\"sequence_number\":29,\"type\":\"response.completed\",\"response\":{\"top_logprobs\":0,\"metadata\":{},\"presence_penalty\":0.0,\"usage\":{\"total_tokens\":417,\"input_tokens_details\":{\"cached_tokens\":0},\"output_tokens\":66,\"input_tokens\":351,\"output_tokens_details\":{\"reasoning_tokens\":38},\"x_details\":[{\"total_tokens\":417,\"x_billing_type\":\"response_api\",\"output_tokens\":66,\"input_tokens\":351,\"output_tokens_details\":{\"reasoning_tokens\":38},\"prompt_tokens_details\":{\"cached_tokens\":0}}]},\"created_at\":1791742252,\"store\":false,\"tools\":[{\"name\":\"get_weather\",\"description\":\"查询指定城市的当前天气\",\"type\":\"function\",\"parameters\":{\"additionalProperties\":false,\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"]}}],\"output\":[{\"summary\":[{\"type\":\"summary_text\",\"text\":\"We need respond to user in Chinese. User asks \\\"查一下北京天气。\\\" Need use get_weather. Need call with city Beijing or 北京. Then final answer based on output.\"}],\"type\":\"reasoning\",\"id\":\"msg_f5a6cf50-91c4-463b-a6e9-9b617d83e695\"},{\"name\":\"get_weather\",\"arguments\":\"{\\\"city\\\": \\\"北京\\\"}\",\"id\":\"msg_52ae11b7-5f8f-4211-880d-cee4f37fe609\",\"type\":\"function_call\",\"call_id\":\"call_69d62ed55354472ebe86bf46\",\"status\":\"completed\"}],\"top_p\":1.0,\"completed_at\":1791742253,\"frequency_penalty\":0.0,\"parallel_tool_calls\":true,\"background\":false,\"temperature\":1.0,\"tool_choice\":\"auto\",\"model\":\"qwen3.8-flash\",\"service_tier\":\"default\",\"id\":\"resp_0ad0ccb4-03ef-9665-b689-b5d226746f0a\",\"object\":\"response\",\"status\":\"completed\"}}",
+          "id": "30"
+        }
+      ]
+    }
+  },
+  "upstream": {
+    "method": "POST",
+    "path": "/v1/responses",
+    "body": {
+      "input": "查一下北京天气。",
+      "model": "upstream-model",
+      "store": false,
+      "stream": true,
+      "tools": [
+        {
+          "type": "function",
+          "name": "get_weather",
+          "description": "查询指定城市的当前天气",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "city": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "city"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ]
+    }
+  }
+}

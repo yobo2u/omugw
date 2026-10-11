@@ -1,0 +1,185 @@
+status: OK
+Content-Type: application/json
+X-Omugw-Degraded: web_search=搜索由上游内建工具执行；预览版类型 web_search_preview 由网关改写为 web_search；search_context_size 等附带选项不保证生效
+---
+{
+      "background": false,
+      "completed_at": 1791742808,
+      "created_at": 1791742798,
+      "frequency_penalty": 0.0,
+      "id": "resp_bde7691d-023b-9b76-93a8-0398aea74448",
+      "metadata": {},
+      "model": "qwen3.8-flash",
+      "object": "response",
+      "output": [
+        {
+          "id": "msg_d88e777e-2a27-439b-b816-b52a9a3381d8",
+          "summary": [
+            {
+              "text": "用户询问今天杭州的天气。今天是2026年10月12日（星期一）。我需要搜索当前的天气信息，因为我没有实时天气数据。让我用网络搜索工具查询。",
+              "type": "summary_text"
+            }
+          ],
+          "type": "reasoning"
+        },
+        {
+          "action": {
+            "queries": [
+              "杭州今天天气 2026年10月12日",
+              "杭州实时天气查询"
+            ],
+            "query": "杭州今天天气 2026年10月12日",
+            "sources": [
+              {
+                "type": "url",
+                "url": "https://www.weather.com.cn/weather40d/101210101.shtml"
+              },
+              {
+                "type": "url",
+                "url": "https://www.nmc.cn/publish/forecast/AZJ/hangzhou.html"
+              },
+              {
+                "type": "url",
+                "url": "https://hk.trip.com/guide/info/%E6%9D%AD%E5%B7%9E%E6%B0%A3%E6%BA%AB.html"
+              },
+              {
+                "type": "url",
+                "url": "https://mirror-earth.com/wea_history/330100"
+              },
+              {
+                "type": "url",
+                "url": "https://www.hzqx.cn/pc/hztq/"
+              },
+              {
+                "type": "url",
+                "url": "https://zh.climate-data.org/%E4%BA%9E%E6%B4%B2/%E4%B8%AD%E5%9B%BD/%E6%B5%99%E6%B1%9F%E7%9C%81/%E6%9D%AD%E5%B7%9E-2330/t/%E5%8D%81%E6%9C%88-10/"
+              },
+              {
+                "type": "url",
+                "url": "https://www.accuweather.com/zh/cn/hangzhou/106832/march-weather/106832"
+              },
+              {
+                "type": "url",
+                "url": "https://tw.weatherspark.com/m/135673/10/%E6%9D%AD%E5%B7%9E%E3%80%81%E4%B8%AD%E5%9C%8B%E7%9A%8410%E6%9C%88%E5%B9%B3%E5%9D%87%E5%A4%A9%E6%B0%A3"
+              },
+              {
+                "type": "url",
+                "url": "https://www.ventusky.com/zh-tw/hangzhou"
+              },
+              {
+                "type": "url",
+                "url": "https://www.nmc.cn/publish/forecast/AZJ/hangzhou.html"
+              },
+              {
+                "type": "url",
+                "url": "https://www.weather.com.cn/weather/101210101.shtml"
+              },
+              {
+                "type": "url",
+                "url": "https://www.weather.com.cn/weather1dn/101210101.shtml"
+              },
+              {
+                "type": "url",
+                "url": "https://www.hzqx.cn/pc/hztq/"
+              },
+              {
+                "type": "url",
+                "url": "https://www.qweather.com/weather30d/hangzhou-101210101.html"
+              },
+              {
+                "type": "url",
+                "url": "https://www.accuweather.com/zh/cn/hangzhou/106832/weather-forecast/106832"
+              },
+              {
+                "type": "url",
+                "url": "https://worldweather.wmo.int/zh/city.html?cityId=556"
+              },
+              {
+                "type": "url",
+                "url": "https://www.aqi.in/weather/cn/china/zhejiang/hangzhou/hangzhou"
+              },
+              {
+                "type": "url",
+                "url": "https://www.msn.com/zh-tw/weather/forecast/in-%E6%9D%AD%E5%B7%9E%E5%B8%82"
+              }
+            ],
+            "type": "search"
+          },
+          "id": "msg_d9d55171-3e6e-45d1-bc72-1b8f744a2555",
+          "status": "completed",
+          "type": "web_search_call"
+        },
+        {
+          "id": "msg_32fe82aa-9812-488d-84a3-9382965061a4",
+          "summary": [
+            {
+              "text": "根据搜索结果，今天是2026年10月12日（周一）。多个来源显示杭州今天天气：\n\n- 中央气象台（nmc.cn）：10/12 周一 晴，东北风微风，27℃/18℃\n- Trip.com：2026年10月12日 天晴 18℃/26℃\n- 中国天气网：12日（明天，相对于11日发布）晴 27℃/18℃\n\n综合来看，今天杭州晴，气温大约18℃到27℃左右，微风。我给出一个简洁的回答。注意不同来源最高温略有差异（26-27℃），我可以说约27℃。早晚温差大，提醒添衣。\n\n不需要进一步搜索，信息足够。直接回答。",
+              "type": "summary_text"
+            }
+          ],
+          "type": "reasoning"
+        },
+        {
+          "content": [
+            {
+              "annotations": [],
+              "text": "今天（2026年10月12日，周一）杭州的天气总体不错 ☀️\n\n- **天气**：晴\n- **气温**：约 **18℃ ～ 27℃**\n- **风力**：东北风 / 微风\n- **降水**：基本无雨\n\n**温馨提示**：\n1. 今天以晴天为主，空气清新，适合出行、晾晒和户外活动。\n2. 昼夜温差较大（早晚18℃左右，中午接近27℃），早出晚归建议备件薄外套，注意\"洋葱式\"穿搭。\n3. 晴天日照较强，外出可适当防晒、多喝水。\n\n如果你需要某个区（比如西湖、萧山、余杭等）的实时温度或未来几天预报，告诉我，我可以帮你进一步查询。",
+              "type": "output_text"
+            }
+          ],
+          "id": "msg_3eaae17a-608c-477d-aa69-89cee01e2ce5",
+          "role": "assistant",
+          "status": "completed",
+          "type": "message"
+        }
+      ],
+      "parallel_tool_calls": true,
+      "presence_penalty": 0.0,
+      "service_tier": "default",
+      "status": "completed",
+      "store": false,
+      "temperature": 1.0,
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "type": "web_search"
+        }
+      ],
+      "top_logprobs": 0,
+      "top_p": 1.0,
+      "usage": {
+        "input_tokens": 3006,
+        "input_tokens_details": {
+          "cached_tokens": 0
+        },
+        "output_tokens": 442,
+        "output_tokens_details": {
+          "reasoning_tokens": 219
+        },
+        "total_tokens": 3448,
+        "x_details": [
+          {
+            "input_tokens": 3006,
+            "output_tokens": 442,
+            "output_tokens_details": {
+              "reasoning_tokens": 219
+            },
+            "plugins": {
+              "web_search": {
+                "count": 1
+              }
+            },
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            },
+            "total_tokens": 3448,
+            "x_billing_type": "response_api"
+          }
+        ],
+        "x_tools": {
+          "web_search": {
+            "count": 1
+          }
+        }
+      }
+    }

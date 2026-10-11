@@ -1,0 +1,79 @@
+status: OK
+Content-Type: application/json
+X-Omugw-Degraded: structured_output=DashScope Compatible 的 Responses 端点对 text.format 的 json_schema 不生效（返回自由文本）、对 json_object 不保证输出合法 JSON、对 function 工具的 strict 不校验；三者均原样透传
+---
+{
+      "background": false,
+      "completed_at": 1791742308,
+      "created_at": 1791742304,
+      "frequency_penalty": 0.0,
+      "id": "resp_a959e4fe-74cb-942d-b8dc-cc951141c8c8",
+      "metadata": {},
+      "model": "qwen3.8-flash",
+      "object": "response",
+      "output": [
+        {
+          "id": "msg_9bf91442-5d41-4621-8f32-3de4ed056245",
+          "summary": [
+            {
+              "text": "用户用中文询问：上海是哪个国家的城市？人口大约多少？要求用 JSON 回答。需要简洁回答，JSON 字段可包含 country、population 或 approx_population。当前日期 2026 年，上海人口常见约 2400 万到 2500 万。根据公开数据：2023 年末上海常住人口约 2487 万；2024 年可能约 2480 万/2500 万。回答“大约 2400 万至 2500 万”较稳妥，也可以给近似值 2480 万。要求用 JSON，最终只输出 JSON。语言中文，键可用中文或英文。确保是有效 JSON，不要额外说明。",
+              "type": "summary_text"
+            }
+          ],
+          "type": "reasoning"
+        },
+        {
+          "content": [
+            {
+              "annotations": [],
+              "text": "{\n  \"国家\": \"中华人民共和国\",\n  \"人口大约\": \"约2400万至2500万\"\n}",
+              "type": "output_text"
+            }
+          ],
+          "id": "msg_a144f2c9-c11e-4bbb-b6e9-c5191ade1e27",
+          "role": "assistant",
+          "status": "completed",
+          "type": "message"
+        }
+      ],
+      "parallel_tool_calls": true,
+      "presence_penalty": 0.0,
+      "service_tier": "default",
+      "status": "completed",
+      "store": false,
+      "temperature": 1.0,
+      "text": {
+        "format": {
+          "type": "json_object"
+        }
+      },
+      "tool_choice": "auto",
+      "tools": [],
+      "top_logprobs": 0,
+      "top_p": 1.0,
+      "usage": {
+        "input_tokens": 107,
+        "input_tokens_details": {
+          "cached_tokens": 0
+        },
+        "output_tokens": 206,
+        "output_tokens_details": {
+          "reasoning_tokens": 172
+        },
+        "total_tokens": 313,
+        "x_details": [
+          {
+            "input_tokens": 107,
+            "output_tokens": 206,
+            "output_tokens_details": {
+              "reasoning_tokens": 172
+            },
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            },
+            "total_tokens": 313,
+            "x_billing_type": "response_api"
+          }
+        ]
+      }
+    }

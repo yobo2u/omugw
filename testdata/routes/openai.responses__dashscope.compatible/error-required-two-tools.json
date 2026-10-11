@@ -1,0 +1,111 @@
+{
+  "name": "openai.responses__dashscope.compatible/error-required-two-tools",
+  "note": "上游更窄的语义：tool_choice=required 配多个工具时上游 400，网关原样映射。",
+  "request": {
+    "method": "POST",
+    "path": "/v1/responses",
+    "headers": {
+      "authorization": "\u003credacted\u003e",
+      "content-type": "application/json"
+    },
+    "body": {
+      "model": "logical-fast",
+      "input": "你好。",
+      "store": false,
+      "tool_choice": "required",
+      "tools": [
+        {
+          "type": "function",
+          "name": "get_weather",
+          "description": "查询指定城市的当前天气",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "city": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "city"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "type": "function",
+          "name": "get_time",
+          "description": "查询指定城市的当前时间",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "city": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "city"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "code": "InvalidParameter",
+      "message": "\u003c400\u003e InternalError.Algo.InvalidParameter: Please set one tool in required mode.",
+      "request_id": "\u003credacted\u003e"
+    }
+  },
+  "upstream": {
+    "method": "POST",
+    "path": "/v1/responses",
+    "body": {
+      "input": "你好。",
+      "model": "upstream-model",
+      "store": false,
+      "tool_choice": "required",
+      "tools": [
+        {
+          "type": "function",
+          "name": "get_weather",
+          "description": "查询指定城市的当前天气",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "city": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "city"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "type": "function",
+          "name": "get_time",
+          "description": "查询指定城市的当前时间",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "city": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "city"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ]
+    }
+  }
+}

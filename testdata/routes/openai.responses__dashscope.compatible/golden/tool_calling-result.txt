@@ -1,0 +1,91 @@
+status: OK
+Content-Type: application/json
+---
+{
+      "background": false,
+      "completed_at": 1791742256,
+      "created_at": 1791742255,
+      "frequency_penalty": 0.0,
+      "id": "resp_4180d277-6d89-9410-813e-0586db5dc5db",
+      "metadata": {},
+      "model": "qwen3.8-flash",
+      "object": "response",
+      "output": [
+        {
+          "id": "msg_0b408c36-7080-47e7-a796-4e8937706584",
+          "summary": [
+            {
+              "text": "工具返回了北京的天气：温度21°C，晴天。我应该用友好的方式告诉用户结果。",
+              "type": "summary_text"
+            }
+          ],
+          "type": "reasoning"
+        },
+        {
+          "content": [
+            {
+              "annotations": [],
+              "text": "北京当前天气：晴，气温 21°C。天气不错，适合出门哦！",
+              "type": "output_text"
+            }
+          ],
+          "id": "msg_45ce9da9-46aa-4fcc-944f-4446db463f38",
+          "role": "assistant",
+          "status": "completed",
+          "type": "message"
+        }
+      ],
+      "parallel_tool_calls": true,
+      "presence_penalty": 0.0,
+      "service_tier": "default",
+      "status": "completed",
+      "store": false,
+      "temperature": 1.0,
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "description": "查询指定城市的当前天气",
+          "name": "get_weather",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "city": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "city"
+            ],
+            "type": "object"
+          },
+          "type": "function"
+        }
+      ],
+      "top_logprobs": 0,
+      "top_p": 1.0,
+      "usage": {
+        "input_tokens": 423,
+        "input_tokens_details": {
+          "cached_tokens": 0
+        },
+        "output_tokens": 43,
+        "output_tokens_details": {
+          "reasoning_tokens": 21
+        },
+        "total_tokens": 466,
+        "x_details": [
+          {
+            "input_tokens": 423,
+            "output_tokens": 43,
+            "output_tokens_details": {
+              "reasoning_tokens": 21
+            },
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            },
+            "total_tokens": 466,
+            "x_billing_type": "response_api"
+          }
+        ]
+      }
+    }

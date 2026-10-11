@@ -117,14 +117,15 @@ func testInbound(p Protocol) Inbound { return Inbound{Protocol: p, Endpoint: tes
 // 就很难是无意的。
 func TestImplementedRoutesAreExplicit(t *testing.T) {
 	// 已转正：OpenAI 族两条同源直通、DashScope Native 文本生成同源直通，
-	// 以及 Chat 到 DashScope Compatible 的 wire-compatible 路径（非同质快通道）。
+	// 以及 Chat 与 Responses 到 DashScope Compatible 的 wire-compatible 路径（非同质快通道）。
 	// 其余仍为 PLANNED，anthropic 等排在其后。
 	want := map[string]bool{
-		string(ProtoOpenAIResponses) + " -> " + string(ProviderOpenAICompat):    true,
-		string(ProtoOpenAIChat) + " -> " + string(ProviderOpenAICompat):         true,
-		string(ProtoDashScopeNative) + " -> " + string(ProviderDashScopeNative): true,
-		string(ProtoOpenAIChat) + " -> " + string(ProviderDashScopeCompatible):  true,
-		string(ProtoOpenAIChat) + " -> " + string(ProviderDashScopeNative):      true,
+		string(ProtoOpenAIResponses) + " -> " + string(ProviderOpenAICompat):        true,
+		string(ProtoOpenAIChat) + " -> " + string(ProviderOpenAICompat):             true,
+		string(ProtoDashScopeNative) + " -> " + string(ProviderDashScopeNative):     true,
+		string(ProtoOpenAIChat) + " -> " + string(ProviderDashScopeCompatible):      true,
+		string(ProtoOpenAIChat) + " -> " + string(ProviderDashScopeNative):          true,
+		string(ProtoOpenAIResponses) + " -> " + string(ProviderDashScopeCompatible): true,
 	}
 
 	m, err := Phase1()
@@ -160,6 +161,7 @@ func TestImplementedRoutesAreExplicit(t *testing.T) {
 func TestRedeemedCapabilitiesAreExplicit(t *testing.T) {
 	// OpenAI 两条同源直通各一扇门，字节级转发，可表达的全部兑现；
 	// Chat 到 DashScope Compatible 兑现十一项可交付能力（两项 REJECT 不在其列）；
+	// Responses 到 DashScope Compatible 兑现十项（四项 REJECT 与无证据的 audio_input 不在其列）；
 	// Native 投放了文本生成与多模态生成两扇门，各 5 项，名单彼此独立。
 	want := map[string][]canonical.Capability{
 		string(ProtoOpenAIResponses) + " -> " + string(ProviderOpenAICompat) +
@@ -179,6 +181,19 @@ func TestRedeemedCapabilitiesAreExplicit(t *testing.T) {
 			canonical.CapAudioInput,
 			canonical.CapWebSearch,
 			canonical.CapMessageName,
+		},
+		string(ProtoOpenAIResponses) + " -> " + string(ProviderDashScopeCompatible) +
+			" @ " + string(EndpointOpenAIResponses): {
+			canonical.CapTextGeneration,
+			canonical.CapStreaming,
+			canonical.CapToolCalling,
+			canonical.CapParallelToolCalls,
+			canonical.CapStructuredOutput,
+			canonical.CapReasoning,
+			canonical.CapVisionInput,
+			canonical.CapImageDetail,
+			canonical.CapStatefulConversation,
+			canonical.CapWebSearch,
 		},
 		string(ProtoDashScopeNative) + " -> " + string(ProviderDashScopeNative) +
 			" @ " + string(EndpointDashScopeTextGeneration): {
@@ -280,9 +295,10 @@ func TestPlannedRouteIsRejectedAtRuntime(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 用一条仍是 PLANNED 的路径。openai.compat 那条已在 M1 转正。
+	// 用一条仍是 PLANNED 的路径。openai.compat 与 dashscope.compatible 都已转正，
+	// 拿已转正的路径当哨兵会让这条断言在转正当天悄悄失去意义。
 	_, err = m.Check(Inbound{Protocol: ProtoOpenAIResponses, Endpoint: EndpointOpenAIResponses},
-		ProviderDashScopeCompatible,
+		ProviderAnthropicMessages,
 		[]canonical.Capability{canonical.CapTextGeneration})
 	if err == nil {
 		t.Fatal("未实现的路径必须报错，不得静默放行到一个空壳")

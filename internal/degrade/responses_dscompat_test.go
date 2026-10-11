@@ -1,6 +1,7 @@
 package degrade
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -135,5 +136,48 @@ func TestResponsesDSCompatBuiltinToolsUnchanged(t *testing.T) {
 		if rule.Disposition != Passthrough {
 			t.Errorf("同源路径的 %s = %s，期望 PASSTHROUGH", c, rule.Disposition)
 		}
+	}
+}
+
+// redeemedResponsesDSCompat 是 /v1/responses 门在 dashscope.compatible 上兑现
+// 的十项能力，按 AllCapabilities 顺序——与 RedeemedAt 的输出顺序一致。
+var redeemedResponsesDSCompat = []canonical.Capability{
+	canonical.CapTextGeneration,
+	canonical.CapStreaming,
+	canonical.CapToolCalling,
+	canonical.CapParallelToolCalls,
+	canonical.CapStructuredOutput,
+	canonical.CapReasoning,
+	canonical.CapVisionInput,
+	canonical.CapImageDetail,
+	canonical.CapStatefulConversation,
+	canonical.CapWebSearch,
+}
+
+// TestResponsesDSCompatRedemptionIsExactlyTenCapabilities 钉死兑现集合：
+// 7 PASS + 3 DEGRADE。audio_input 设计处置是 PASS 但没有这扇门的证据，
+// 不在其列——含它的请求由矩阵以 501 拦下。
+func TestResponsesDSCompatRedemptionIsExactlyTenCapabilities(t *testing.T) {
+	m, r := responsesDSCompatRoute(t)
+
+	if eps := r.Endpoints(); len(eps) != 1 || eps[0] != EndpointOpenAIResponses {
+		t.Fatalf("已开门 = %v，期望仅 %s", eps, EndpointOpenAIResponses)
+	}
+	if got := r.RedeemedAt(EndpointOpenAIResponses); !reflect.DeepEqual(got, redeemedResponsesDSCompat) {
+		t.Errorf("兑现集合 = %v\n期望 %v", got, redeemedResponsesDSCompat)
+	}
+	if r.Redeems(EndpointOpenAIResponses, canonical.CapAudioInput) {
+		t.Error("audio_input 没有证据，不得兑现")
+	}
+
+	p := r.Preservation(m.Availability(), EndpointOpenAIResponses)
+	if !p.Gated() {
+		t.Error("audio_input 未兑现，门应为 Gated")
+	}
+	if want := 8.5 / 15.0; p.AvailableScore() != want {
+		t.Errorf("门可用分 = %.3f，期望 %.3f（8.5/15）", p.AvailableScore(), want)
+	}
+	if want := 9.5 / 15.0; p.DesignScore() != want {
+		t.Errorf("设计分 = %.3f，期望 %.3f（不因投放进度改变）", p.DesignScore(), want)
 	}
 }

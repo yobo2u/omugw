@@ -1,0 +1,135 @@
+{
+  "name": "openai.responses__dashscope.compatible/vision_input",
+  "note": "图片输入，不带 detail：不应出现降级头。",
+  "request": {
+    "method": "POST",
+    "path": "/v1/responses",
+    "headers": {
+      "authorization": "\u003credacted\u003e",
+      "content-type": "application/json"
+    },
+    "body": {
+      "model": "logical-fast",
+      "store": false,
+      "input": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "这张图的主色调是什么？一句话。"
+            },
+            {
+              "type": "input_image",
+              "image_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAbUlEQVR4nOzPQQnAQBAEwQ2cmPOvIrLyiYdmoeox8+7z3jszz8zSPf+vJaAmoCagJqAmoCagJqAmoCagJqAmoCagJqAmoCagJqAmoCagJqAmoCagJqAmoCagJqAmoCagJqAmoCagJqD2BQAA//81ygJ3QdFKbAAAAABJRU5ErkJggg=="
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "background": false,
+      "completed_at": 1791742280,
+      "created_at": 1791742279,
+      "frequency_penalty": 0.0,
+      "id": "resp_9af64e17-6f0a-9634-9356-ff88a6ca10fa",
+      "metadata": {},
+      "model": "qwen3.8-flash",
+      "object": "response",
+      "output": [
+        {
+          "id": "msg_e64213c1-a254-412b-ab0b-65cd889998e1",
+          "summary": [
+            {
+              "text": "用户询问图片主色调，要求一句话回答。观察图像：从顶部的深红渐变到底部的橙红/橙黄，整体属于红色系暖色调。最简洁准确的描述是“红色”或“红橙渐变”。一句话即可，不需冗长解释。我选择直接点明主色调为红色（红到橙的渐变），保持简短。",
+              "type": "summary_text"
+            }
+          ],
+          "type": "reasoning"
+        },
+        {
+          "content": [
+            {
+              "annotations": [],
+              "text": "主色调是红色（由红到橙的暖色渐变）。",
+              "type": "output_text"
+            }
+          ],
+          "id": "msg_e631eb85-c799-4690-a2fa-0d019edb06ca",
+          "role": "assistant",
+          "status": "completed",
+          "type": "message"
+        }
+      ],
+      "parallel_tool_calls": true,
+      "presence_penalty": 0.0,
+      "service_tier": "default",
+      "status": "completed",
+      "store": false,
+      "temperature": 1.0,
+      "tool_choice": "auto",
+      "tools": [],
+      "top_logprobs": 0,
+      "top_p": 1.0,
+      "usage": {
+        "input_tokens": 158,
+        "input_tokens_details": {
+          "cached_tokens": 0
+        },
+        "output_tokens": 93,
+        "output_tokens_details": {
+          "reasoning_tokens": 75
+        },
+        "total_tokens": 251,
+        "x_details": [
+          {
+            "image_tokens": 66,
+            "input_tokens": 158,
+            "input_tokens_details": {
+              "image_tokens": 66,
+              "text_tokens": 92
+            },
+            "output_tokens": 93,
+            "output_tokens_details": {
+              "reasoning_tokens": 75
+            },
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            },
+            "total_tokens": 251,
+            "x_billing_type": "response_api"
+          }
+        ]
+      }
+    }
+  },
+  "upstream": {
+    "method": "POST",
+    "path": "/v1/responses",
+    "body": {
+      "input": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "这张图的主色调是什么？一句话。"
+            },
+            {
+              "type": "input_image",
+              "image_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAbUlEQVR4nOzPQQnAQBAEwQ2cmPOvIrLyiYdmoeox8+7z3jszz8zSPf+vJaAmoCagJqAmoCagJqAmoCagJqAmoCagJqAmoCagJqAmoCagJqAmoCagJqAmoCagJqAmoCagJqAmoCagJqD2BQAA//81ygJ3QdFKbAAAAABJRU5ErkJggg=="
+            }
+          ]
+        }
+      ],
+      "model": "upstream-model",
+      "store": false
+    }
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "name": "openai.responses__dashscope.compatible/stateful-store-false",
+  "note": "store:false 的一轮不可续：上游返回扁平信封的 400，网关映射为 bad_request，不重试、不冷却凭据。",
+  "request": {
+    "method": "POST",
+    "path": "/v1/responses",
+    "headers": {
+      "authorization": "\u003credacted\u003e",
+      "content-type": "application/json"
+    },
+    "body": {
+      "model": "logical-fast",
+      "input": "What was my codeword? One word.",
+      "previous_response_id": "resp_8ea77658-a182-9237-887f-c6053b4c5978"
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "code": "InvalidParameter",
+      "message": "Not found previous_response_id: resp_8ea77658-a182-9237-887f-c6053b4c5978.",
+      "request_id": "\u003credacted\u003e"
+    }
+  },
+  "upstream": {
+    "method": "POST",
+    "path": "/v1/responses",
+    "body": {
+      "input": "What was my codeword? One word.",
+      "model": "upstream-model",
+      "previous_response_id": "resp_8ea77658-a182-9237-887f-c6053b4c5978"
+    }
+  }
+}

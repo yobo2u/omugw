@@ -51,7 +51,7 @@
 | `openai.realtime` | `openai.realtime` | 规划中 | ✅ | 15 | 0 | 0 | 0 | 14 | 1.000 | — |
 | `openai.realtime` | `dashscope.ws.realtime` | 规划中 | ✅ | 10 | 0 | 3 | 2 | 14 | 0.767 | — |
 | `openai.responses` | `openai.compat` | 已实现 | ✅ | 14 | 1（1 未开启） | 0 | 0 | 14 | 1.000 | 0.933（开启 convstore 后 1.000） |
-| `openai.responses` | `dashscope.compatible` | 规划中 |  | 8 | 0 | 3 | 4 | 14 | 0.633 | — |
+| `openai.responses` | `dashscope.compatible` | 已实现 |  | 8 | 0 | 3 | 4 | 14 | 0.633 | 0.567（11 项中 10 项已投放） |
 | `openai.responses` | `dashscope.native` | 规划中 |  | 6 | 1（1 未开启） | 4 | 4 | 14 | 0.600 | — |
 | `openai.responses` | `anthropic.messages` | 规划中 |  | 6 | 1（1 未开启） | 2 | 6 | 14 | 0.533 | — |
 
@@ -66,6 +66,7 @@
 | openai.chat | dashscope.compatible | /v1/chat/completions | text_generation, streaming, tool_calling, parallel_tool_calls, structured_output, reasoning, vision_input, image_detail, audio_input, web_search, message_name | 0.769 |
 | openai.chat | dashscope.native | /v1/chat/completions | text_generation, streaming, tool_calling, parallel_tool_calls, structured_output, reasoning, vision_input, image_detail, web_search, message_name | 0.577（11 项中 10 项已投放） |
 | openai.chat | openai.compat | /v1/chat/completions | text_generation, streaming, tool_calling, parallel_tool_calls, structured_output, reasoning, vision_input, image_detail, audio_input, file_input, audio_output, web_search, message_name | 1.000 |
+| openai.responses | dashscope.compatible | /v1/responses | text_generation, streaming, tool_calling, parallel_tool_calls, structured_output, reasoning, vision_input, image_detail, stateful_conversation, web_search | 0.567（11 项中 10 项已投放） |
 | openai.responses | openai.compat | /v1/responses | text_generation, streaming, tool_calling, parallel_tool_calls, structured_output, reasoning, vision_input, image_detail, audio_input, file_input, audio_output, image_generation, stateful_conversation, web_search, computer_use | 0.933（开启 convstore 后 1.000） |
 
 ## `dashscope.inference` → `dashscope.ws.inference`

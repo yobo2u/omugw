@@ -112,8 +112,8 @@ func TestPlannedRoutesAreNotRoutable(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 这两条都还是 PLANNED（openai.compat 那条已在 M1 转正，不在此列）。
-	planned := []Provider{ProviderDashScopeCompatible, ProviderDashScopeNative}
+	// 这两条都还是 PLANNED（openai.compat 与 dashscope.compatible 已转正，不在此列）。
+	planned := []Provider{ProviderAnthropicMessages, ProviderDashScopeNative}
 
 	if ranked := m.RankOutbound(ProtoOpenAIResponses, planned); len(ranked) != 0 {
 		t.Errorf("未实现的路径不该进入选路，实际 %v", ranked)

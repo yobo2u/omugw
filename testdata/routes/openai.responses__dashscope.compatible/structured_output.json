@@ -1,0 +1,171 @@
+{
+  "name": "openai.responses__dashscope.compatible/structured_output",
+  "note": "DEGRADE 举证（文件名即能力名）：text.format=json_schema 原样到达上游，上游不兑现，返回自由文本。",
+  "request": {
+    "method": "POST",
+    "path": "/v1/responses",
+    "headers": {
+      "authorization": "\u003credacted\u003e",
+      "content-type": "application/json"
+    },
+    "body": {
+      "model": "logical-fast",
+      "input": "上海是哪个国家的城市？人口大约多少？",
+      "store": false,
+      "text": {
+        "format": {
+          "type": "json_schema",
+          "name": "city_info",
+          "strict": true,
+          "schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "city": {
+                "type": "string"
+              },
+              "population_millions": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "city",
+              "population_millions"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "background": false,
+      "completed_at": 1791742303,
+      "created_at": 1791742300,
+      "frequency_penalty": 0.0,
+      "id": "resp_a9f9f62b-33d3-9007-b4b1-d24ae10abfe7",
+      "metadata": {},
+      "model": "qwen3.8-flash",
+      "object": "response",
+      "output": [
+        {
+          "id": "msg_68903d20-0ddc-4e38-aaa3-279f9c0923f2",
+          "summary": [
+            {
+              "text": "用户问的是上海是哪个国家的城市，以及人口大约多少。这是一个简单的地理/常识问题。\n\n上海是中国的城市，位于中国东部沿海。\n\n关于人口：截至2024-2025年的数据，上海的常住人口约为2480万左右（2023年末数据约为2487万人）。我可以说大约2400-2500万。",
+              "type": "summary_text"
+            }
+          ],
+          "type": "reasoning"
+        },
+        {
+          "content": [
+            {
+              "annotations": [],
+              "text": "上海是**中国**的城市，位于中国东部沿海，是中国最大的经济中心和直辖市之一。\n\n**人口方面：** 上海的常住人口约为 **2480 万**左右（近年数据在 2400 万～2500 万之间波动），其中包含大量外来常住人口。如果按户籍人口计算，则约为 1400 多万。\n\n上海是中国乃至全球最重要的金融、贸易、航运和科技创新中心之一。",
+              "type": "output_text"
+            }
+          ],
+          "id": "msg_a9b1bb45-31ed-491c-b805-886637a22864",
+          "role": "assistant",
+          "status": "completed",
+          "type": "message"
+        }
+      ],
+      "parallel_tool_calls": true,
+      "presence_penalty": 0.0,
+      "service_tier": "default",
+      "status": "completed",
+      "store": false,
+      "temperature": 1.0,
+      "text": {
+        "format": {
+          "name": "city_info",
+          "schema_": {
+            "additionalProperties": false,
+            "properties": {
+              "city": {
+                "type": "string"
+              },
+              "population_millions": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "city",
+              "population_millions"
+            ],
+            "type": "object"
+          },
+          "strict": true,
+          "type": "json_schema"
+        }
+      },
+      "tool_choice": "auto",
+      "tools": [],
+      "top_logprobs": 0,
+      "top_p": 1.0,
+      "usage": {
+        "input_tokens": 102,
+        "input_tokens_details": {
+          "cached_tokens": 0
+        },
+        "output_tokens": 183,
+        "output_tokens_details": {
+          "reasoning_tokens": 84
+        },
+        "total_tokens": 285,
+        "x_details": [
+          {
+            "input_tokens": 102,
+            "output_tokens": 183,
+            "output_tokens_details": {
+              "reasoning_tokens": 84
+            },
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            },
+            "total_tokens": 285,
+            "x_billing_type": "response_api"
+          }
+        ]
+      }
+    }
+  },
+  "upstream": {
+    "method": "POST",
+    "path": "/v1/responses",
+    "body": {
+      "input": "上海是哪个国家的城市？人口大约多少？",
+      "model": "upstream-model",
+      "store": false,
+      "text": {
+        "format": {
+          "type": "json_schema",
+          "name": "city_info",
+          "strict": true,
+          "schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "city": {
+                "type": "string"
+              },
+              "population_millions": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "city",
+              "population_millions"
+            ]
+          }
+        }
+      }
+    }
+  }
+}
