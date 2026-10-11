@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -77,29 +78,31 @@ func TestRecordResponsesDSCompat(t *testing.T) {
 		return resp.StatusCode, resp.Header.Get("Content-Type"), raw
 	}
 
+	hit := map[string]bool{}
 	for _, c := range rdcCases() {
 		if len(only) > 0 && !only[c.name] {
 			continue
 		}
+		hit[c.name] = true
 		t.Run(c.name, func(t *testing.T) {
 			var seed rdcSeed
 			if c.seed != "" {
 				status, _, raw := send(t, c.seed)
 				if status != http.StatusOK {
-					t.Fatalf("种子轮状态码 = %d: %s", status, raw)
+					t.Fatalf("种子轮状态码 = %d: %s", status, rdcScrub(raw, key))
 				}
 				var parsed struct {
 					ID     string          `json:"id"`
 					Output json.RawMessage `json:"output"`
 				}
 				if err := json.Unmarshal(raw, &parsed); err != nil || parsed.ID == "" {
-					t.Fatalf("种子轮响应没有 id: %s", raw)
+					t.Fatalf("种子轮响应没有 id: %s", rdcScrub(raw, key))
 				}
 				seed = rdcSeed{ID: parsed.ID, Output: parsed.Output}
 				// 防的是花钱录一份没有工具结果的 tool-result fixture：种子轮
 				// 若没产出 function_call，后续请求不会带任何 function_call_output。
 				if c.name == "tool_calling-result" && !rdcHasFunctionCall(seed.Output) {
-					t.Fatalf("种子轮 output 没有 function_call，不录制: %s", raw)
+					t.Fatalf("种子轮 output 没有 function_call，不录制: %s", rdcScrub(raw, key))
 				}
 			}
 
@@ -111,7 +114,7 @@ func TestRecordResponsesDSCompat(t *testing.T) {
 			status, contentType, raw := send(t, expect)
 			// 状态码与预期不符就不落盘：一份意外的 4xx 入库后会被当成证据。
 			if status != c.status() {
-				t.Fatalf("状态码 = %d，期望 %d: %s", status, c.status(), raw)
+				t.Fatalf("状态码 = %d，期望 %d: %s", status, c.status(), rdcScrub(raw, key))
 			}
 
 			f, err := rdcFixture(c, clientBody, status, contentType, raw)
@@ -124,5 +127,18 @@ func TestRecordResponsesDSCompat(t *testing.T) {
 			}
 			t.Logf("已录制 %s（model=%s status=%d bytes=%d）", c.name, model, status, len(raw))
 		})
+	}
+
+	// 防的是 ONLY 写错用例名：没有任何子测试运行，go test 却照样报 PASS，
+	// 看起来像录好了。
+	var missed []string
+	for name := range only {
+		if !hit[name] {
+			missed = append(missed, name)
+		}
+	}
+	if len(missed) > 0 {
+		sort.Strings(missed)
+		t.Fatalf("%s 中有未知用例名: %s", rdcOnlyEnv, strings.Join(missed, ", "))
 	}
 }

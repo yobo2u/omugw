@@ -10,6 +10,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -109,6 +110,49 @@ func TestRDCFixtureRedactsRequestID(t *testing.T) {
 	if !bytes.Contains(f.Response.Body, []byte(`"request_id"`)) {
 		t.Error("request_id 键应保留——扁平信封的形状是证据的一部分")
 	}
+}
+
+// TestRDCScrub 防的是脱敏函数漏掉部分回显：上游错误文案常把 key 截断后带星号
+// 回显，只替换完整 key 会让前缀漏进终端。
+func TestRDCScrub(t *testing.T) {
+	const key = "sk-test-0123456789abcdef"
+	cases := []struct {
+		name string
+		raw  string
+		key  string
+		want string
+	}{
+		{"完整 key", `bad key ` + key + ` rejected`, key, `bad key <redacted> rejected`},
+		{"前缀加星号", `Incorrect API key provided: sk-test-****. See docs`, key, `Incorrect API key provided: <redacted>. See docs`},
+		{"前缀加部分尾部", `key sk-test-0123****cdef!`, key, `key <redacted>!`},
+		{"不含 key", `{"code":"InvalidParameter","message":"m"}`, key, `{"code":"InvalidParameter","message":"m"}`},
+		{"空 key", `anything sk-test- here`, "", `anything sk-test- here`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := rdcScrub([]byte(tc.raw), tc.key); got != tc.want {
+				t.Errorf("rdcScrub = %q，期望 %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// rdcScrub 在响应体进入失败信息前抹掉凭据。
+//
+// 防的是上游在错误文案里回显 key 或其片段：失败信息会原样打到终端与 CI 日志。
+// 完整 key 直接替换；key 够长时再按前 8 个字符匹配，连同其后的 key 字符
+// （含 * 掩码）整体抹掉，覆盖「sk-abcd****」这类部分回显。key 为空时原样返回。
+func rdcScrub(raw []byte, key string) string {
+	out := string(raw)
+	if key == "" {
+		return out
+	}
+	out = strings.ReplaceAll(out, key, "<redacted>")
+	if len(key) >= 8 {
+		re := regexp.MustCompile(regexp.QuoteMeta(key[:8]) + `[A-Za-z0-9_*-]*`)
+		out = re.ReplaceAllString(out, "<redacted>")
+	}
+	return out
 }
 
 // TestRDCHasFunctionCall 防的是守卫自己失灵：它放过无调用的种子，或把坏 JSON
