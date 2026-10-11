@@ -117,6 +117,35 @@ func TestResponsesDoorFlatAuthErrorIsRetryable(t *testing.T) {
 	}
 }
 
+// TestResponsesDoorModelNotFoundIsBadRequest 防的是把「模型不存在」归成可重试的
+// 上游故障或吞掉原话：这扇门对未知模型返回 400 InvalidParameter，换凭据或重试
+// 都不会让它成功。信封形状取自 2026-10-11 的探测
+// （docs/research/2026-10-11-dashscope-compatible-responses-reprobe.md）。
+func TestResponsesDoorModelNotFoundIsBadRequest(t *testing.T) {
+	srv, _ := serve(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, `{"request_id":"req-3","code":"InvalidParameter",`+
+			`"message":"Unsupported model: '__nope__'"}`)
+	})
+
+	_, err := call(t, srv, responsesInput(`{"model":"m","input":"hi"}`))
+	e := asCanonical(t, err)
+
+	if e.Class != canonical.ClassBadRequest {
+		t.Errorf("分类 = %s，期望 bad_request", e.Class)
+	}
+	if e.Retryable {
+		t.Error("模型不存在不得标为可重试")
+	}
+	if e.Message != "Unsupported model: '__nope__'" {
+		t.Errorf("message = %q，上游原话丢了", e.Message)
+	}
+	if e.UpstreamCode != "InvalidParameter" {
+		t.Errorf("upstream code = %q，期望 InvalidParameter", e.UpstreamCode)
+	}
+}
+
 // TestResponsesDoorHitsResponsesEndpoint 防的是请求被送去 Chat 端点：
 // 官方 base_url 以 /v1 结尾，入站门是 /v1/responses，去重后必须落在
 // {base}/responses。
@@ -154,7 +183,8 @@ func TestResponsesDoorOnlyRewritesModel(t *testing.T) {
 }
 
 // TestResponsesDoorOmittedStoreIsNotInjected 防的是网关替客户端决定留存：
-// 省略 store 时由上游默认值生效（实测默认存储 7 天），网关写入任何值都是
+// 省略 store 时由上游默认值生效（实测只见到省略时回显 store:true；留存 7 天
+// 出自上游文档，未实测），网关写入任何值都是
 // 在改客户端没表达过的意图。
 func TestResponsesDoorOmittedStoreIsNotInjected(t *testing.T) {
 	srv, got := okServer(t)
@@ -186,6 +216,26 @@ func TestResponsesDoorRenamesPreviewSearch(t *testing.T) {
 		`{"type":"function","name":"f","parameters":{"type":"object"}}],` +
 		`"tool_choice":{"type":"web_search"}}`
 	testkit.AssertJSONEqual(t, []byte(want), got.body, "预览版搜索类型应被改写")
+}
+
+// TestResponsesDoorRenamesEscapedPreviewSearch 防的是一次不发生的搜索配一个 200：
+// 网关的解码器按字符串语义识别 type，JSON 转义写法（web_search\u005fpreview）
+// 与明文写法是同一个字符串，会被认作预览版搜索并让矩阵放行；适配器若按原始
+// 字节比较就漏掉改名，上游收到的仍是不执行搜索的预览类型。
+func TestResponsesDoorRenamesEscapedPreviewSearch(t *testing.T) {
+	srv, got := okServer(t)
+	const raw = `{"model":"logical","input":"hi",` +
+		`"tools":[{"type":"web_search\u005fpreview"}],` +
+		`"tool_choice":{"type":"web_search\u005fpreview"}}`
+
+	if _, err := call(t, srv, responsesInput(raw)); err != nil {
+		t.Fatal(err)
+	}
+
+	const want = `{"model":"qwen-up","input":"hi",` +
+		`"tools":[{"type":"web_search"}],` +
+		`"tool_choice":{"type":"web_search"}}`
+	testkit.AssertJSONEqual(t, []byte(want), got.body, "转义写法的预览版搜索类型也应被改写")
 }
 
 // TestResponsesDoorLeavesStringToolChoiceAlone 防的是改名逻辑误伤字符串形态

@@ -44,7 +44,7 @@ func isFlatEnvelope(body []byte) bool {
 }
 
 const (
-	typePreviewSearch = `"web_search_preview"`
+	typePreviewSearch = "web_search_preview"
 	typeSearch        = `"web_search"`
 )
 
@@ -107,7 +107,10 @@ func renamePreviewSearchType(raw json.RawMessage) json.RawMessage {
 	if err := json.Unmarshal(raw, &obj); err != nil {
 		return raw
 	}
-	if !bytes.Equal(bytes.TrimSpace(obj["type"]), []byte(typePreviewSearch)) {
+	// 按字符串语义比较：解码器认的是解转义后的值，按原始字节比会漏掉
+	// 转义写法（如 web_search\u005fpreview），让预览类型原样送到上游。
+	var typ string
+	if err := json.Unmarshal(obj["type"], &typ); err != nil || typ != typePreviewSearch {
 		return raw
 	}
 	obj["type"] = json.RawMessage(typeSearch)

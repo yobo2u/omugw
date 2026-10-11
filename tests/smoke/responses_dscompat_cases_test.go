@@ -417,7 +417,7 @@ func rdcCases() []rdcCase {
 		},
 		{
 			name:  "stateful-store-omitted",
-			note:  "省略 store：网关不写入该字段，上游按默认值存储（响应回显 store:true，留存 7 天）。",
+			note:  "省略 store：网关不写入该字段，上游按默认值存储（实测响应回显 store:true；留存 7 天出自上游文档，未实测）。",
 			build: rdcStatic(rdcBody(`"input":"Reply OK."`)),
 		},
 		{
