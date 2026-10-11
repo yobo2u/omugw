@@ -64,48 +64,25 @@ EMULATE（网关 convstore 垫会话），与上游事实不符：垫出来的�
 | stateful_conversation | PASSTHROUGH | 原为 EMULATE | 是 | 续轮答出口令；`store:false` 后续轮 400 |
 | image_detail | DEGRADE | 原为 PASSTHROUGH | 是 | 四种取值 `input_tokens` 全相同，编造值不报错 |
 | web_search | DEGRADE | 处置不变，note 重写 | 是 | `web_search` 产生 `web_search_call`；`web_search_preview` 200 但不搜索 |
-| structured_output | REJECT | 原为 DEGRADE | 不适用 | `json_schema` 返回散文；`json_object` 在 flash 上带代码围栏 |
+| structured_output | DEGRADE | 处置不变，note 重写 | 是 | `json_schema` 返回散文；`json_object` 在 flash 上带代码围栏；`strict` 不校验 |
 | file_input、audio_output、computer_use、image_generation | REJECT | 不变 | 不适用 | 既有规则 |
 | audio_input | PASSTHROUGH | 不变 | **否** | 无证据；含它的请求返回 501 |
 
-- 兑现 9 项（7 PASS + 2 DEGRADE），门是 `/v1/responses`。
-- 设计分 (8 + 0.5 × 2) / 15 = 0.600（现为 0.667）；门可用分 (7 + 0.5 × 2) / 15
-  ≈ 0.533，`Gated()` 为真。以 `make matrix-update` 的输出为准。
+- 兑现 10 项（7 PASS + 3 DEGRADE），门是 `/v1/responses`。
+- 设计分 (8 + 0.5 × 3) / 15 ≈ 0.633（现为 0.667）；门可用分 (7 + 0.5 × 3) / 15
+  ≈ 0.567，`Gated()` 为真。以 `make matrix-update` 的输出为准。
 - `audio_input` 沿用 `openai.chat → dashscope.native` 的先例：设计处置保留，本期
   不兑现。上游文档把音频输入限定在 omni-flash，且要求 `data` 是带 MIME 前缀的
   Data URI，与 OpenAI 的裸 base64 不同；原样透传能否被接受没有证据。
-- `structured_output` 改 REJECT 的理由：上游在这扇门对 `json_schema` 不生效、对
-  `json_object` 不保证合法 JSON，继续声明 DEGRADE 等于让客户端拿到一段解析不了的
-  文本和一个 200。422 让它在触达上游前失败。
-
-### 待裁决：`tools[].strict: true` 会一并被 422
-
-写 spec 时查到一处与已定结论相冲突的代码事实，需要在批准前定下来。
-
-`canonical.Request.UsedCapabilities`（`internal/canonical/request.go:166-176`）把
-两件事都算作 `structured_output`：`text.format` 为 `json_schema` / `json_object`，
-以及**任一 function 工具带 `strict: true`**。矩阵按能力裁决，一个格子只有一个处置。
-于是「`structured_output` 改 REJECT」和「`tools[].strict` 原样透传」不能同时成立：
-按本 spec 现在的写法，带 `strict: true` 工具的请求会在触达上游前得到 422。
-
-这不是边角情形。OpenAI 的工具辅助函数与 Agents SDK 生成的 function 工具通常显式
-带 `strict: true`（凭记忆，未在本次核对），那样的客户端在这扇门上将完全用不了
-工具调用。
-
-三种出路：
-
-1. **该格退回 DEGRADE（推荐）**：`text.format` 与 `strict` 都透传并带降级头，
-   note 写明「`json_schema` 不生效、`json_object` 不保证合法 JSON、`strict` 不
-   校验」。损失可见（响应头），工具调用可用。代价是 `json_schema` 请求拿到 200
-   加一段散文，只靠响应头提示。设计分回到 0.633。
-2. **保持 REJECT，接受 `strict: true` 一并 422**：与本 spec 现文一致，改动最小，
-   但主流 SDK 的工具调用在这扇门上不可用。
-3. **拆能力**：新增一项能力承载工具严格模式，`text.format` 保持 REJECT、工具
-   严格模式 DEGRADE。语义最准，但新增能力会让全部已注册路径同时要求补声明，
-   范围超出本次；适合单独开票。
-
-推荐 1，并另开一张票记录 3。本 spec 其余部分暂按已定的 REJECT 书写；选 1 则改
-矩阵表、note、分数和负例清单四处。
+- `structured_output` 保持 DEGRADE，不改 REJECT。网关把两件事都算作这项能力
+  （`internal/canonical/request.go:166-176`）：`text.format` 为 `json_schema` /
+  `json_object`，以及任一 function 工具带 `strict: true`。一个格子只有一个处置，
+  改 REJECT 会让带 `strict: true` 工具的请求一并 422，而主流 SDK 生成的工具通常
+  带这个标志。代价是 `json_schema` 请求会拿到 200 加一段散文，只靠降级头提示；
+  这一点写进 note 与路径文档。
+- 把工具严格模式从 `structured_output` 拆成独立能力（使 `text.format` 可单独
+  REJECT）语义更准，但新增能力会要求全部已注册路径补声明，不在本次范围，另行
+  开票。
 
 ### `responsesExtras` 拆分
 
@@ -128,8 +105,8 @@ EMULATE（网关 convstore 垫会话），与上游事实不符：垫出来的�
 - `web_search`（DEGRADE）：搜索由上游内建工具执行；预览版类型由网关改写为
   `web_search`；附带选项不保证生效。
 - `image_detail`（DEGRADE）：上游不区分 `detail` 档位，精度与计费意图丢失。
-- `structured_output`（REJECT）：上游在 Responses 门不兑现 `text.format` 的
-  `json_schema` 与 `json_object`。
+- `structured_output`（DEGRADE）：上游在 Responses 门对 `json_schema` 不生效、对
+  `json_object` 不保证输出合法 JSON、对工具的 `strict` 不校验；三者均原样透传。
 
 ## 请求链路
 
@@ -180,8 +157,8 @@ CapStatefulConversation)` 查选中路径的处置，只有 EMULATE 才进
 `reasoning.summary`、`metadata`、`tools[].strict` 被上游接受但静默忽略或弱化
 （`summary` 不校验且 reasoning 项恒带一段摘要；`metadata` 创建时回显但不落库；
 `strict` 不校验）。`reasoning.summary` 与 `metadata` 在矩阵里没有对应的能力格，
-网关原样透传，损失写进路径文档。`tools[].strict` 例外：它为 `true` 时会触发
-`structured_output` 格，处置见上文「待裁决」。
+网关原样透传，损失写进路径文档。`tools[].strict` 为 `true` 时会触发
+`structured_output` 格，由该格的降级头告知。
 
 ### 上游更窄的语义
 
@@ -245,19 +222,19 @@ Responses 解码器（`internal/protocol/openairesponses/decode.go:122`）把
 | vision_input | vision_input | 无降级头 |
 | image_detail | image_detail | 出现降级头 |
 | web_search、web_search_preview | web_search | 后者的上游请求里类型已改写；出现降级头 |
+| structured_output-json_schema、-json_object、-tool-strict | structured_output | 字段原样到达上游；出现降级头 |
 | stateful-continue | stateful_conversation | 上游请求保留 `previous_response_id`，`response.id` 未改写；装配 convstore 时同样不展开历史 |
 | stateful-store-false | stateful_conversation | 续轮得到上游 400，映射为 bad_request，凭据未冷却 |
 | stateful-store-omitted | stateful_conversation | 上游请求里没有被写入 `store` |
 
 负例：
 
-- `structured_output`（`json_schema`、`json_object` 各一）→ 422，上游未被调用。
 - `file_input` → 422；`audio_input` → 501；上游均未被调用。
 - 上游扁平错误信封被解出 `code` 与 `message`。
 - `tool_choice: required` 配两个工具 → 上游 400 原样映射。
 
 白名单：`matrix_test.go` 的 `TestImplementedRoutesAreExplicit` 加入本路径，
-`TestRedeemedCapabilitiesAreExplicit` 加入「本路径 @ `/v1/responses`」的 9 项。
+`TestRedeemedCapabilitiesAreExplicit` 加入「本路径 @ `/v1/responses`」的 10 项。
 
 ### 未证实项
 
